@@ -15,8 +15,8 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 if(MSVC)
-    # Los fuentes están en UTF-8.
-    add_compile_options(/utf-8)
+    # Los fuentes están en UTF-8. /MP compila en paralelo dentro de cada proyecto.
+    add_compile_options(/utf-8 /MP)
 endif()
 
 # Avisos estrictos para nuestro código (no para dependencias).

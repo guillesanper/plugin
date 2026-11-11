@@ -16,6 +16,7 @@ jobs:
   core:
     name: dsp + core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -32,6 +33,7 @@ jobs:
   plugin:
     name: plugin (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
@@ -50,9 +52,15 @@ jobs:
 
       - name: Dependencias (Linux)
         if: runner.os == 'Linux'
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          # Evita la regeneracion de paginas de manual, lenta e innecesaria aqui.
+          sudo rm -f /var/lib/man-db/auto-update
+          APT="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120"
+          $APT update
+          $APT install -y --no-install-recommends \
             libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
 
