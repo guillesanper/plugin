@@ -6,8 +6,7 @@
 /// Piezas de la dinámica por banda: curva de ganancia, seguidor de
 /// envolvente y filtro del detector. El ecualizador (equalizer.h) las
 /// combina. Derivación y decisiones en docs/dsp/dinamica.md.
-namespace esceq::dsp
-{
+namespace esceq::dsp {
 
 inline constexpr double kMinAttackMs = 0.05;
 inline constexpr double kMinReleaseMs = 1.0;

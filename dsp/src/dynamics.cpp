@@ -4,8 +4,7 @@
 #include <algorithm>
 #include <cmath>
 
-namespace esceq::dsp
-{
+namespace esceq::dsp {
 
 bool supportsDynamics(FilterType type) noexcept
 {

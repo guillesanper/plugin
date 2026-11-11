@@ -16,8 +16,7 @@ using Catch::Matchers::WithinAbs;
 using namespace esceq::dsp;
 using namespace esceq::test;
 
-namespace
-{
+namespace {
 
 constexpr double kFs = 48000.0;
 
