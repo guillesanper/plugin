@@ -1,0 +1,3 @@
+esceQ-state 1
+output_gain -6.5
+bypass 1

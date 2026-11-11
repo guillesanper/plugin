@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # dsp/ y core/ compilados y testeados SIN JUCE: garantiza que no dependen
+  # del framework (docs/arquitectura.md).
+  core:
+    name: dsp + core (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configurar
+        run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Debug
+      - name: Compilar
+        run: cmake --build build --config Debug --parallel
+      - name: Tests
+        run: ctest --test-dir build -C Debug --output-on-failure
+
+  plugin:
+    name: plugin (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            pluginval: pluginval_Linux.zip
+            pluginval_bin: ./pluginval
+          - os: windows-latest
+            pluginval: pluginval_Windows.zip
+            pluginval_bin: ./pluginval.exe
+          - os: macos-latest
+            pluginval: pluginval_macOS.zip
+            pluginval_bin: ./pluginval.app/Contents/MacOS/pluginval
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencias (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
+            libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+
+      - name: Configurar
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Compilar
+        run: cmake --build build --config Release --parallel
+
+      - name: Tests
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Descargar pluginval
+        shell: bash
+        run: |
+          curl -sSfL -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/latest/download/${{ matrix.pluginval }}"
+          unzip -q pluginval.zip
+
+      - name: pluginval (nivel 10)
+        shell: bash
+        run: |
+          VST3="build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3"
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
+          else
+            ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
+          fi
+
+      - name: Subir binarios
+        uses: actions/upload-artifact@v4
+        with:
+          name: esceQ-${{ runner.os }}
+          path: |
+            build/plugin/esceQ_artefacts/Release/VST3
+            build/plugin/esceQ_artefacts/Release/AU
+          if-no-files-found: error

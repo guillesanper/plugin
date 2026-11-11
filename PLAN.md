@@ -39,7 +39,7 @@ Estado: **decisiones principales cerradas** (sección 2). Siguiente paso: fase 0
 |---|---|
 | Nombre | **esceQ** |
 | Punto de partida | De cero. ZL Equalizer (AGPLv3, JUCE) se usa solo como referencia de arquitectura, sin copiar código |
-| Framework | JUCE 8, confinado a las capas de plugin e interfaz |
+| Framework | JUCE 9 (mismas condiciones de licencia que la 8), confinado a las capas de plugin e interfaz |
 | Licencia | Plugin en AGPLv3; biblioteca DSP en MIT |
 | Primera versión | EQ estático sólido primero (fase 2), dinámica justo después (fase 3) |
 | Principio rector | **Diseñar y documentar de forma que un cambio no rompa nada** (ver 2.1) |
