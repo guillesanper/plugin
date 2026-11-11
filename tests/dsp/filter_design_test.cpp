@@ -59,7 +59,7 @@ TEST_CASE("Bell: la ganancia en el centro es la pedida y lejos es 0 dB")
     }
 }
 
-TEST_CASE("Bell: realce y atenuación son simétricos")
+TEST_CASE("Bell: realce y atenuacion son simetricos")
 {
     for (double f : {200.0, 900.0, 1100.0, 5000.0})
     {
@@ -69,7 +69,7 @@ TEST_CASE("Bell: realce y atenuación son simétricos")
     }
 }
 
-TEST_CASE("Bell: coincide con la fórmula del Audio EQ Cookbook")
+TEST_CASE("Bell: coincide con la formula del Audio EQ Cookbook")
 {
     for (double sampleRate : {44100.0, 48000.0, 96000.0})
         for (double f0 : {60.0, 1000.0, 8000.0})
@@ -143,7 +143,7 @@ TEST_CASE("Cortes: el Q controla la resonancia en la frecuencia de corte")
     CHECK(db({FilterType::HighCut, 1000.0, 0.0, 3.0, 6}, 1000.0) == db({FilterType::HighCut, 1000.0, 0.0, 1.0, 6}, 1000.0));
 }
 
-TEST_CASE("Cortes: pendientes fuera de rango o no múltiplos de 6 se ajustan")
+TEST_CASE("Cortes: pendientes fuera de rango o no multiplos de 6 se ajustan")
 {
     auto sections = [](int slope) { return designBand({FilterType::LowCut, 1000.0, 0.0, kButterworthQ, slope}, kFs).numSections; };
     CHECK(sections(-5) == 1);
@@ -160,7 +160,7 @@ TEST_CASE("Notch: anula el centro y respeta el resto")
     CHECK_THAT(db(p, 20000.0), WithinAbs(0.0, 0.01));
 }
 
-TEST_CASE("BandPass: 0 dB en el centro, atenúa a los lados")
+TEST_CASE("BandPass: 0 dB en el centro, atenua a los lados")
 {
     const FilterParams p{FilterType::BandPass, 1000.0, 0.0, 2.0};
     CHECK_THAT(db(p, 1000.0), WithinAbs(0.0, 1e-9));
@@ -190,7 +190,7 @@ TEST_CASE("Tilt: -ganancia en graves, +ganancia en agudos, 0 dB en el pivote")
     }
 }
 
-TEST_CASE("Diseño: parámetros extremos o absurdos dan coeficientes finitos y estables")
+TEST_CASE("Diseno: parametros extremos o absurdos dan coeficientes finitos y estables")
 {
     const double frequencies[] = {-100.0, 0.0, 1.0, 20.0, 20000.0, 1.0e9};
     const double gains[] = {-1000.0, -30.0, 0.0, 30.0, 1000.0};

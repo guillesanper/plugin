@@ -67,7 +67,7 @@ TEST_CASE("GainRamp: llega exactamente al objetivo al acabar la rampa")
     }
 }
 
-TEST_CASE("GainRamp: el resultado no depende del tamaño de bloque")
+TEST_CASE("GainRamp: el resultado no depende del tamano de bloque")
 {
     GainRamp ramp;
     ramp.prepare(48000.0, 0.02);

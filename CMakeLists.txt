@@ -14,6 +14,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
+if(MSVC)
+    # Los fuentes están en UTF-8.
+    add_compile_options(/utf-8)
+endif()
+
 # Avisos estrictos para nuestro código (no para dependencias).
 add_library(esceq_warnings INTERFACE)
 if(MSVC)

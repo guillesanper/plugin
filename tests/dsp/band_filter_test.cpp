@@ -47,7 +47,7 @@ std::vector<float> run(BandFilter& filter, std::vector<float> signal, int blockS
 
 // Criterio de salida de la fase 1: lo que se oye (medido sobre el audio
 // procesado) coincide con la curva que se dibuja (calculada), con ±0,1 dB.
-TEST_CASE("BandFilter: la respuesta medida coincide con la teórica en ±0,1 dB")
+TEST_CASE("BandFilter: la respuesta medida coincide con la teorica en +-0,1 dB")
 {
     const double probes[] = {20.0, 55.0, 150.0, 400.0, 1000.0, 2500.0, 6000.0, 12000.0, 19000.0};
     double worst = 0.0;
@@ -113,14 +113,14 @@ TEST_CASE("BandFilter: una campana a 0 dB deja pasar el audio bit a bit")
     CHECK(run(filter, input, 128) == input);
 }
 
-TEST_CASE("BandFilter: sin diseño asignado no altera el audio")
+TEST_CASE("BandFilter: sin diseno asignado no altera el audio")
 {
     BandFilter filter;
     const auto input = noise(1024);
     CHECK(run(filter, input, 64) == input);
 }
 
-TEST_CASE("BandFilter: el resultado no depende del tamaño de bloque")
+TEST_CASE("BandFilter: el resultado no depende del tamano de bloque")
 {
     for (auto type : kAllTypes)
     {
@@ -218,7 +218,7 @@ TEST_CASE("BandFilter: es estable cambiando los coeficientes en cada muestra")
     }
 }
 
-TEST_CASE("BandFilter: cambiar el número de secciones no deja estado residual")
+TEST_CASE("BandFilter: cambiar el numero de secciones no deja estado residual")
 {
     const auto steep = designBand({FilterType::HighCut, 1000.0, 0.0, 1.0, 96}, 48000.0);
     const auto gentle = designBand({FilterType::HighCut, 1000.0, 0.0, 1.0, 12}, 48000.0);

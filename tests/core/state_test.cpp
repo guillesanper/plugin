@@ -56,7 +56,7 @@ TEST_CASE("Estado: fixture v1 con valores propios")
     CHECK((*values)[kBypass] == 1.0f);
 }
 
-TEST_CASE("Estado: tolera finales de línea de Windows")
+TEST_CASE("Estado: tolera finales de linea de Windows")
 {
     const auto values = deserializeState("esceQ-state 1\r\noutput_gain 3\r\nbypass 1\r\n");
     REQUIRE(values.has_value());
@@ -64,7 +64,7 @@ TEST_CASE("Estado: tolera finales de línea de Windows")
     CHECK((*values)[kBypass] == 1.0f);
 }
 
-TEST_CASE("Estado: parámetros ausentes toman el valor por defecto")
+TEST_CASE("Estado: parametros ausentes toman el valor por defecto")
 {
     const auto values = deserializeState("esceQ-state 1\nbypass 1\n");
     REQUIRE(values.has_value());
@@ -72,7 +72,7 @@ TEST_CASE("Estado: parámetros ausentes toman el valor por defecto")
     CHECK((*values)[kBypass] == 1.0f);
 }
 
-TEST_CASE("Estado: un estado de una versión futura carga lo que se conoce")
+TEST_CASE("Estado: un estado de una version futura carga lo que se conoce")
 {
     const auto values = deserializeState("esceQ-state 99\nparametro_futuro 12\noutput_gain 2\n");
     REQUIRE(values.has_value());

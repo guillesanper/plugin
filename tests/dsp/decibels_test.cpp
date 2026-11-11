@@ -16,7 +16,7 @@ TEST_CASE("dbToGain: valores conocidos")
     CHECK(dbToGain(-200.0f) == 0.0f);
 }
 
-TEST_CASE("gainToDb: valores conocidos y límites")
+TEST_CASE("gainToDb: valores conocidos y limites")
 {
     CHECK_THAT(gainToDb(1.0f), WithinAbs(0.0, 1e-6));
     CHECK_THAT(gainToDb(0.5f), WithinAbs(-6.0206, 1e-3));

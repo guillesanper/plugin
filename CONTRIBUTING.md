@@ -43,6 +43,7 @@ ctest --test-dir build-core --output-on-failure
 
 - C++20, formateado con `clang-format` (configuración en la raíz).
 - Los avisos del compilador son errores en nuestro código.
+- Los nombres de los tests (`TEST_CASE`) van en ASCII, sin tildes ni eñes: en Windows CTest no encuentra los que las llevan.
 - Cada archivo empieza con su `SPDX-License-Identifier`: `MIT` en `dsp/` y sus tests, `AGPL-3.0-or-later` en el resto.
 
 ## Git

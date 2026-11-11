@@ -21,7 +21,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Configurar
         run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Debug
       - name: Compilar
@@ -46,7 +46,7 @@ jobs:
             pluginval: pluginval_macOS.zip
             pluginval_bin: ./pluginval.app/Contents/MacOS/pluginval
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Dependencias (Linux)
         if: runner.os == 'Linux'

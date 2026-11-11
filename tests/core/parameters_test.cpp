@@ -30,7 +30,7 @@ constexpr Frozen kFrozen[] = {
 
 } // namespace
 
-TEST_CASE("Parámetros: los ya publicados no cambian de id, tipo, rango ni posición")
+TEST_CASE("Parametros: los ya publicados no cambian de id, tipo, rango ni posicion")
 {
     REQUIRE(kParameters.size() >= std::size(kFrozen));
 
@@ -44,12 +44,12 @@ TEST_CASE("Parámetros: los ya publicados no cambian de id, tipo, rango ni posic
     }
 }
 
-TEST_CASE("Parámetros: cada parámetro nuevo debe añadirse al contrato congelado")
+TEST_CASE("Parametros: cada parametro nuevo debe anadirse al contrato congelado")
 {
     CHECK(kParameters.size() == std::size(kFrozen));
 }
 
-TEST_CASE("Parámetros: la tabla es coherente")
+TEST_CASE("Parametros: la tabla es coherente")
 {
     std::set<std::string_view> ids;
     for (const auto& spec : kParameters)
@@ -64,14 +64,14 @@ TEST_CASE("Parámetros: la tabla es coherente")
     }
 }
 
-TEST_CASE("Parámetros: findParameter")
+TEST_CASE("Parametros: findParameter")
 {
     CHECK(findParameter("output_gain") == kOutputGain);
     CHECK(findParameter("bypass") == kBypass);
     CHECK_FALSE(findParameter("no_existe").has_value());
 }
 
-TEST_CASE("Parámetros: sanitize")
+TEST_CASE("Parametros: sanitize")
 {
     const auto& gain = kParameters[kOutputGain];
     CHECK(sanitize(gain, 3.0f) == 3.0f);
