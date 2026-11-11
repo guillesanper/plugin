@@ -1,0 +1,16 @@
+esceQ-state 1
+output_gain 0
+bypass 0
+b02_on 1
+b02_type 0
+b02_freq 6500
+b02_gain 0
+b02_q 2
+b02_slope 1
+b02_dyn 1
+b02_thr -30
+b02_range -9
+b02_att 0.5
+b02_rel 60
+b02_knee 3
+b02_sc 1

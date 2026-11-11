@@ -44,7 +44,10 @@ juce::NormalisableRange<float> rangeFor(const core::ParameterSpec* spec)
 PluginProcessor::PluginProcessor()
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
-                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
+                         .withOutput("Output", juce::AudioChannelSet::stereo(), true)
+                         // Bus auxiliar opcional para la detección externa de las
+                         // bandas dinámicas. En FL Studio se enruta desde el mezclador.
+                         .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
       apvts_(*this, nullptr, "esceQ", createLayout())
 {
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
@@ -102,7 +105,18 @@ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
     const auto& out = layouts.getMainOutputChannelSet();
     if (out != juce::AudioChannelSet::mono() && out != juce::AudioChannelSet::stereo())
         return false;
-    return layouts.getMainInputChannelSet() == out;
+    if (layouts.getMainInputChannelSet() != out)
+        return false;
+
+    // Sidechain: desconectado, mono o estéreo.
+    if (layouts.inputBuses.size() > 1)
+    {
+        const auto& sidechain = layouts.getChannelSet(true, 1);
+        if (!sidechain.isDisabled() && sidechain != juce::AudioChannelSet::mono() &&
+            sidechain != juce::AudioChannelSet::stereo())
+            return false;
+    }
+    return true;
 }
 
 juce::AudioProcessorParameter* PluginProcessor::getBypassParameter() const
@@ -116,6 +130,13 @@ core::ParameterValues PluginProcessor::currentValues() const noexcept
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
         values[i] = raw_[i]->load(std::memory_order_relaxed);
     return values;
+}
+
+float PluginProcessor::dynamicGainDb(int band) const noexcept
+{
+    if (band < 0 || band >= core::kNumBands)
+        return 0.0f;
+    return dynamicGains_[static_cast<std::size_t>(band)].load(std::memory_order_relaxed);
 }
 
 double PluginProcessor::currentSampleRate() const noexcept
@@ -150,14 +171,31 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
 
-    float* const* channels = buffer.getArrayOfWritePointers();
-    const int numChannels = buffer.getNumChannels();
-    const int numSamples = buffer.getNumSamples();
+    // El búfer trae juntos los canales de todos los buses: el principal se
+    // procesa en el sitio y el sidechain solo se lee.
+    auto main = getBusBuffer(buffer, false, 0);
+    float* const* channels = main.getArrayOfWritePointers();
+    const int numChannels = main.getNumChannels();
+    const int numSamples = main.getNumSamples();
+
+    const float* const* sidechain = nullptr;
+    int sidechainChannels = 0;
+    if (const auto* bus = getBus(true, 1); bus != nullptr && bus->isEnabled())
+    {
+        const auto side = getBusBuffer(buffer, true, 1);
+        sidechain = side.getArrayOfReadPointers();
+        sidechainChannels = side.getNumChannels();
+    }
+    sidechainConnected_.store(sidechainChannels > 0, std::memory_order_relaxed);
 
     preFifo_.writeMix(channels, numChannels, numSamples);
 
     pushParametersToEngine();
-    equalizer_.process(channels, numChannels, numSamples);
+    equalizer_.process(channels, numChannels, numSamples, sidechain, sidechainChannels);
+
+    for (int band = 0; band < core::kNumBands; ++band)
+        dynamicGains_[static_cast<std::size_t>(band)].store(static_cast<float>(equalizer_.dynamicGainDb(band)),
+                                                            std::memory_order_relaxed);
 
     const bool bypassed = raw_[core::kBypass]->load(std::memory_order_relaxed) >= 0.5f;
     const float gainDb = raw_[core::kOutputGain]->load(std::memory_order_relaxed);

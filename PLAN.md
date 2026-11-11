@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0, 1 y 2 completadas.** Siguiente paso: fase 3 (dinámica). La fase 2 está pendiente de probarse en FL Studio con una mezcla real.
+Estado: **fases 0, 1, 2 y 3 completadas.** Siguiente paso: fase 4 (primera versión pública). Las fases 2 y 3 están pendientes de probarse en FL Studio con una mezcla real (incluido el enrutado del sidechain).
 
 ---
 
@@ -206,7 +206,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **0. Base** ✅ | Estructura del repo, CMake, JUCE, CI, plugin vacío que pasa audio; `docs/arquitectura.md`, primeros ADR, `CONTRIBUTING.md` | Carga en FL Studio y pasa `pluginval` | 1 a 2 semanas |
 | **1. Núcleo de filtros** ✅ | SVF, todos los tipos y pendientes, cálculo de la curva, tests | Respuesta medida = respuesta teórica (±0,1 dB) | 2 a 3 semanas |
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
-| **3. Dinámica** | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
+| **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** | M/S y L/R por banda, presets, deshacer, instalador Windows, CLAP | Release en GitHub con binarios | 3 a 4 semanas |
 | **5. Calidad** | Corrección en agudos, fase lineal, auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
 | **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias, surround | Versión 1.0 | Abierto |

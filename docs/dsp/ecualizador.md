@@ -1,6 +1,6 @@
 # Ecualizador y analizador
 
-Cómo convierte `dsp::Equalizer` los cambios de parámetros en audio sin chasquidos, y cómo funciona el analizador. Los filtros de cada banda están en [filtros.md](filtros.md).
+Cómo convierte `dsp::Equalizer` los cambios de parámetros en audio sin chasquidos, y cómo funciona el analizador. Los filtros de cada banda están en [filtros.md](filtros.md), y la dinámica por banda en [dinamica.md](dinamica.md).
 
 ## Bandas
 

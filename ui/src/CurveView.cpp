@@ -76,6 +76,14 @@ CurveMapping CurveView::mapping() const
     return CurveMapping({bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight()}, rangeDb_);
 }
 
+dsp::BandSettings CurveView::soundingSettings(int band) const
+{
+    auto settings = core::bandSettings(values_, band);
+    if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
+        settings.filter.gainDb += dynamicGains_[static_cast<std::size_t>(band)];
+    return settings;
+}
+
 void CurveView::resized()
 {
     repaint();
@@ -84,6 +92,8 @@ void CurveView::resized()
 void CurveView::refresh()
 {
     values_ = processor_.currentValues();
+    for (int band = 0; band < core::kNumBands; ++band)
+        dynamicGains_[static_cast<std::size_t>(band)] = processor_.dynamicGainDb(band);
 
     // Si la banda seleccionada se ha desactivado (desde el host o el panel), se deselecciona.
     if (selected_ >= 0 && values_[core::bandParameter(selected_, core::BandParam::Enabled)] < 0.5f && dragging_ < 0)
@@ -236,18 +246,25 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
     const auto area = m.area();
     const double sampleRate = processor_.currentSampleRate();
 
+    // Diseño que suena (con la ganancia dinámica) y, en las bandas dinámicas,
+    // el estático como referencia. Ambos salen de dsp::designBand, como el audio.
     std::array<dsp::BandDesign, core::kNumBands> designs{};
+    std::array<dsp::BandDesign, core::kNumBands> staticDesigns{};
     std::array<bool, core::kNumBands> enabled{};
+    std::array<bool, core::kNumBands> dynamic{};
     bool any = false;
     for (int band = 0; band < core::kNumBands; ++band)
     {
+        const auto index = static_cast<std::size_t>(band);
         const auto settings = core::bandSettings(values_, band);
-        enabled[static_cast<std::size_t>(band)] = settings.enabled;
-        if (settings.enabled)
-        {
-            designs[static_cast<std::size_t>(band)] = dsp::designBand(settings.filter, sampleRate);
-            any = true;
-        }
+        enabled[index] = settings.enabled;
+        if (!settings.enabled)
+            continue;
+        any = true;
+        dynamic[index] = settings.dynamics.enabled && core::usesDynamics(settings.filter.type);
+        designs[index] = dsp::designBand(soundingSettings(band).filter, sampleRate);
+        if (dynamic[index])
+            staticDesigns[index] = dsp::designBand(settings.filter, sampleRate);
     }
 
     const int points = std::max(2, static_cast<int>(area.width / 2.0f));
@@ -268,20 +285,28 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
 
     for (int band = 0; band < core::kNumBands; ++band)
     {
-        if (!enabled[static_cast<std::size_t>(band)])
+        const auto index = static_cast<std::size_t>(band);
+        if (!enabled[index])
             continue;
 
         juce::Path line;
         juce::Path fill;
+        juce::Path reference;
         fill.startNewSubPath(xs.front(), zeroY);
         for (int i = 0; i < points; ++i)
         {
             const auto idx = static_cast<std::size_t>(i);
-            const double db = dsp::magnitudeDb(designs[static_cast<std::size_t>(band)], freqs[idx], sampleRate);
+            const double db = dsp::magnitudeDb(designs[index], freqs[idx], sampleRate);
             total[idx] += db;
             const float y = clampY(db);
             i == 0 ? line.startNewSubPath(xs[idx], y) : line.lineTo(xs[idx], y);
             fill.lineTo(xs[idx], y);
+
+            if (dynamic[index])
+            {
+                const float ys = clampY(dsp::magnitudeDb(staticDesigns[index], freqs[idx], sampleRate));
+                i == 0 ? reference.startNewSubPath(xs[idx], ys) : reference.lineTo(xs[idx], ys);
+            }
         }
         fill.lineTo(xs.back(), zeroY);
         fill.closeSubPath();
@@ -292,6 +317,15 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
         g.fillPath(fill);
         g.setColour(colour.withAlpha(isSelected ? 0.9f : 0.45f));
         g.strokePath(line, juce::PathStrokeType(isSelected ? 1.5f : 1.0f));
+
+        if (dynamic[index])
+        {
+            juce::Path dashed;
+            const float dashes[] = {4.0f, 4.0f};
+            juce::PathStrokeType(1.0f).createDashedStroke(dashed, reference, dashes, 2);
+            g.setColour(colour.withAlpha(isSelected ? 0.7f : 0.35f));
+            g.fillPath(dashed);
+        }
     }
 
     juce::Path curve;
@@ -320,6 +354,20 @@ void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const
         const bool isSelected = band == selected_;
         const float r = kNodeRadius + (isSelected || band == hovered_ ? 2.0f : 0.0f);
         const juce::Rectangle<float> circle(p.x - r, p.y - r, 2.0f * r, 2.0f * r);
+
+        // Dinámica: barra hasta el límite del rango y marca de la ganancia actual.
+        if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
+        {
+            const double staticGain = settings.filter.gainDb;
+            const float limitY = m.yForGain(staticGain + settings.dynamics.rangeDb);
+            const float nowY = m.yForGain(staticGain + dynamicGains_[static_cast<std::size_t>(band)]);
+            const float barX = p.x + r + 5.0f;
+            g.setColour(colour.withAlpha(0.35f));
+            g.fillRect(juce::Rectangle<float>(barX - 1.0f, std::min(p.y, limitY), 2.0f, std::abs(limitY - p.y)));
+            g.drawHorizontalLine(juce::roundToInt(limitY), barX - 3.0f, barX + 3.0f);
+            g.setColour(colour);
+            g.fillRect(juce::Rectangle<float>(barX - 2.0f, std::min(p.y, nowY), 4.0f, std::max(1.5f, std::abs(nowY - p.y))));
+        }
 
         g.setColour(colour.withAlpha(isSelected ? 1.0f : 0.85f));
         g.fillEllipse(circle);
@@ -517,7 +565,10 @@ void CurveView::showBandMenu(int band)
                      static_cast<int>(i) == current);
     }
     menu.addSeparator();
+    constexpr int kDynamicId = 99;
     constexpr int kDeleteId = 100;
+    const auto settings = core::bandSettings(values_, band);
+    menu.addItem(kDynamicId, "Dynamic", core::usesDynamics(settings.filter.type), settings.dynamics.enabled);
     menu.addItem(kDeleteId, "Delete band");
 
     juce::Component::SafePointer<CurveView> safe(this);
@@ -528,6 +579,18 @@ void CurveView::showBandMenu(int band)
                            if (result == kDeleteId)
                            {
                                safe->removeBand(band);
+                               return;
+                           }
+                           if (result == kDynamicId)
+                           {
+                               const auto index = core::dynamicParameter(band, core::DynParam::Enabled);
+                               auto& p = safe->processor_.parameter(index);
+                               const float next = safe->values_[index] >= 0.5f ? 0.0f : 1.0f;
+                               p.beginChangeGesture();
+                               p.setValueNotifyingHost(p.convertTo0to1(next));
+                               p.endChangeGesture();
+                               safe->values_[index] = next;
+                               safe->repaint();
                                return;
                            }
                            safe->beginGesture(band, core::BandParam::Type);

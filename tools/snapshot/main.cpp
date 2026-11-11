@@ -18,6 +18,7 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter();
 namespace {
 
 using esceq::core::BandParam;
+using esceq::core::DynParam;
 
 void set(esceq::PluginProcessor& p, int band, BandParam param, float value)
 {
@@ -33,6 +34,12 @@ void addBand(esceq::PluginProcessor& p, int band, float type, float hz, float ga
     set(p, band, BandParam::Q, q);
     set(p, band, BandParam::Slope, slope);
     set(p, band, BandParam::Enabled, 1.0f);
+}
+
+void setDynamic(esceq::PluginProcessor& p, int band, DynParam param, float value)
+{
+    auto& parameter = p.parameter(esceq::core::dynamicParameter(band, param));
+    parameter.setValueNotifyingHost(parameter.convertTo0to1(value));
 }
 
 /// Ruido rosa (filtro "economy" de Paul Kellet) para que el analizador muestre algo realista.
@@ -61,8 +68,8 @@ int main(int argc, char** argv)
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto]\n";
         return 2;
     }
-    const int width = argc >= 4 ? std::atoi(argv[2]) : 980;
-    const int height = argc >= 4 ? std::atoi(argv[3]) : 600;
+    const int width = argc >= 4 ? std::atoi(argv[2]) : 1100;
+    const int height = argc >= 4 ? std::atoi(argv[3]) : 620;
 
     juce::ScopedJuceInitialiser_GUI gui;
 
@@ -72,6 +79,11 @@ int main(int argc, char** argv)
     addBand(*processor, 2, 0.0f, 2800.0f, 3.5f, 0.9f);         // campana
     addBand(*processor, 3, 2.0f, 9000.0f, 2.5f, 0.7071f);      // shelf de agudos
     addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);         // notch
+    addBand(*processor, 5, 0.0f, 7000.0f, 0.0f, 1.5f);         // de-esser: campana dinámica
+    setDynamic(*processor, 5, DynParam::Threshold, -48.0f);
+    setDynamic(*processor, 5, DynParam::Range, -9.0f);
+    setDynamic(*processor, 5, DynParam::Attack, 1.0f);
+    setDynamic(*processor, 5, DynParam::Enabled, 1.0f);
 
     constexpr double sampleRate = 48000.0;
     constexpr int blockSize = 512;
@@ -99,7 +111,7 @@ int main(int argc, char** argv)
     editor->setSize(width, height);
     for (auto* child : editor->getChildren())
         if (auto* curve = dynamic_cast<esceq::ui::CurveView*>(child))
-            curve->setSelectedBand(2);
+            curve->setSelectedBand(5);
 
     // Audio en tiempo "real" mientras corre el temporizador del editor, para
     // que el analizador se asiente como lo haría en un host.

@@ -7,6 +7,7 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -32,7 +33,11 @@ enum class AnalyzerMode
 ///  - Arrastrar un nodo: frecuencia y ganancia. Con Mayús, ajuste fino.
 ///  - Rueda sobre un nodo o con una banda seleccionada: Q.
 ///  - Doble clic en un nodo: elimina (desactiva) la banda.
-///  - Clic derecho en un nodo: menú con el tipo de filtro y eliminar.
+///  - Clic derecho en un nodo: menú con el tipo de filtro, la dinámica y eliminar.
+///
+/// Las bandas dinámicas dibujan la curva que suena en cada momento (con la
+/// ganancia dinámica), la estática como referencia punteada, y junto al nodo
+/// una barra con el rango y una marca con la ganancia dinámica actual.
 ///
 /// Toda la geometría está en esceq/ui/curve_mapping.h; aquí solo se pinta
 /// y se traducen los gestos del ratón a parámetros del host.
@@ -66,6 +71,9 @@ public:
 
 private:
     CurveMapping mapping() const;
+
+    /// Ajustes de la banda tal y como suenan ahora (con la ganancia dinámica).
+    dsp::BandSettings soundingSettings(int band) const;
     std::optional<int> bandAt(juce::Point<float> position) const;
 
     void setParameter(int band, core::BandParam param, float value);
@@ -83,6 +91,7 @@ private:
 
     PluginProcessor& processor_;
     core::ParameterValues values_{};
+    std::array<float, core::kNumBands> dynamicGains_{};
 
     int selected_ = -1;
     int hovered_ = -1;

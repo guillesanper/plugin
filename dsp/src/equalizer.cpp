@@ -19,6 +19,11 @@ int normalizedSlope(int slope) noexcept
     return ((clamped + 3) / 6) * 6;
 }
 
+double finiteOr(double value, double fallback) noexcept
+{
+    return std::isfinite(value) ? value : fallback;
+}
+
 /// Lleva los valores a los mismos rangos que designBand(), para que el
 /// suavizado trabaje siempre con valores positivos y comparables.
 BandSettings sanitized(BandSettings s) noexcept
@@ -33,6 +38,14 @@ BandSettings sanitized(BandSettings s) noexcept
         s.filter.q = kButterworthQ;
     if (std::isnan(s.filter.gainDb))
         s.filter.gainDb = 0.0;
+
+    const DynamicSettings defaults{};
+    DynamicSettings& d = s.dynamics;
+    d.thresholdDb = std::clamp(finiteOr(d.thresholdDb, defaults.thresholdDb), -120.0, 24.0);
+    d.rangeDb = std::clamp(finiteOr(d.rangeDb, defaults.rangeDb), -kMaxGainDb, kMaxGainDb);
+    d.kneeDb = std::clamp(finiteOr(d.kneeDb, defaults.kneeDb), 0.0, 48.0);
+    d.attackMs = std::clamp(finiteOr(d.attackMs, defaults.attackMs), kMinAttackMs, 10000.0);
+    d.releaseMs = std::clamp(finiteOr(d.releaseMs, defaults.releaseMs), kMinReleaseMs, 60000.0);
     return s;
 }
 
@@ -48,6 +61,12 @@ bool isStructuralChange(const BandSettings& from, const BandSettings& to) noexce
     return isCut(to.filter.type) && from.filter.slopeDbPerOct != to.filter.slopeDbPerOct;
 }
 
+/// La dinámica de la banda está pedida y tiene efecto con su tipo.
+bool wantsDynamics(const BandSettings& s) noexcept
+{
+    return s.enabled && s.dynamics.enabled && supportsDynamics(s.filter.type);
+}
+
 double approachLog(double current, double target, double coeff) noexcept
 {
     const double next = target * std::pow(current / target, coeff);
@@ -60,14 +79,24 @@ double approachLinear(double current, double target, double coeff, double snap) 
     return std::abs(next - target) < snap ? target : next;
 }
 
+/// Parámetros que determinan el filtro del detector (la ganancia no influye).
+FilterParams detectorKey(FilterParams params) noexcept
+{
+    params.gainDb = 0.0;
+    return params;
+}
+
 } // namespace
 
 void Equalizer::prepare(double sampleRate) noexcept
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
     smoothingCoeff_ = std::exp(-static_cast<double>(kChunkSize) / (kSmoothingSeconds * sampleRate_));
+    sampleSmoothingCoeff_ = std::exp(-1.0 / (kSmoothingSeconds * sampleRate_));
     fadeLength_ = std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * sampleRate_)));
     chunkPhase_ = 0;
+    for (auto& band : bands_)
+        band.envelope.prepare(sampleRate_);
     reset();
 }
 
@@ -83,7 +112,7 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept
 
     band.target = next;
     if (!isStructuralChange(band.current, next))
-        return; // frecuencia, ganancia y Q: los suaviza smoothBand()
+        return; // frecuencia, ganancia, Q y dinámica: los suaviza smoothBand()
 
     const bool wasEnabled = band.current.enabled;
     band.previous = band.active; // conserva su memoria para el fundido
@@ -93,11 +122,23 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept
     if (!next.enabled)
     {
         band.active.setDesign(BandDesign{}); // identidad
+        band.designed = {};
+        band.dynamicRunning = false;
+        band.dynamicMix = 0.0;
+        band.dynamicGain = 0.0;
         return;
     }
     if (!wasEnabled)
         band.active.reset();
-    band.active.setDesign(designBand(next.filter, sampleRate_));
+    updateKneeStart(band);
+    if (!supportsDynamics(next.filter.type))
+    {
+        // El tipo nuevo no admite dinámica: el fundido oculta su desaparición.
+        band.dynamicRunning = false;
+        band.dynamicMix = 0.0;
+        band.dynamicGain = 0.0;
+    }
+    applyDesign(band, true);
 }
 
 void Equalizer::setBypassed(bool bypassed) noexcept
@@ -127,7 +168,23 @@ void Equalizer::snapBand(Band& band) noexcept
     band.fadeRemaining = 0;
     band.active.reset();
     band.previous.reset();
-    band.active.setDesign(band.current.enabled ? designBand(band.current.filter, sampleRate_) : BandDesign{});
+    band.detector.reset();
+    band.envelope.reset();
+    band.envelope.setTimes(band.current.dynamics.attackMs, band.current.dynamics.releaseMs);
+    band.dynamicRunning = wantsDynamics(band.current);
+    band.dynamicMix = band.dynamicRunning ? 1.0 : 0.0;
+    band.dynamicGain = 0.0;
+    band.detectorFor = detectorKey(band.current.filter);
+    band.detector.setDesign(designDetector(band.current.filter, sampleRate_));
+    updateKneeStart(band);
+
+    if (band.current.enabled)
+        applyDesign(band, true);
+    else
+    {
+        band.active.setDesign(BandDesign{});
+        band.designed = {};
+    }
 }
 
 const BandSettings& Equalizer::target(int index) const noexcept
@@ -135,18 +192,50 @@ const BandSettings& Equalizer::target(int index) const noexcept
     return bands_[static_cast<std::size_t>(std::clamp(index, 0, kMaxBands - 1))].target;
 }
 
+double Equalizer::dynamicGainDb(int index) const noexcept
+{
+    if (index < 0 || index >= kMaxBands)
+        return 0.0;
+    return bands_[static_cast<std::size_t>(index)].dynamicGain;
+}
+
 bool Equalizer::isSettled() const noexcept
 {
     if (wet_ != (bypassed_ ? 0.0f : 1.0f))
         return false;
     return std::all_of(bands_.begin(), bands_.end(), [](const Band& band) {
-        return band.fadeRemaining == 0 && band.current == band.target;
+        const double mixTarget = wantsDynamics(band.current) ? 1.0 : 0.0;
+        return band.fadeRemaining == 0 && band.current == band.target && band.dynamicMix == mixTarget;
     });
 }
 
-void Equalizer::process(float* const* channels, int numChannels, int numSamples) noexcept
+void Equalizer::updateKneeStart(Band& band) noexcept
+{
+    const DynamicSettings& d = band.current.dynamics;
+    band.kneeStartLinear = std::pow(10.0, (d.thresholdDb - 0.5 * d.kneeDb) / 20.0);
+}
+
+bool Equalizer::isDynamic(const Band& band) noexcept
+{
+    return band.current.enabled && supportsDynamics(band.current.filter.type) &&
+           (band.current.dynamics.enabled || band.dynamicMix > 0.0);
+}
+
+void Equalizer::applyDesign(Band& band, bool force) noexcept
+{
+    FilterParams effective = band.current.filter;
+    effective.gainDb += band.dynamicGain;
+    if (!force && effective == band.designed)
+        return;
+    band.designed = effective;
+    band.active.setDesign(designBand(effective, sampleRate_));
+}
+
+void Equalizer::process(float* const* channels, int numChannels, int numSamples, const float* const* sidechain,
+                        int numSidechainChannels) noexcept
 {
     const int usedChannels = std::min(numChannels, kMaxChannels);
+    Sidechain sc{sidechain, sidechain != nullptr ? std::clamp(numSidechainChannels, 0, kMaxChannels) : 0, 0};
     int position = 0;
 
     // Trozos alineados con un contador global: así el suavizado ocurre en
@@ -154,13 +243,15 @@ void Equalizer::process(float* const* channels, int numChannels, int numSamples)
     while (position < numSamples)
     {
         const int length = std::min(numSamples - position, kChunkSize - chunkPhase_);
-        processChunk(channels, usedChannels, position, length);
+        sc.offset = position;
+        processChunk(channels, usedChannels, position, length, sc);
         chunkPhase_ = (chunkPhase_ + length) % kChunkSize;
         position += length;
     }
 }
 
-void Equalizer::processChunk(float* const* channels, int numChannels, int offset, int length) noexcept
+void Equalizer::processChunk(float* const* channels, int numChannels, int offset, int length,
+                             const Sidechain& sidechain) noexcept
 {
     if (chunkPhase_ == 0)
         for (auto& band : bands_)
@@ -174,6 +265,13 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
     for (int ch = 0; ch < numChannels; ++ch)
         io[static_cast<std::size_t>(ch)] = channels[ch] + offset;
 
+    // Los detectores internos escuchan la entrada del ecualizador, no la
+    // salida de la banda anterior: así las bandas no se influyen entre sí.
+    const bool anyDynamic = std::any_of(bands_.begin(), bands_.end(), isDynamic);
+    if (anyDynamic)
+        for (int ch = 0; ch < numChannels; ++ch)
+            std::copy_n(io[static_cast<std::size_t>(ch)], length, detectorInput_[static_cast<std::size_t>(ch)].begin());
+
     const bool mixing = wet_ != wetTarget || wet_ < 1.0f;
     if (mixing)
         for (int ch = 0; ch < numChannels; ++ch)
@@ -181,7 +279,7 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
 
     for (auto& band : bands_)
         if (band.current.enabled || band.fadeRemaining > 0)
-            processBand(band, io.data(), numChannels, length);
+            processBand(band, io.data(), numChannels, length, sidechain);
 
     if (!mixing)
         return;
@@ -199,7 +297,136 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
     }
 }
 
-void Equalizer::processBand(Band& band, float* const* io, int numChannels, int length) noexcept
+void Equalizer::processBand(Band& band, float* const* io, int numChannels, int length,
+                            const Sidechain& sidechain) noexcept
+{
+    if (!isDynamic(band))
+    {
+        if (band.dynamicRunning)
+        {
+            // La dinámica ha terminado de desvanecerse: vuelve el diseño estático exacto.
+            band.dynamicRunning = false;
+            band.dynamicGain = 0.0;
+            if (band.current.enabled)
+                applyDesign(band);
+        }
+        processSegment(band, io, numChannels, length);
+        return;
+    }
+
+    if (!band.dynamicRunning)
+    {
+        // Arranque de la dinámica: detector y envolvente desde cero.
+        band.dynamicRunning = true;
+        band.detector.reset();
+        band.envelope.reset();
+    }
+
+    runDetector(band, numChannels, length, sidechain);
+
+    // La ganancia dinámica se evalúa en cada muestra. Los coeficientes solo
+    // se recalculan cuando cambia de verdad: el audio se procesa por tramos
+    // con el mismo diseño, y cada cambio parte el tramo.
+    std::array<float*, kMaxChannels> segment{};
+    auto flush = [&](int from, int to) {
+        if (to <= from)
+            return;
+        for (int ch = 0; ch < numChannels; ++ch)
+            segment[static_cast<std::size_t>(ch)] = io[ch] + from;
+        processSegment(band, segment.data(), numChannels, to - from);
+    };
+
+    int start = 0;
+    for (int i = 0; i < length; ++i)
+    {
+        if (!updateDynamicGain(band, envelopeBuffer_[static_cast<std::size_t>(i)]))
+            continue;
+        flush(start, i);
+        applyDesign(band);
+        start = i;
+    }
+    flush(start, length);
+}
+
+void Equalizer::runDetector(Band& band, int numChannels, int length, const Sidechain& sidechain) noexcept
+{
+    const FilterParams key = detectorKey(band.current.filter);
+    if (!(key == band.detectorFor))
+    {
+        band.detectorFor = key;
+        band.detector.setDesign(designDetector(band.current.filter, sampleRate_));
+    }
+
+    int sourceChannels = numChannels;
+    std::array<float*, kMaxChannels> work{};
+    if (band.current.dynamics.external)
+    {
+        sourceChannels = sidechain.numChannels;
+        for (int ch = 0; ch < sourceChannels; ++ch)
+            std::copy_n(sidechain.channels[ch] + sidechain.offset, length,
+                        detectorScratch_[static_cast<std::size_t>(ch)].begin());
+    }
+    else
+    {
+        for (int ch = 0; ch < sourceChannels; ++ch)
+            std::copy_n(detectorInput_[static_cast<std::size_t>(ch)].begin(), length,
+                        detectorScratch_[static_cast<std::size_t>(ch)].begin());
+    }
+    for (int ch = 0; ch < sourceChannels; ++ch)
+        work[static_cast<std::size_t>(ch)] = detectorScratch_[static_cast<std::size_t>(ch)].data();
+
+    if (sourceChannels > 0)
+        band.detector.process(work.data(), sourceChannels, length);
+
+    // Detección enlazada: el canal más fuerte manda, y todos los canales
+    // reciben la misma ganancia (la imagen estéreo no se mueve).
+    for (int i = 0; i < length; ++i)
+    {
+        float level = 0.0f;
+        for (int ch = 0; ch < sourceChannels; ++ch)
+            level = std::max(level, std::abs(work[static_cast<std::size_t>(ch)][i]));
+        envelopeBuffer_[static_cast<std::size_t>(i)] = band.envelope.process(static_cast<double>(level));
+    }
+}
+
+bool Equalizer::updateDynamicGain(Band& band, double envelope) noexcept
+{
+    const double mixTarget = wantsDynamics(band.current) ? 1.0 : 0.0;
+    if (band.dynamicMix != mixTarget)
+    {
+        const double mixStep = 1.0 / static_cast<double>(fadeLength_);
+        band.dynamicMix = mixTarget > band.dynamicMix ? std::min(mixTarget, band.dynamicMix + mixStep)
+                                                      : std::max(mixTarget, band.dynamicMix - mixStep);
+    }
+
+    DynamicSettings& d = band.current.dynamics;
+    const DynamicSettings& goal = band.target.dynamics;
+    if (d.thresholdDb != goal.thresholdDb || d.rangeDb != goal.rangeDb || d.kneeDb != goal.kneeDb)
+    {
+        d.thresholdDb = approachLinear(d.thresholdDb, goal.thresholdDb, sampleSmoothingCoeff_, 1.0e-3);
+        d.rangeDb = approachLinear(d.rangeDb, goal.rangeDb, sampleSmoothingCoeff_, 1.0e-3);
+        d.kneeDb = approachLinear(d.kneeDb, goal.kneeDb, sampleSmoothingCoeff_, 1.0e-3);
+        updateKneeStart(band);
+    }
+
+    // Por debajo del principio de la rodilla la ganancia es 0: sin logaritmo.
+    double gain = 0.0;
+    if (envelope > band.kneeStartLinear)
+    {
+        const double levelDb = 20.0 * std::log10(envelope);
+        gain = band.dynamicMix * dsp::dynamicGainDb(levelDb, d.thresholdDb, d.rangeDb, d.kneeDb);
+    }
+
+    // Cambios menores de 0,001 dB (una parte en 10^4,6) se acumulan hasta
+    // superar ese umbral; volver a 0 dB exactos siempre se aplica.
+    const double delta = gain - band.dynamicGain;
+    if (delta == 0.0 || (std::abs(delta) < kDynamicGainResolutionDb && gain != 0.0))
+        return false;
+    band.dynamicGain = gain;
+    return true;
+}
+
+void Equalizer::processSegment(Band& band, float* const* io, int numChannels, int length) noexcept
 {
     if (band.fadeRemaining == 0)
     {
@@ -248,13 +475,32 @@ void Equalizer::smoothBand(Band& band) noexcept
     now.type = goal.type;
     now.slopeDbPerOct = goal.slopeDbPerOct;
 
+    // Dinámica: los interruptores y los tiempos se aplican al momento (el
+    // fundido de la mezcla y la envolvente evitan los saltos). Umbral, rango y
+    // rodilla se suavizan muestra a muestra en updateDynamicGain(), porque la
+    // ganancia dinámica los sigue 1:1 y unos escalones cada kChunkSize
+    // muestras se oirían. Si la dinámica no está sonando, saltan al objetivo.
+    DynamicSettings& dynNow = band.current.dynamics;
+    const DynamicSettings& dynGoal = band.target.dynamics;
+    dynNow.enabled = dynGoal.enabled;
+    dynNow.external = dynGoal.external;
+    dynNow.attackMs = dynGoal.attackMs;
+    dynNow.releaseMs = dynGoal.releaseMs;
+    band.envelope.setTimes(dynNow.attackMs, dynNow.releaseMs);
+    if (!isDynamic(band) && !(dynNow == dynGoal))
+    {
+        dynNow = dynGoal;
+        updateKneeStart(band);
+    }
+
     if (now.frequencyHz == goal.frequencyHz && now.gainDb == goal.gainDb && now.q == goal.q)
         return;
 
     now.frequencyHz = approachLog(now.frequencyHz, goal.frequencyHz, smoothingCoeff_);
     now.q = approachLog(now.q, goal.q, smoothingCoeff_);
     now.gainDb = approachLinear(now.gainDb, goal.gainDb, smoothingCoeff_, 1.0e-3);
-    band.active.setDesign(designBand(now, sampleRate_));
+
+    applyDesign(band);
 }
 
 } // namespace esceq::dsp

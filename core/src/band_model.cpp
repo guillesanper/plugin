@@ -46,6 +46,11 @@ bool usesGain(dsp::FilterType type) noexcept
     }
 }
 
+bool usesDynamics(dsp::FilterType type) noexcept
+{
+    return dsp::supportsDynamics(type);
+}
+
 bool usesQ(dsp::FilterType type, int slopeDbPerOct) noexcept
 {
     if (type == dsp::FilterType::Tilt)
@@ -75,6 +80,18 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept
     settings.filter.gainDb = value(BandParam::Gain);
     settings.filter.q = value(BandParam::Q);
     settings.filter.slopeDbPerOct = slopeFromChoice(value(BandParam::Slope));
+
+    auto dyn = [&](DynParam p) {
+        const std::size_t i = dynamicParameter(band, p);
+        return sanitize(specs[i], values[i]);
+    };
+    settings.dynamics.enabled = dyn(DynParam::Enabled) >= 0.5f;
+    settings.dynamics.thresholdDb = dyn(DynParam::Threshold);
+    settings.dynamics.rangeDb = dyn(DynParam::Range);
+    settings.dynamics.attackMs = dyn(DynParam::Attack);
+    settings.dynamics.releaseMs = dyn(DynParam::Release);
+    settings.dynamics.kneeDb = dyn(DynParam::Knee);
+    settings.dynamics.external = dyn(DynParam::Source) >= 0.5f;
     return settings;
 }
 

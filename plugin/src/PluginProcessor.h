@@ -63,6 +63,14 @@ public:
     /// Frecuencia de muestreo actual, o 48 kHz si aún no se conoce.
     double currentSampleRate() const noexcept;
 
+    /// Ganancia dinámica que se está aplicando a una banda, en dB (0 si no es
+    /// dinámica). La escribe el hilo de audio tras cada bloque; se puede leer
+    /// desde cualquier hilo.
+    float dynamicGainDb(int band) const noexcept;
+
+    /// true si el host tiene conectado el bus de sidechain.
+    bool sidechainConnected() const noexcept { return sidechainConnected_.load(std::memory_order_relaxed); }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     void pushParametersToEngine() noexcept;
@@ -76,6 +84,8 @@ private:
     dsp::SpscFifo preFifo_{1 << 15};
     dsp::SpscFifo postFifo_{1 << 15};
     std::atomic<double> sampleRate_{0.0};
+    std::array<std::atomic<float>, core::kNumBands> dynamicGains_{};
+    std::atomic<bool> sidechainConnected_{false};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

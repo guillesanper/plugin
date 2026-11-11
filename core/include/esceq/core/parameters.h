@@ -54,19 +54,44 @@ enum class BandParam : std::size_t
 
 inline constexpr std::size_t kParamsPerBand = static_cast<std::size_t>(BandParam::Count);
 
+/// Parámetros de la dinámica de cada banda, en este orden. Se añadieron en
+/// la fase 3 y por eso van después de los de todas las bandas
+/// (ver docs/decisiones/0005-bandas-y-normalizacion.md).
+enum class DynParam : std::size_t
+{
+    Enabled,
+    Threshold,
+    Range,
+    Attack,
+    Release,
+    Knee,
+    Source,
+    Count
+};
+
+inline constexpr std::size_t kDynParamsPerBand = static_cast<std::size_t>(DynParam::Count);
+
 /// Posición de cada parámetro en parameters().
 enum ParameterIndex : std::size_t
 {
     kOutputGain,
     kBypass,
     kFirstBandParameter,
-    kNumParameters = kFirstBandParameter + static_cast<std::size_t>(kNumBands) * kParamsPerBand,
+    kFirstDynamicParameter = kFirstBandParameter + static_cast<std::size_t>(kNumBands) * kParamsPerBand,
+    kNumParameters = kFirstDynamicParameter + static_cast<std::size_t>(kNumBands) * kDynParamsPerBand,
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
 constexpr std::size_t bandParameter(int band, BandParam param) noexcept
 {
     return kFirstBandParameter + static_cast<std::size_t>(band) * kParamsPerBand + static_cast<std::size_t>(param);
+}
+
+/// Índice en parameters() del parámetro de dinámica `param` de la banda `band`.
+constexpr std::size_t dynamicParameter(int band, DynParam param) noexcept
+{
+    return kFirstDynamicParameter + static_cast<std::size_t>(band) * kDynParamsPerBand +
+           static_cast<std::size_t>(param);
 }
 
 /// Tipos de filtro. El índice coincide con dsp::FilterType (lo comprueba band_model.cpp).
@@ -79,6 +104,9 @@ inline constexpr std::array<std::string_view, 16> kSlopeChoices{
     "6 dB/oct",  "12 dB/oct", "18 dB/oct", "24 dB/oct", "30 dB/oct", "36 dB/oct", "42 dB/oct", "48 dB/oct",
     "54 dB/oct", "60 dB/oct", "66 dB/oct", "72 dB/oct", "78 dB/oct", "84 dB/oct", "90 dB/oct", "96 dB/oct",
 };
+
+/// Señal que escucha el detector de una banda dinámica.
+inline constexpr std::array<std::string_view, 2> kSidechainChoices{"Internal", "External"};
 
 /// Única fuente de verdad de los parámetros del plugin. El procesador, la
 /// interfaz y el estado guardado se construyen a partir de esta tabla.
@@ -111,10 +139,10 @@ float sanitize(const ParameterSpec& spec, float value) noexcept;
 float toNormalized(const ParameterSpec& spec, float value) noexcept;
 float fromNormalized(const ParameterSpec& spec, float normalized) noexcept;
 
-/// Texto para mostrar, con unidad ("1.20 kHz", "+3.0 dB", "Low Cut").
+/// Texto para mostrar, con unidad ("1.20 kHz", "+3.0 dB", "12.0 ms", "Low Cut").
 std::string formatValue(const ParameterSpec& spec, float value);
 
-/// Interpreta un texto escrito por el usuario ("1.2k", "350 Hz", "-3", "bell").
+/// Interpreta un texto escrito por el usuario ("1.2k", "350 Hz", "-3", "1.5 s", "bell").
 /// Devuelve el valor saneado, o nullopt si no se entiende.
 std::optional<float> parseValue(const ParameterSpec& spec, std::string_view text);
 

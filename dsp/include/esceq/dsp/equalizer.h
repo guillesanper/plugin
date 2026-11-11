@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/dsp/band_filter.h"
+#include "esceq/dsp/dynamics.h"
 #include "esceq/dsp/filter_design.h"
 
 #include <array>
@@ -15,6 +16,7 @@ struct BandSettings
 {
     bool enabled = false;
     FilterParams filter{};
+    DynamicSettings dynamics{};
 
     friend bool operator==(const BandSettings&, const BandSettings&) = default;
 };
@@ -28,6 +30,16 @@ struct BandSettings
 ///  - Activar o desactivar una banda, o cambiar su tipo o su pendiente, hace
 ///    un fundido de kCrossfadeSeconds entre el filtro anterior y el nuevo.
 ///  - El bypass hace un fundido entre la señal seca y la procesada.
+///  - Umbral, rango y rodilla de la dinámica se suavizan con la misma
+///    constante de tiempo, pero muestra a muestra; activar o desactivar la
+///    dinámica hace un fundido de su efecto.
+///
+/// Dinámica (ver docs/dsp/dinamica.md): en las bandas con la dinámica
+/// activada, un detector escucha la entrada del ecualizador (o el sidechain
+/// externo) a través de un filtro centrado en la banda, y la ganancia
+/// dinámica resultante se suma a la ganancia estática. Se evalúa en cada
+/// muestra; los coeficientes se recalculan cuando cambia al menos
+/// kDynamicGainResolutionDb.
 ///
 /// Garantías:
 ///  - process() y setBand() son seguras en tiempo real.
@@ -41,6 +53,9 @@ public:
     static constexpr int kChunkSize = 32;
     static constexpr double kSmoothingSeconds = 0.015;
     static constexpr double kCrossfadeSeconds = 0.01;
+    /// La ganancia dinámica se evalúa en cada muestra, pero los coeficientes
+    /// solo se recalculan cuando cambia al menos esto (o vuelve a 0 dB).
+    static constexpr double kDynamicGainResolutionDb = 1.0e-3;
 
     /// Fija la frecuencia de muestreo y salta sin transición a los ajustes actuales.
     void prepare(double sampleRate) noexcept;
@@ -54,13 +69,25 @@ public:
     void reset() noexcept;
 
     /// Procesa en el sitio. Como mucho kMaxChannels canales; el resto no se toca.
-    void process(float* const* channels, int numChannels, int numSamples) noexcept;
+    ///
+    /// `sidechain` (opcional, solo lectura) es la señal que escuchan las bandas
+    /// con detección externa, con `numSidechainChannels` canales y las mismas
+    /// `numSamples` muestras. Sin sidechain, esas bandas no reciben señal y su
+    /// ganancia dinámica vuelve a 0 dB.
+    void process(float* const* channels, int numChannels, int numSamples,
+                 const float* const* sidechain = nullptr, int numSidechainChannels = 0) noexcept;
 
     /// Ajustes objetivo (los últimos recibidos, ya saneados).
     const BandSettings& target(int index) const noexcept;
 
-    /// true si no hay ningún suavizado ni fundido en curso.
+    /// true si no hay ningún suavizado ni fundido en curso. La ganancia
+    /// dinámica puede seguir moviéndose: depende de la señal, no de los ajustes.
     bool isSettled() const noexcept;
+
+    /// Ganancia dinámica que se aplica ahora mismo a la banda, en dB (0 si
+    /// la banda no es dinámica). Para mostrarla en la interfaz: leerla desde
+    /// el hilo de audio, tras process(), y publicarla por un canal seguro.
+    double dynamicGainDb(int index) const noexcept;
 
 private:
     struct Band
@@ -70,16 +97,43 @@ private:
         BandFilter active;
         BandFilter previous;    ///< Configuración anterior durante un fundido.
         int fadeRemaining = 0;
+
+        // Dinámica
+        FilterParams designed{};  ///< Parámetros efectivos (con la ganancia dinámica) del diseño activo.
+        BandFilter detector;      ///< Filtro del detector.
+        FilterParams detectorFor{};
+        EnvelopeFollower envelope;
+        bool dynamicRunning = false;
+        double dynamicMix = 0.0;  ///< 0..1: fundido al activar o desactivar la dinámica.
+        double dynamicGain = 0.0; ///< dB que se suman ahora mismo a la ganancia estática.
+        double kneeStartLinear = 0.0; ///< Nivel lineal donde empieza la rodilla: por debajo, ganancia 0.
     };
 
-    void processChunk(float* const* channels, int numChannels, int offset, int length) noexcept;
-    void processBand(Band& band, float* const* channels, int numChannels, int length) noexcept;
+    struct Sidechain
+    {
+        const float* const* channels = nullptr;
+        int numChannels = 0;
+        int offset = 0;
+    };
+
+    void processChunk(float* const* channels, int numChannels, int offset, int length,
+                      const Sidechain& sidechain) noexcept;
+    void processBand(Band& band, float* const* channels, int numChannels, int length,
+                     const Sidechain& sidechain) noexcept;
+    void processSegment(Band& band, float* const* channels, int numChannels, int length) noexcept;
+    void runDetector(Band& band, int numChannels, int length, const Sidechain& sidechain) noexcept;
+    /// Avanza la ganancia dinámica una muestra. true si hay que recalcular el diseño.
+    bool updateDynamicGain(Band& band, double envelope) noexcept;
+    static void updateKneeStart(Band& band) noexcept;
+    void applyDesign(Band& band, bool force = false) noexcept;
     void smoothBand(Band& band) noexcept;
     void snapBand(Band& band) noexcept;
+    static bool isDynamic(const Band& band) noexcept;
 
     std::array<Band, kMaxBands> bands_{};
     double sampleRate_ = 48000.0;
-    double smoothingCoeff_ = 0.0;
+    double smoothingCoeff_ = 0.0;       ///< Por tramo de kChunkSize muestras.
+    double sampleSmoothingCoeff_ = 0.0; ///< Por muestra (umbral, rango y rodilla).
     int fadeLength_ = 480;
     int chunkPhase_ = 0;
 
@@ -88,6 +142,9 @@ private:
 
     std::array<std::array<float, kChunkSize>, kMaxChannels> scratch_{};
     std::array<std::array<float, kChunkSize>, kMaxChannels> dry_{};
+    std::array<std::array<float, kChunkSize>, kMaxChannels> detectorInput_{}; ///< Entrada del ecualizador.
+    std::array<std::array<float, kChunkSize>, kMaxChannels> detectorScratch_{};
+    std::array<double, kChunkSize> envelopeBuffer_{};
 };
 
 } // namespace esceq::dsp

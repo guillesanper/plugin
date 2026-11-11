@@ -20,13 +20,16 @@ int slopeFromChoice(float choice) noexcept;
 /// true si la ganancia de la banda influye en el sonido para ese tipo.
 bool usesGain(dsp::FilterType type) noexcept;
 
+/// true si la dinámica influye en el sonido para ese tipo (los que usan ganancia).
+bool usesDynamics(dsp::FilterType type) noexcept;
+
 /// true si el Q influye en el sonido para ese tipo y pendiente.
 bool usesQ(dsp::FilterType type, int slopeDbPerOct) noexcept;
 
 /// true si la pendiente influye en el sonido para ese tipo.
 bool usesSlope(dsp::FilterType type) noexcept;
 
-/// Ajustes de la banda `band` (0..kNumBands-1).
+/// Ajustes de la banda `band` (0..kNumBands-1), dinámica incluida.
 dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept;
 
 /// Primera banda desactivada, o nullopt si están todas en uso.

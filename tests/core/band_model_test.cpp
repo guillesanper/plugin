@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/band_model.h"
 
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 using namespace esceq;
@@ -37,6 +38,43 @@ TEST_CASE("Modelo: traduce los parametros de una banda")
     CHECK(settings.filter.gainDb == 2.0);
     CHECK(settings.filter.q == 1.5);
     CHECK(settings.filter.slopeDbPerOct == 48);
+}
+
+TEST_CASE("Modelo: traduce la dinamica de una banda")
+{
+    auto values = defaultValues();
+    CHECK_FALSE(bandSettings(values, 5).dynamics.enabled);
+
+    values[dynamicParameter(5, DynParam::Enabled)] = 1.0f;
+    values[dynamicParameter(5, DynParam::Threshold)] = -35.0f;
+    values[dynamicParameter(5, DynParam::Range)] = 4.5f;
+    values[dynamicParameter(5, DynParam::Attack)] = 0.3f;
+    values[dynamicParameter(5, DynParam::Release)] = 900.0f;
+    values[dynamicParameter(5, DynParam::Knee)] = 12.0f;
+    values[dynamicParameter(5, DynParam::Source)] = 1.0f;
+
+    const auto d = bandSettings(values, 5).dynamics;
+    CHECK(d.enabled);
+    CHECK(d.thresholdDb == -35.0);
+    CHECK(d.rangeDb == 4.5);
+    CHECK(d.attackMs == Catch::Approx(0.3));
+    CHECK(d.releaseMs == 900.0);
+    CHECK(d.kneeDb == 12.0);
+    CHECK(d.external);
+
+    // Las demás bandas no se ven afectadas.
+    CHECK_FALSE(bandSettings(values, 4).dynamics.enabled);
+    CHECK_FALSE(bandSettings(values, 6).dynamics.enabled);
+
+    // Valores fuera de rango se sanean.
+    values[dynamicParameter(5, DynParam::Range)] = -500.0f;
+    values[dynamicParameter(5, DynParam::Attack)] = 0.0f;
+    CHECK(bandSettings(values, 5).dynamics.rangeDb == -30.0);
+    CHECK(bandSettings(values, 5).dynamics.attackMs == Catch::Approx(0.1));
+
+    CHECK(usesDynamics(dsp::FilterType::Bell));
+    CHECK(usesDynamics(dsp::FilterType::HighShelf));
+    CHECK_FALSE(usesDynamics(dsp::FilterType::LowCut));
 }
 
 TEST_CASE("Modelo: valores fuera de rango se sanean")

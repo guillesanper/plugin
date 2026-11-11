@@ -11,6 +11,7 @@ add_executable(esceq_tests
     dsp/analysis_test.cpp
     dsp/band_filter_test.cpp
     dsp/decibels_test.cpp
+    dsp/dynamics_test.cpp
     dsp/equalizer_test.cpp
     dsp/filter_design_test.cpp
     dsp/filter_golden_test.cpp

@@ -14,6 +14,7 @@ inline const juce::Colour textDim{0xff6b7280};
 inline const juce::Colour curve{0xfff2f4f8};
 inline const juce::Colour analyzerPost{0xff4a7fb5};
 inline const juce::Colour analyzerPre{0xff7a8392};
+inline const juce::Colour warning{0xffe0a050};
 
 /// Color de una banda: tonos repartidos por la proporción áurea para que
 /// bandas consecutivas se distingan bien.

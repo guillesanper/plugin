@@ -136,3 +136,32 @@ TEST_CASE("Estado: ida y vuelta con todas las bandas y valores aleatorios")
     REQUIRE(restored.has_value());
     CHECK(*restored == values);
 }
+
+TEST_CASE("Estado: fixture v1 con dinamica")
+{
+    const auto values = deserializeState(readFixture("v1_dynamics.txt"));
+    REQUIRE(values.has_value());
+    CHECK((*values)[bandParameter(1, BandParam::Frequency)] == 6500.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Enabled)] == 1.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Threshold)] == -30.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Range)] == -9.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Attack)] == 0.5f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Release)] == 60.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Knee)] == 3.0f);
+    CHECK((*values)[dynamicParameter(1, DynParam::Source)] == 1.0f);
+    CHECK((*values)[dynamicParameter(0, DynParam::Enabled)] == 0.0f);
+}
+
+TEST_CASE("Estado: un estado anterior a la dinamica la deja desactivada")
+{
+    // v1_bands.txt se escribió antes de que existieran los parámetros de dinámica.
+    const auto values = deserializeState(readFixture("v1_bands.txt"));
+    REQUIRE(values.has_value());
+    for (int band = 0; band < kNumBands; ++band)
+    {
+        INFO("banda " << band + 1);
+        CHECK((*values)[dynamicParameter(band, DynParam::Enabled)] == 0.0f);
+        CHECK((*values)[dynamicParameter(band, DynParam::Threshold)] ==
+              parameters()[dynamicParameter(band, DynParam::Threshold)].defaultValue);
+    }
+}

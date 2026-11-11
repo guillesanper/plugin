@@ -118,11 +118,21 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
     CHECK(parameters()[bandParameter(23, BandParam::Q)].id == "b24_q");
+}
+
+TEST_CASE("Parametros: indices de dinamica, despues de todas las bandas")
+{
+    CHECK(dynamicParameter(0, DynParam::Enabled) == bandParameter(23, BandParam::Slope) + 1);
+    CHECK(parameters()[dynamicParameter(0, DynParam::Enabled)].id == "b01_dyn");
+    CHECK(parameters()[dynamicParameter(0, DynParam::Source)].id == "b01_sc");
+    CHECK(parameters()[dynamicParameter(11, DynParam::Threshold)].id == "b12_thr");
+    CHECK(parameters()[dynamicParameter(23, DynParam::Knee)].id == "b24_knee");
+    CHECK(dynamicParameter(23, DynParam::Source) == kNumParameters - 1);
 }
 
 TEST_CASE("Parametros: findParameter")
@@ -200,6 +210,13 @@ TEST_CASE("Parametros: formatValue")
     CHECK(formatValue(parameters()[bandParameter(0, BandParam::Slope)], 3.0f) == "24 dB/oct");
     CHECK(formatValue(parameters()[kBypass], 1.0f) == "On");
     CHECK(formatValue(parameters()[bandParameter(0, BandParam::Q)], 0.7071f) == "0.71");
+
+    const auto& attack = parameters()[dynamicParameter(0, DynParam::Attack)];
+    CHECK(formatValue(attack, 0.5f) == "0.50 ms");
+    CHECK(formatValue(attack, 12.0f) == "12.0 ms");
+    CHECK(formatValue(attack, 150.0f) == "150 ms");
+    CHECK(formatValue(parameters()[dynamicParameter(0, DynParam::Release)], 1500.0f) == "1.50 s");
+    CHECK(formatValue(parameters()[dynamicParameter(0, DynParam::Source)], 1.0f) == "External");
 }
 
 TEST_CASE("Parametros: parseValue")
@@ -219,6 +236,12 @@ TEST_CASE("Parametros: parseValue")
 
     CHECK(parseValue(parameters()[kBypass], "on") == 1.0f);
     CHECK(parseValue(parameters()[bandParameter(0, BandParam::Gain)], "-3.5 dB") == -3.5f);
+
+    const auto& release = parameters()[dynamicParameter(0, DynParam::Release)];
+    CHECK(parseValue(release, "250 ms") == 250.0f);
+    CHECK(parseValue(release, "1.5 s") == 1500.0f);
+    CHECK(parseValue(release, "2s") == 2000.0f);
+    CHECK(parseValue(parameters()[dynamicParameter(0, DynParam::Source)], "external") == 1.0f);
 
     // El texto que se muestra siempre se puede volver a leer.
     for (const auto& spec : parameters())

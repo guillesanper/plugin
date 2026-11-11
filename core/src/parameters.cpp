@@ -62,6 +62,35 @@ struct Table
             set(at(BandParam::Slope), id + "slope", name + "Slope",
                 {.kind = Choice, .min = 0.0f, .max = lastSlope, .defaultValue = 1.0f, .choices = kSlopeChoices});
         }
+
+        // Dinámica (fase 3): después de las 24 bandas, porque los parámetros
+        // solo se añaden al final.
+        for (int band = 0; band < kNumBands; ++band)
+        {
+            char prefix[8];
+            std::snprintf(prefix, sizeof prefix, "b%02d_", band + 1);
+            const std::string id = prefix;
+            const std::string name = "Band " + std::to_string(band + 1) + " ";
+
+            auto at = [band](DynParam p) { return dynamicParameter(band, p); };
+
+            set(at(DynParam::Enabled), id + "dyn", name + "Dynamic",
+                {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
+            set(at(DynParam::Threshold), id + "thr", name + "Threshold",
+                {.unit = "dB", .kind = Continuous, .min = -60.0f, .max = 0.0f, .defaultValue = -24.0f});
+            set(at(DynParam::Range), id + "range", name + "Range",
+                {.unit = "dB", .kind = Continuous, .min = -30.0f, .max = 30.0f, .defaultValue = -6.0f});
+            set(at(DynParam::Attack), id + "att", name + "Attack",
+                {.unit = "ms", .kind = Continuous, .min = 0.1f, .max = 200.0f, .defaultValue = 5.0f,
+                 .scale = Logarithmic});
+            set(at(DynParam::Release), id + "rel", name + "Release",
+                {.unit = "ms", .kind = Continuous, .min = 5.0f, .max = 5000.0f, .defaultValue = 100.0f,
+                 .scale = Logarithmic});
+            set(at(DynParam::Knee), id + "knee", name + "Knee",
+                {.unit = "dB", .kind = Continuous, .min = 0.0f, .max = 24.0f, .defaultValue = 6.0f});
+            set(at(DynParam::Source), id + "sc", name + "Sidechain",
+                {.kind = Choice, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f, .choices = kSidechainChoices});
+        }
     }
 };
 
@@ -184,10 +213,18 @@ std::string formatValue(const ParameterSpec& spec, float value)
             return fixed(v / 1000.0, 2) + " kHz";
         return fixed(v, v < 100.0f ? 1 : 0) + " Hz";
     }
+    if (spec.unit == "ms")
+    {
+        if (v >= 1000.0f)
+            return fixed(v / 1000.0, 2) + " s";
+        return fixed(v, v < 10.0f ? 2 : v < 100.0f ? 1 : 0) + " ms";
+    }
     if (spec.unit == "dB")
     {
         const double rounded = std::round(v * 10.0) / 10.0;
-        return (rounded > 0.0 ? "+" : "") + fixed(rounded == 0.0 ? 0.0 : rounded, 1) + " dB";
+        // El "+" solo tiene sentido si el parámetro también admite negativos.
+        const bool signedRange = spec.min < 0.0f;
+        return (signedRange && rounded > 0.0 ? "+" : "") + fixed(rounded == 0.0 ? 0.0 : rounded, 1) + " dB";
     }
     return fixed(v, 2);
 }
@@ -220,6 +257,8 @@ std::optional<float> parseValue(const ParameterSpec& spec, std::string_view text
     std::string suffix;
     in >> suffix;
     if (!suffix.empty() && suffix.front() == 'k' && spec.unit == "Hz")
+        number *= 1000.0;
+    if (suffix == "s" && spec.unit == "ms")
         number *= 1000.0;
 
     return sanitize(spec, static_cast<float>(number));

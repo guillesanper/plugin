@@ -70,8 +70,8 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(controls_);
 
     setResizable(true, true);
-    setResizeLimits(720, 440, 2400, 1400);
-    setSize(980, 600);
+    setResizeLimits(900, 460, 2400, 1400);
+    setSize(1100, 620);
 
     startTimerHz(kRefreshHz);
 }
