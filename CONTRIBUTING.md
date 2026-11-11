@@ -32,12 +32,24 @@ ctest --test-dir build-core --output-on-failure
 
 1. **Respeta la dirección de las dependencias.** `dsp/` y `core/` no incluyen nada de JUCE. Ver [docs/arquitectura.md](docs/arquitectura.md).
 2. **No rompas los contratos públicos:** identificadores y rangos de parámetros, formato del estado, identidad del plugin. Si un test de contrato falla, el cambio es incompatible: no edites el test para que pase.
-3. **Los fixtures de `tests/fixtures/` no se modifican ni se borran.** Solo se añaden.
+3. **Los fixtures de `tests/fixtures/` no se modifican ni se borran.** Solo se añaden. Para añadir parámetros al contrato usa `ESCEQ_APPEND_PARAMETERS=1` (ver [docs/arquitectura.md](docs/arquitectura.md)), que solo escribe líneas nuevas al final.
 4. **Cada bug arreglado deja un test** que lo reproduce.
 5. **El hilo de audio no asigna memoria, no bloquea y no hace E/S.**
 6. **Documenta en las cabeceras públicas** qué garantiza cada función: si es segura en tiempo real, si es segura entre hilos, unidades y rangos.
 7. **Actualiza la documentación en el mismo commit:** `docs/arquitectura.md` si cambia la estructura, una nota nueva en `docs/decisiones/` si tomas una decisión de diseño, y `CHANGELOG.md` si el cambio lo nota el usuario.
 8. **El CI debe estar en verde.** Incluye tests y `pluginval` al nivel 10 en Windows, macOS y Linux.
+
+## Revisar la interfaz sin host
+
+`tools/snapshot` abre el editor con unas bandas de ejemplo y ruido rosa, y guarda una captura en PNG:
+
+```
+cmake -S . -B build -DESCEQ_BUILD_TOOLS=ON
+cmake --build build --target esceq_snapshot
+./build/tools/snapshot/esceq_snapshot_artefacts/Release/esceq_snapshot captura.png
+```
+
+En Linux sin pantalla, anteponer `xvfb-run -a`. La imagen de `docs/img/esceq.png` se genera así: actualízala cuando cambie el aspecto de la interfaz.
 
 ## Estilo
 

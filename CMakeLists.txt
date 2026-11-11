@@ -7,6 +7,7 @@ project(esceQ VERSION 0.0.1 LANGUAGES C CXX)
 # El CI lo usa para garantizar que esos módulos no dependen del framework.
 option(ESCEQ_BUILD_PLUGIN "Compila el plugin (descarga JUCE)" ON)
 option(ESCEQ_BUILD_TESTS "Compila los tests" ON)
+option(ESCEQ_BUILD_TOOLS "Compila herramientas de desarrollo (tools/)" OFF)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -32,6 +33,7 @@ include(FetchContent)
 
 add_subdirectory(dsp)
 add_subdirectory(core)
+add_subdirectory(ui)
 
 if(ESCEQ_BUILD_PLUGIN)
     FetchContent_Declare(JUCE
@@ -40,6 +42,9 @@ if(ESCEQ_BUILD_PLUGIN)
         GIT_SHALLOW TRUE)
     FetchContent_MakeAvailable(JUCE)
     add_subdirectory(plugin)
+    if(ESCEQ_BUILD_TOOLS)
+        add_subdirectory(tools/snapshot)
+    endif()
 endif()
 
 if(ESCEQ_BUILD_TESTS)

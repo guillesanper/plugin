@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PluginProcessor.h"
 
+#include "EqEditor.h"
+
+#include "esceq/core/band_model.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/decibels.h"
 
@@ -19,6 +22,23 @@ juce::String toJuce(std::string_view text)
     return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
 }
 
+juce::StringArray choiceNames(const core::ParameterSpec& spec)
+{
+    juce::StringArray names;
+    for (const auto choice : spec.choices)
+        names.add(toJuce(choice));
+    return names;
+}
+
+/// Rango de JUCE que delega en core la correspondencia valor <-> 0..1.
+juce::NormalisableRange<float> rangeFor(const core::ParameterSpec* spec)
+{
+    return {spec->min, spec->max,
+            [spec](float, float, float normalized) { return core::fromNormalized(*spec, normalized); },
+            [spec](float, float, float value) { return core::toNormalized(*spec, value); },
+            [spec](float, float, float value) { return core::sanitize(*spec, value); }};
+}
+
 } // namespace
 
 PluginProcessor::PluginProcessor()
@@ -28,7 +48,12 @@ PluginProcessor::PluginProcessor()
       apvts_(*this, nullptr, "esceQ", createLayout())
 {
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
-        raw_[i] = apvts_.getRawParameterValue(toJuce(core::kParameters[i].id));
+    {
+        const auto id = toJuce(core::parameters()[i].id);
+        raw_[i] = apvts_.getRawParameterValue(id);
+        params_[i] = apvts_.getParameter(id);
+        jassert(raw_[i] != nullptr && params_[i] != nullptr);
+    }
 }
 
 // Los parámetros del host se generan a partir de la tabla de core: no se
@@ -37,20 +62,35 @@ juce::AudioProcessorValueTreeState::ParameterLayout PluginProcessor::createLayou
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
-    for (const auto& spec : core::kParameters)
+    for (const auto& spec : core::parameters())
     {
         const juce::ParameterID id{toJuce(spec.id), 1};
         const auto name = toJuce(spec.name);
 
-        if (spec.kind == core::ParameterKind::Toggle)
+        switch (spec.kind)
         {
+        case core::ParameterKind::Toggle:
             layout.add(std::make_unique<juce::AudioParameterBool>(id, name, spec.defaultValue >= 0.5f));
-        }
-        else
+            break;
+
+        case core::ParameterKind::Choice:
+            layout.add(std::make_unique<juce::AudioParameterChoice>(id, name, choiceNames(spec),
+                                                                    static_cast<int>(spec.defaultValue)));
+            break;
+
+        case core::ParameterKind::Continuous:
         {
-            layout.add(std::make_unique<juce::AudioParameterFloat>(
-                id, name, juce::NormalisableRange<float>{spec.min, spec.max}, spec.defaultValue,
-                juce::AudioParameterFloatAttributes().withLabel(toJuce(spec.unit))));
+            const core::ParameterSpec* specPtr = &spec; // la tabla vive mientras viva el programa
+            auto attributes =
+                juce::AudioParameterFloatAttributes()
+                    .withStringFromValueFunction([specPtr](float value, int) { return toJuce(core::formatValue(*specPtr, value)); })
+                    .withValueFromStringFunction([specPtr](const juce::String& text) {
+                        return core::parseValue(*specPtr, text.toStdString()).value_or(specPtr->defaultValue);
+                    });
+            layout.add(std::make_unique<juce::AudioParameterFloat>(id, name, rangeFor(specPtr), spec.defaultValue,
+                                                                   attributes));
+            break;
+        }
         }
     }
 
@@ -67,11 +107,37 @@ bool PluginProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 
 juce::AudioProcessorParameter* PluginProcessor::getBypassParameter() const
 {
-    return apvts_.getParameter(toJuce(core::kParameters[core::kBypass].id));
+    return params_[core::kBypass];
+}
+
+core::ParameterValues PluginProcessor::currentValues() const noexcept
+{
+    core::ParameterValues values{};
+    for (std::size_t i = 0; i < core::kNumParameters; ++i)
+        values[i] = raw_[i]->load(std::memory_order_relaxed);
+    return values;
+}
+
+double PluginProcessor::currentSampleRate() const noexcept
+{
+    const double rate = sampleRate_.load(std::memory_order_relaxed);
+    return rate > 0.0 ? rate : 48000.0;
+}
+
+void PluginProcessor::pushParametersToEngine() noexcept
+{
+    const auto values = currentValues();
+    for (int band = 0; band < core::kNumBands; ++band)
+        equalizer_.setBand(band, core::bandSettings(values, band));
+    equalizer_.setBypassed(values[core::kBypass] >= 0.5f);
 }
 
 void PluginProcessor::prepareToPlay(double sampleRate, int)
 {
+    sampleRate_.store(sampleRate);
+    pushParametersToEngine();
+    equalizer_.prepare(sampleRate);
+
     const bool bypassed = raw_[core::kBypass]->load() >= 0.5f;
     outputGain_.prepare(sampleRate, kGainRampSeconds);
     outputGain_.reset(bypassed ? 1.0f : dsp::dbToGain(raw_[core::kOutputGain]->load()));
@@ -84,28 +150,33 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     for (int ch = getTotalNumInputChannels(); ch < getTotalNumOutputChannels(); ++ch)
         buffer.clear(ch, 0, buffer.getNumSamples());
 
+    float* const* channels = buffer.getArrayOfWritePointers();
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    preFifo_.writeMix(channels, numChannels, numSamples);
+
+    pushParametersToEngine();
+    equalizer_.process(channels, numChannels, numSamples);
+
     const bool bypassed = raw_[core::kBypass]->load(std::memory_order_relaxed) >= 0.5f;
     const float gainDb = raw_[core::kOutputGain]->load(std::memory_order_relaxed);
-
     outputGain_.setTarget(bypassed ? 1.0f : dsp::dbToGain(gainDb));
-    outputGain_.process(buffer.getArrayOfWritePointers(), buffer.getNumChannels(), buffer.getNumSamples());
+    outputGain_.process(channels, numChannels, numSamples);
+
+    postFifo_.writeMix(channels, numChannels, numSamples);
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()
 {
-    // Interfaz provisional hasta que exista ui/ (fase 2).
-    return new juce::GenericAudioProcessorEditor(*this);
+    return new ui::EqEditor(*this);
 }
 
 // El estado se guarda en el formato propio de core, no en el de JUCE:
 // así sigue siendo legible aunque cambie el framework.
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    core::ParameterValues values{};
-    for (std::size_t i = 0; i < core::kNumParameters; ++i)
-        values[i] = raw_[i]->load();
-
-    const std::string text = core::serializeState(values);
+    const std::string text = core::serializeState(currentValues());
     destData.replaceAll(text.data(), text.size());
 }
 
@@ -120,8 +191,7 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
         return;
 
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
-        if (auto* param = apvts_.getParameter(toJuce(core::kParameters[i].id)))
-            param->setValueNotifyingHost(param->convertTo0to1((*values)[i]));
+        params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1((*values)[i]));
 }
 
 } // namespace esceq

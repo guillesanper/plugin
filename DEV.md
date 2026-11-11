@@ -12,6 +12,7 @@ Las reglas que debe respetar cualquier cambio están en [CONTRIBUTING.md](CONTRI
 | **Git for Windows** | Control de versiones | |
 | **FL Studio** (2024.1 o posterior) | Probar el plugin en el host objetivo | La versión de prueba sirve para cargar plugins |
 | **pluginval** | Validar que el plugin se comporta bien en cualquier host | Opcional en local: el CI ya lo ejecuta |
+| **esceq_snapshot** | Captura del editor sin abrir ningún host | Opcional; ver [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 No hace falta instalar JUCE ni Catch2: CMake los descarga al configurar.
 

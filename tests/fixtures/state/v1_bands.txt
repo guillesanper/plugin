@@ -1,0 +1,15 @@
+esceQ-state 1
+output_gain -1.5
+bypass 0
+b01_on 1
+b01_type 3
+b01_freq 80
+b01_gain 0
+b01_q 0.707099974
+b01_slope 3
+b05_on 1
+b05_type 0
+b05_freq 2500
+b05_gain -4.5
+b05_q 2.5
+b05_slope 1

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
-# Capa JUCE: traduce entre el host y core/dsp. Es el único módulo (junto
-# con ui/, cuando exista) que puede incluir cabeceras de JUCE.
+# Capa JUCE: traduce entre el host y core/dsp. Junto con ui/src, es lo
+# único que puede incluir cabeceras de JUCE.
 
 set(ESCEQ_FORMATS VST3 Standalone)
 if(APPLE)
@@ -26,9 +26,22 @@ juce_add_plugin(esceQ
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
+# La interfaz (ui/src) se compila aquí: los módulos de JUCE solo pueden
+# compilarse una vez por binario. Ver ui/CMakeLists.txt.
+set(ESCEQ_UI_DIR ${PROJECT_SOURCE_DIR}/ui/src)
+
 target_sources(esceQ PRIVATE
     src/PluginProcessor.cpp
-    src/PluginProcessor.h)
+    src/PluginProcessor.h
+    ${ESCEQ_UI_DIR}/BandControls.cpp
+    ${ESCEQ_UI_DIR}/BandControls.h
+    ${ESCEQ_UI_DIR}/CurveView.cpp
+    ${ESCEQ_UI_DIR}/CurveView.h
+    ${ESCEQ_UI_DIR}/EqEditor.cpp
+    ${ESCEQ_UI_DIR}/EqEditor.h
+    ${ESCEQ_UI_DIR}/Palette.h)
+
+target_include_directories(esceQ PRIVATE src ${ESCEQ_UI_DIR})
 
 target_compile_definitions(esceQ PUBLIC
     JUCE_WEB_BROWSER=0
@@ -40,6 +53,7 @@ target_link_libraries(esceQ
     PRIVATE
         esceq_core
         esceq_dsp
+        esceq_ui_logic
         juce::juce_audio_utils
     PUBLIC
         juce::juce_recommended_config_flags

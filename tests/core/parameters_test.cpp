@@ -2,86 +2,232 @@
 #include "esceq/core/parameters.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <cstdlib>
+#include <fstream>
 #include <limits>
+#include <locale>
 #include <set>
+#include <sstream>
+#include <string>
 #include <string_view>
+#include <vector>
 
+using Catch::Matchers::WithinAbs;
+using Catch::Matchers::WithinRel;
 using namespace esceq::core;
 
 namespace {
 
-struct Frozen
-{
-    std::string_view id;
-    ParameterKind kind;
-    float min;
-    float max;
-};
+// CONTRATO PÚBLICO: tests/fixtures/parameters/v1.txt
+//
+// Una línea por parámetro: id tipo escala min max opciones. El archivo solo
+// puede CRECER por el final. Si este test falla, un cambio rompería
+// proyectos o automatizaciones guardadas: no edites las líneas existentes;
+// lee docs/decisiones/0004-parametros-congelados.md.
+//
+// Para añadir al final los parámetros nuevos (y SOLO eso):
+//   ESCEQ_APPEND_PARAMETERS=1 ./esceq_tests "Parametros: contrato*"
+const std::string kContractPath = std::string(ESCEQ_FIXTURES_DIR) + "/parameters/v1.txt";
 
-// CONTRATO PÚBLICO. Esta lista solo puede CRECER por el final.
-// Si este test falla es que un cambio rompería proyectos guardados:
-// no edites una fila existente; lee docs/decisiones/0004-parametros-congelados.md.
-constexpr Frozen kFrozen[] = {
-    {"output_gain", ParameterKind::Continuous, -24.0f, 24.0f},
-    {"bypass", ParameterKind::Toggle, 0.0f, 1.0f},
-};
+std::string_view kindName(ParameterKind kind)
+{
+    switch (kind)
+    {
+    case ParameterKind::Continuous: return "continuous";
+    case ParameterKind::Toggle: return "toggle";
+    case ParameterKind::Choice: return "choice";
+    }
+    return "?";
+}
+
+std::string contractLine(const ParameterSpec& spec)
+{
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out << spec.id << ' ' << kindName(spec.kind) << ' '
+        << (spec.scale == ParameterScale::Logarithmic ? "log" : "linear") << ' ' << spec.min << ' ' << spec.max << ' '
+        << spec.choices.size();
+    return out.str();
+}
+
+std::vector<std::string> readContract()
+{
+    std::vector<std::string> lines;
+    std::ifstream in(kContractPath, std::ios::binary);
+    for (std::string line; std::getline(in, line);)
+    {
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
+        if (!line.empty() && line[0] != '#')
+            lines.push_back(line);
+    }
+    return lines;
+}
 
 } // namespace
 
-TEST_CASE("Parametros: los ya publicados no cambian de id, tipo, rango ni posicion")
+TEST_CASE("Parametros: contrato congelado (id, tipo, escala, rango y posicion)")
 {
-    REQUIRE(kParameters.size() >= std::size(kFrozen));
+    const auto& specs = parameters();
+    auto contract = readContract();
 
-    for (std::size_t i = 0; i < std::size(kFrozen); ++i)
+    if (std::getenv("ESCEQ_APPEND_PARAMETERS") != nullptr && contract.size() < specs.size())
     {
-        INFO("parámetro " << kFrozen[i].id);
-        CHECK(kParameters[i].id == kFrozen[i].id);
-        CHECK(kParameters[i].kind == kFrozen[i].kind);
-        CHECK(kParameters[i].min == kFrozen[i].min);
-        CHECK(kParameters[i].max == kFrozen[i].max);
+        std::ofstream out(kContractPath, std::ios::binary | std::ios::app);
+        REQUIRE(out.is_open());
+        if (contract.empty())
+            out << "# id tipo escala min max opciones\n";
+        for (std::size_t i = contract.size(); i < specs.size(); ++i)
+            out << contractLine(specs[i]) << '\n';
+        contract = readContract();
     }
-}
 
-TEST_CASE("Parametros: cada parametro nuevo debe anadirse al contrato congelado")
-{
-    CHECK(kParameters.size() == std::size(kFrozen));
+    REQUIRE(specs.size() >= contract.size());
+    for (std::size_t i = 0; i < contract.size(); ++i)
+    {
+        INFO("posicion " << i);
+        CHECK(contractLine(specs[i]) == contract[i]);
+    }
+
+    INFO("Hay parametros nuevos que no estan en el contrato: anadelos con ESCEQ_APPEND_PARAMETERS=1");
+    CHECK(specs.size() == contract.size());
 }
 
 TEST_CASE("Parametros: la tabla es coherente")
 {
     std::set<std::string_view> ids;
-    for (const auto& spec : kParameters)
+    for (const auto& spec : parameters())
     {
-        INFO("parámetro " << spec.id);
+        INFO("parametro " << spec.id);
         CHECK_FALSE(spec.id.empty());
         CHECK(spec.id.find_first_of(" \t\r\n") == std::string_view::npos); // el formato de estado separa por espacios
         CHECK(ids.insert(spec.id).second);
         CHECK(spec.min < spec.max);
         CHECK(spec.defaultValue >= spec.min);
         CHECK(spec.defaultValue <= spec.max);
+        CHECK(sanitize(spec, spec.defaultValue) == spec.defaultValue);
+        if (spec.kind == ParameterKind::Choice)
+            CHECK(spec.max == static_cast<float>(spec.choices.size() - 1));
+        if (spec.scale == ParameterScale::Logarithmic)
+            CHECK(spec.min > 0.0f);
     }
+}
+
+TEST_CASE("Parametros: indices de banda")
+{
+    CHECK(kNumParameters == 2 + 24 * 6);
+    CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
+    CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
+    CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
+    CHECK(parameters()[bandParameter(23, BandParam::Q)].id == "b24_q");
 }
 
 TEST_CASE("Parametros: findParameter")
 {
     CHECK(findParameter("output_gain") == kOutputGain);
     CHECK(findParameter("bypass") == kBypass);
+    CHECK(findParameter("b07_gain") == bandParameter(6, BandParam::Gain));
     CHECK_FALSE(findParameter("no_existe").has_value());
 }
 
 TEST_CASE("Parametros: sanitize")
 {
-    const auto& gain = kParameters[kOutputGain];
+    const auto& gain = parameters()[kOutputGain];
     CHECK(sanitize(gain, 3.0f) == 3.0f);
     CHECK(sanitize(gain, 100.0f) == 24.0f);
     CHECK(sanitize(gain, -100.0f) == -24.0f);
     CHECK(sanitize(gain, std::numeric_limits<float>::quiet_NaN()) == gain.defaultValue);
     CHECK(sanitize(gain, std::numeric_limits<float>::infinity()) == gain.defaultValue);
 
-    const auto& bypass = kParameters[kBypass];
+    const auto& bypass = parameters()[kBypass];
     CHECK(sanitize(bypass, 0.7f) == 1.0f);
     CHECK(sanitize(bypass, 0.2f) == 0.0f);
     CHECK(sanitize(bypass, 5.0f) == 1.0f);
+
+    const auto& type = parameters()[bandParameter(0, BandParam::Type)];
+    CHECK(sanitize(type, 2.4f) == 2.0f);
+    CHECK(sanitize(type, 2.6f) == 3.0f);
+    CHECK(sanitize(type, -3.0f) == 0.0f);
+    CHECK(sanitize(type, 99.0f) == 8.0f);
+}
+
+TEST_CASE("Parametros: normalizacion lineal, logaritmica y de opciones")
+{
+    const auto& gain = parameters()[bandParameter(0, BandParam::Gain)];
+    CHECK(toNormalized(gain, 0.0f) == 0.5f);
+    CHECK(fromNormalized(gain, 0.25f) == -15.0f);
+
+    // Frecuencia logarítmica: 20 Hz - 20 kHz son 3 décadas; 632 Hz es la mitad.
+    const auto& freq = parameters()[bandParameter(0, BandParam::Frequency)];
+    CHECK(toNormalized(freq, 20.0f) == 0.0f);
+    CHECK(toNormalized(freq, 20000.0f) == 1.0f);
+    CHECK_THAT(fromNormalized(freq, 0.5f), WithinRel(632.4555f, 1e-4f));
+    CHECK_THAT(toNormalized(freq, 200.0f), WithinAbs(1.0 / 3.0, 1e-6));
+
+    const auto& slope = parameters()[bandParameter(0, BandParam::Slope)];
+    CHECK(toNormalized(slope, 0.0f) == 0.0f);
+    CHECK(toNormalized(slope, 15.0f) == 1.0f);
+    CHECK(fromNormalized(slope, 0.5f) == 8.0f); // 7,5 redondea a 8
+
+    // Ida y vuelta en todos los parámetros.
+    for (const auto& spec : parameters())
+        for (float n : {0.0f, 0.1f, 0.37f, 0.5f, 0.93f, 1.0f})
+        {
+            INFO(spec.id << " n " << n);
+            const float value = fromNormalized(spec, n);
+            // Error de redondeo de float: como mucho una millonésima del rango.
+            CHECK_THAT(fromNormalized(spec, toNormalized(spec, value)), WithinAbs(value, (spec.max - spec.min) * 1e-6));
+        }
+}
+
+TEST_CASE("Parametros: formatValue")
+{
+    const auto& freq = parameters()[bandParameter(0, BandParam::Frequency)];
+    CHECK(formatValue(freq, 50.0f) == "50.0 Hz");
+    CHECK(formatValue(freq, 350.0f) == "350 Hz");
+    CHECK(formatValue(freq, 1200.0f) == "1.20 kHz");
+    CHECK(formatValue(freq, 15000.0f) == "15.0 kHz");
+
+    const auto& gain = parameters()[bandParameter(0, BandParam::Gain)];
+    CHECK(formatValue(gain, 3.0f) == "+3.0 dB");
+    CHECK(formatValue(gain, -4.56f) == "-4.6 dB");
+    CHECK(formatValue(gain, -0.01f) == "0.0 dB");
+
+    CHECK(formatValue(parameters()[bandParameter(0, BandParam::Type)], 3.0f) == "Low Cut");
+    CHECK(formatValue(parameters()[bandParameter(0, BandParam::Slope)], 3.0f) == "24 dB/oct");
+    CHECK(formatValue(parameters()[kBypass], 1.0f) == "On");
+    CHECK(formatValue(parameters()[bandParameter(0, BandParam::Q)], 0.7071f) == "0.71");
+}
+
+TEST_CASE("Parametros: parseValue")
+{
+    const auto& freq = parameters()[bandParameter(0, BandParam::Frequency)];
+    CHECK(parseValue(freq, "1.2k") == 1200.0f);
+    CHECK(parseValue(freq, " 1.2 kHz ") == 1200.0f);
+    CHECK(parseValue(freq, "350 Hz") == 350.0f);
+    CHECK(parseValue(freq, "5") == 20.0f); // se ajusta al rango
+    CHECK_FALSE(parseValue(freq, "abc").has_value());
+    CHECK_FALSE(parseValue(freq, "").has_value());
+
+    const auto& type = parameters()[bandParameter(0, BandParam::Type)];
+    CHECK(parseValue(type, "low cut") == 3.0f);
+    CHECK(parseValue(type, "Tilt") == 8.0f);
+    CHECK(parseValue(type, "2") == 2.0f);
+
+    CHECK(parseValue(parameters()[kBypass], "on") == 1.0f);
+    CHECK(parseValue(parameters()[bandParameter(0, BandParam::Gain)], "-3.5 dB") == -3.5f);
+
+    // El texto que se muestra siempre se puede volver a leer.
+    for (const auto& spec : parameters())
+        for (float n : {0.0f, 0.3f, 0.77f, 1.0f})
+        {
+            const float value = fromNormalized(spec, n);
+            const auto parsed = parseValue(spec, formatValue(spec, value));
+            INFO(spec.id << " " << formatValue(spec, value));
+            REQUIRE(parsed.has_value());
+            CHECK_THAT(*parsed, WithinRel(value, 0.01f) || WithinAbs(value, 0.051));
+        }
 }

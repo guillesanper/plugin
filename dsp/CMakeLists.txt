@@ -4,6 +4,10 @@
 # ningún SDK de plugin. Ver docs/arquitectura.md.
 add_library(esceq_dsp STATIC
     src/band_filter.cpp
+    src/equalizer.cpp
+    src/fft.cpp
+    src/spectrum_analyzer.cpp
+    src/spsc_fifo.cpp
     src/filter_design.cpp
     src/gain_ramp.cpp)
 

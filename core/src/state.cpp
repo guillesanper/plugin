@@ -41,7 +41,7 @@ std::string serializeState(const ParameterValues& values)
 
     out << kMagic << ' ' << kStateVersion << '\n';
     for (std::size_t i = 0; i < kNumParameters; ++i)
-        out << kParameters[i].id << ' ' << sanitize(kParameters[i], values[i]) << '\n';
+        out << parameters()[i].id << ' ' << sanitize(parameters()[i], values[i]) << '\n';
     return out.str();
 }
 
@@ -62,7 +62,7 @@ std::optional<ParameterValues> deserializeState(std::string_view text)
         if (!parsePair(nextLine(text), key, value))
             continue;
         if (const auto index = findParameter(key))
-            values[*index] = sanitize(kParameters[*index], value);
+            values[*index] = sanitize(parameters()[*index], value);
     }
     return values;
 }

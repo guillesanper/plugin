@@ -44,6 +44,8 @@ struct FilterParams
     double gainDb = 0.0;        ///< Bell, shelves y Tilt. Ignorada en el resto.
     double q = kButterworthQ;   ///< En LowCut/HighCut controla la resonancia en el corte.
     int slopeDbPerOct = 12;     ///< Solo LowCut/HighCut: 6, 12, ..., 96.
+
+    friend bool operator==(const FilterParams&, const FilterParams&) = default;
 };
 
 /// Una sección de primer o segundo orden de un filtro de variable de estado

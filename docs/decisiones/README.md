@@ -11,3 +11,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0002](0002-licencias.md) | Plugin en AGPLv3, DSP en MIT | Aceptada |
 | [0003](0003-formato-de-estado.md) | Formato de estado propio y versionado | Aceptada |
 | [0004](0004-parametros-congelados.md) | Parámetros en una tabla única, con identificadores congelados | Aceptada |
+| [0005](0005-bandas-y-normalizacion.md) | 24 bandas declaradas desde ya, y normalización definida en core | Aceptada |

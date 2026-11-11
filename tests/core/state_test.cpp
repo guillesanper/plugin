@@ -3,6 +3,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -43,9 +44,18 @@ TEST_CASE("Estado: fixture v1 por defecto")
     REQUIRE(values.has_value());
     CHECK(*values == defaultValues());
 
-    // Mientras kStateVersion sea 1, el formato escrito tampoco cambia.
+    // Mientras kStateVersion sea 1, las líneas que ya existían se siguen
+    // escribiendo igual. (Puede haber líneas nuevas: parámetros añadidos.)
     if (kStateVersion == 1)
-        CHECK(serializeState(defaultValues()) == text);
+    {
+        const std::string written = serializeState(defaultValues());
+        std::istringstream lines(text);
+        for (std::string line; std::getline(lines, line);)
+        {
+            INFO(line);
+            CHECK(written.find(line + '\n') != std::string::npos);
+        }
+    }
 }
 
 TEST_CASE("Estado: fixture v1 con valores propios")
@@ -68,7 +78,7 @@ TEST_CASE("Estado: parametros ausentes toman el valor por defecto")
 {
     const auto values = deserializeState("esceQ-state 1\nbypass 1\n");
     REQUIRE(values.has_value());
-    CHECK((*values)[kOutputGain] == kParameters[kOutputGain].defaultValue);
+    CHECK((*values)[kOutputGain] == parameters()[kOutputGain].defaultValue);
     CHECK((*values)[kBypass] == 1.0f);
 }
 
@@ -83,8 +93,8 @@ TEST_CASE("Estado: valores fuera de rango o ilegibles no se propagan")
 {
     const auto values = deserializeState("esceQ-state 1\noutput_gain 9999\nbypass basura\n");
     REQUIRE(values.has_value());
-    CHECK((*values)[kOutputGain] == kParameters[kOutputGain].max);
-    CHECK((*values)[kBypass] == kParameters[kBypass].defaultValue);
+    CHECK((*values)[kOutputGain] == parameters()[kOutputGain].max);
+    CHECK((*values)[kBypass] == parameters()[kBypass].defaultValue);
 }
 
 TEST_CASE("Estado: se rechaza lo que no es un estado de esceQ")
@@ -95,4 +105,34 @@ TEST_CASE("Estado: se rechaza lo que no es un estado de esceQ")
     CHECK_FALSE(deserializeState("esceQ-state 0\n").has_value());
     CHECK_FALSE(deserializeState("esceQ-state x\noutput_gain 1\n").has_value());
     CHECK_FALSE(deserializeState(std::string("\0\x01\x02\xff", 4)).has_value());
+}
+
+TEST_CASE("Estado: fixture v1 con bandas")
+{
+    const auto values = deserializeState(readFixture("v1_bands.txt"));
+    REQUIRE(values.has_value());
+    CHECK((*values)[bandParameter(0, BandParam::Enabled)] == 1.0f);
+    CHECK((*values)[bandParameter(0, BandParam::Type)] == 3.0f);
+    CHECK((*values)[bandParameter(0, BandParam::Frequency)] == 80.0f);
+    CHECK((*values)[bandParameter(0, BandParam::Slope)] == 3.0f);
+    CHECK((*values)[bandParameter(4, BandParam::Enabled)] == 1.0f);
+    CHECK((*values)[bandParameter(4, BandParam::Gain)] == -4.5f);
+    CHECK((*values)[bandParameter(4, BandParam::Q)] == 2.5f);
+    CHECK((*values)[bandParameter(23, BandParam::Enabled)] == 0.0f);
+}
+
+TEST_CASE("Estado: ida y vuelta con todas las bandas y valores aleatorios")
+{
+    ParameterValues values = defaultValues();
+    std::uint32_t rng = 7u;
+    for (std::size_t i = 0; i < kNumParameters; ++i)
+    {
+        rng = rng * 1664525u + 1013904223u;
+        const float normalized = static_cast<float>(rng >> 8) / 16777216.0f;
+        values[i] = fromNormalized(parameters()[i], normalized);
+    }
+
+    const auto restored = deserializeState(serializeState(values));
+    REQUIRE(restored.has_value());
+    CHECK(*restored == values);
 }
