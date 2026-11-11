@@ -15,6 +15,7 @@ Detalles, requisitos y reglas de contribución en [CONTRIBUTING.md](CONTRIBUTING
 
 ## Documentación
 
+- [DEV.md](DEV.md): cómo montar el entorno de desarrollo, paso a paso.
 - [PLAN.md](PLAN.md): objetivos, decisiones y hoja de ruta.
 - [docs/arquitectura.md](docs/arquitectura.md): módulos, contratos y modelo de hilos.
 - [docs/decisiones/](docs/decisiones/README.md): registro de decisiones de diseño.
