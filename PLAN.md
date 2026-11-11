@@ -42,27 +42,55 @@ Estado: **decisiones principales cerradas** (sección 2). Siguiente paso: fase 0
 | Framework | JUCE 8, confinado a las capas de plugin e interfaz |
 | Licencia | Plugin en AGPLv3; biblioteca DSP en MIT |
 | Primera versión | EQ estático sólido primero (fase 2), dinámica justo después (fase 3) |
-| Principio rector | **Todo lo anterior debe poder cambiarse en el futuro** (ver 2.1) |
+| Principio rector | **Diseñar y documentar de forma que un cambio no rompa nada** (ver 2.1) |
 
 Pendiente: comprobar que "esceQ" no está en uso en KVR, GitHub ni registros de marca antes de la primera versión pública.
 
-### 2.1 Diseñar para poder cambiar
+### 2.1 Diseñar y documentar para que un cambio no rompa nada
 
-Las decisiones de framework y licencia son las más caras de revertir. Reglas para que sigan siendo reversibles:
+El código va a cambiar mucho (nuevos filtros, nuevos modos, otra interfaz). El objetivo es que cualquier cambio sea local, y que si rompe algo, se note enseguida y no en el proyecto de un usuario.
 
-**Framework**
-- `dsp/` es C++20 puro: no incluye ninguna cabecera de JUCE ni de ningún SDK de plugin. El CI lo compila y testea por separado, sin JUCE presente, para que la regla no se rompa por descuido.
-- Entre el DSP y el framework hay una capa fina propia (`core/`): modelo de parámetros, estado y serialización definidos con tipos nuestros. La capa JUCE solo traduce entre ese modelo y el host.
-- El formato del estado guardado es nuestro (versionado, independiente de las utilidades de JUCE), de modo que un proyecto guardado hoy se pueda abrir aunque mañana el plugin esté hecho con otro framework.
-- Los identificadores de parámetro son estables y no dependen de cómo los numere el framework.
-- La lógica de la interfaz (qué nodo está seleccionado, cómo se convierte un arrastre en frecuencia y ganancia, escalas de los ejes) va separada del pintado, para que cambiar de biblioteca gráfica suponga reescribir solo el dibujo.
+**Diseño: que los cambios sean locales**
 
-**Licencia**
-- Cambiar la licencia exige el permiso de todos los titulares de derechos. Mientras el autor sea uno, es trivial; con contribuciones externas deja de serlo.
-- Por eso, desde el primer PR externo se pedirá un acuerdo de contribución (CLA) que permita relicenciar. Sin él, la licencia queda congelada de facto.
-- El DSP en MIT ya puede usarse en cualquier contexto. Lo único atado a AGPLv3 es lo que enlaza con JUCE: si se sustituye JUCE o se adquiere su licencia comercial, el plugin puede cambiar de licencia.
-- Cada archivo lleva su identificador SPDX para que quede claro qué licencia aplica a qué.
-- No se copia código de proyectos AGPL/GPL (incluido ZL Equalizer) dentro de `dsp/`: contaminaría la parte MIT.
+- **Módulos con dependencias en un solo sentido:** `dsp` ← `core` ← `plugin` ← `ui`. Ningún módulo conoce a los que tiene por encima. El CI compila `dsp` y `core` solos para que la regla no se rompa por descuido.
+- **Interfaces pequeñas y explícitas** entre módulos: cada uno expone unas pocas cabeceras públicas; lo demás es interno y se puede reescribir sin tocar a nadie.
+- **Una sola fuente de verdad para los parámetros:** una tabla única define identificador, rango, valor por defecto y unidades. El procesador, la interfaz, los presets y la documentación se generan o leen de ahí; añadir un parámetro es tocar un sitio.
+- **Añadir sin modificar:** un tipo de filtro nuevo o un modo de fase nuevo se añade implementando una interfaz existente, no editando un `switch` repartido por diez archivos.
+- **Lógica separada del pintado** en la interfaz (selección, conversión de arrastre a frecuencia y ganancia, escalas), para poder testearla sin ventana y rediseñar lo visual sin tocar el comportamiento.
+
+**Contratos que no se pueden romper**
+
+Son las tres cosas que, si cambian, estropean proyectos ya guardados por usuarios:
+
+1. **Identificadores de parámetro:** congelados desde la 0.1. Nunca se renombran ni se reutilizan; solo se añaden.
+2. **Formato del estado guardado:** propio, con número de versión y migraciones explícitas de cada versión a la siguiente.
+3. **Sonido de una configuración dada:** un preset antiguo debe sonar igual tras actualizar. Si una mejora cambia el sonido, va detrás de una versión de algoritmo guardada en el estado.
+
+**Tests: la red que avisa**
+
+| Qué protege | Test |
+|---|---|
+| El sonido | Respuesta en frecuencia contra la fórmula analítica, y comparación con salidas de referencia guardadas ("golden files") con tolerancia |
+| Proyectos antiguos | Estados guardados de cada versión publicada se conservan en `tests/fixtures/` y deben cargar siempre |
+| Parámetros | Test que falla si un identificador desaparece o cambia de rango |
+| Tiempo real | RealtimeSanitizer: falla si el hilo de audio asigna memoria o bloquea |
+| Compatibilidad con hosts | `pluginval` y `clap-validator` en cada push |
+| Robustez | Bloques de 1 a 8192 muestras, cambios bruscos de parámetros, frecuencias de muestreo de 44,1 a 192 kHz |
+
+Regla: no se fusiona nada con el CI en rojo, y cada bug arreglado deja un test que lo reproduce.
+
+**Documentación: que el porqué no se pierda**
+
+- `docs/arquitectura.md`: mapa de módulos, quién depende de quién, modelo de hilos. Se actualiza en el mismo commit que cambia la arquitectura.
+- `docs/decisiones/` (ADR): una nota corta por decisión importante con contexto, opciones y motivo. Evita deshacer por error algo que se decidió por una buena razón.
+- `docs/dsp/`: derivación y referencia de cada algoritmo, enlazada desde el código.
+- Comentarios en las cabeceras públicas: qué garantiza cada función (seguridad de hilos, si asigna memoria, unidades y rangos).
+- `CHANGELOG.md` y versionado semántico: un cambio que afecte a estado, parámetros o sonido se anuncia y sube la versión correspondiente.
+- `CONTRIBUTING.md`: cómo compilar, testear y qué reglas respeta un cambio.
+
+**Framework y licencia**
+
+Consecuencia de lo anterior: como `dsp` y `core` no dependen de JUCE y el formato de estado es propio, sustituir el framework o la biblioteca gráfica afecta solo a `plugin` y `ui`. Para la licencia: identificador SPDX en cada archivo, ningún código AGPL/GPL ajeno dentro de `dsp` (que es MIT), y acuerdo de contribución antes de aceptar código de terceros si se quiere conservar la opción de relicenciar.
 
 ### 2.2 Alternativas descartadas
 
@@ -91,7 +119,8 @@ plugin/
 ├── ui/             Componentes: curva, nodos, analizador, panel de banda
 ├── tests/          Tests unitarios y de respuesta (Catch2)
 ├── bench/          Medidas de rendimiento
-└── docs/           Notas de diseño y referencias DSP
+│   └── fixtures/   Estados guardados y salidas de referencia de versiones anteriores
+└── docs/           arquitectura.md, decisiones/ (ADR), dsp/
 ```
 
 ### Hilos y comunicación
@@ -174,7 +203,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 
 | Fase | Contenido | Criterio de salida | Duración |
 |---|---|---|---|
-| **0. Base** | Estructura del repo, CMake, JUCE, CI, plugin vacío que pasa audio | Carga en FL Studio y pasa `pluginval` | 1 a 2 semanas |
+| **0. Base** | Estructura del repo, CMake, JUCE, CI, plugin vacío que pasa audio; `docs/arquitectura.md`, primeros ADR, `CONTRIBUTING.md` | Carga en FL Studio y pasa `pluginval` | 1 a 2 semanas |
 | **1. Núcleo de filtros** | SVF, todos los tipos y pendientes, cálculo de la curva, tests | Respuesta medida = respuesta teórica (±0,1 dB) | 2 a 3 semanas |
 | **2. EQ estático** | 8 bandas, parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
@@ -192,7 +221,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | Artefactos al modular filtros | SVF desde el principio y tests específicos de modulación en la fase 1 |
 | Fase lineal + dinámica resulta inviable con buena calidad | Está en la fase 5, fuera del camino crítico; se puede publicar sin ello |
 | Duplicar un proyecto que ya existe | Elegir un diferenciador antes de la fase 2: núcleo DSP reutilizable, flujo de trabajo en FL Studio, o funciones poco cubiertas (fase lineal con dinámica, dinámica espectral) |
-| Quedar atados a JUCE o a AGPLv3 | Reglas de la sección 2.1, verificadas en CI |
+| Un cambio rompe proyectos guardados o altera el sonido | Contratos y tests de la sección 2.1, verificados en CI |
 | Romper proyectos de usuarios al cambiar parámetros | Congelar identificadores y versionar el estado guardado desde la 0.1 |
 | Problemas de marca | Nombre e identidad visual propios; ninguna referencia a marcas ajenas en el producto |
 
