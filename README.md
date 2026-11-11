@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-**Estado: fase 0.** El plugin carga y deja pasar el audio con un control de ganancia de salida. Todavía no ecualiza. La hoja de ruta está en [PLAN.md](PLAN.md).
+**Estado: fases 0 y 1 completadas.** El plugin carga y deja pasar el audio con un control de ganancia de salida, y el núcleo de filtros está implementado y verificado, pero todavía no está conectado al plugin: aún no ecualiza. La hoja de ruta está en [PLAN.md](PLAN.md).
 
 ## Compilar
 
@@ -18,6 +18,7 @@ Detalles, requisitos y reglas de contribución en [CONTRIBUTING.md](CONTRIBUTING
 - [DEV.md](DEV.md): cómo montar el entorno de desarrollo, paso a paso.
 - [PLAN.md](PLAN.md): objetivos, decisiones y hoja de ruta.
 - [docs/arquitectura.md](docs/arquitectura.md): módulos, contratos y modelo de hilos.
+- [docs/dsp/filtros.md](docs/dsp/filtros.md): cómo están hechos los filtros.
 - [docs/decisiones/](docs/decisiones/README.md): registro de decisiones de diseño.
 - [CHANGELOG.md](CHANGELOG.md): cambios por versión.
 

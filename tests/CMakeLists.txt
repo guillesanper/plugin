@@ -8,7 +8,10 @@ FetchContent_Declare(Catch2
 FetchContent_MakeAvailable(Catch2)
 
 add_executable(esceq_tests
+    dsp/band_filter_test.cpp
     dsp/decibels_test.cpp
+    dsp/filter_design_test.cpp
+    dsp/filter_golden_test.cpp
     dsp/gain_ramp_test.cpp
     core/parameters_test.cpp
     core/state_test.cpp)

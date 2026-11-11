@@ -33,7 +33,20 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | Identificadores, tipos, rangos y orden de los parámetros | `core/include/esceq/core/parameters.h` | `tests/core/parameters_test.cpp` · [ADR 0004](decisiones/0004-parametros-congelados.md) |
 | Formato del estado guardado | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md) |
 | Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
-| Sonido de una configuración dada | `dsp/` | Tests de referencia (a partir de la fase 1) |
+| Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` y `tests/dsp/filter_golden_test.cpp` · [docs/dsp/filtros.md](dsp/filtros.md) |
+
+## Contenido de `dsp/`
+
+| Cabecera | Qué ofrece |
+|---|---|
+| `decibels.h` | Conversión entre decibelios y ganancia lineal |
+| `gain_ramp.h` | Ganancia suavizada sin chasquidos |
+| `filter_design.h` | De parámetros de banda a coeficientes, y respuesta en frecuencia exacta para dibujar la curva |
+| `band_filter.h` | Procesado de audio de una banda (cascada de secciones SVF) |
+
+El diseño (`designBand`) y el procesado (`BandFilter`) están separados a propósito: la interfaz puede calcular la curva sin procesar audio, y el filtro no sabe nada de tipos ni de parámetros de usuario. Un tipo de filtro nuevo se añade en `designBand` sin tocar `BandFilter`. Detalles en [docs/dsp/filtros.md](dsp/filtros.md).
+
+Los filtros todavía no están conectados al plugin: eso es la fase 2.
 
 ## Parámetros: una sola fuente de verdad
 

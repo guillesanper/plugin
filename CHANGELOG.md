@@ -9,3 +9,4 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 - Estructura del proyecto: módulos `dsp`, `core` y `plugin`, tests y CI.
 - Plugin VST3 (y AU en macOS) que deja pasar el audio, con ganancia de salida y bypass.
 - Formato de estado propio, versión 1.
+- Núcleo de filtros en `dsp/`: campana, shelves, cortes de 6 a 96 dB/oct, notch, paso banda, paso todo y tilt, con cálculo exacto de la respuesta en frecuencia. Aún no conectado al plugin.

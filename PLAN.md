@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **decisiones principales cerradas** (sección 2). Siguiente paso: fase 0.
+Estado: **fases 0 y 1 completadas.** Siguiente paso: fase 2 (EQ estático con interfaz).
 
 ---
 
@@ -203,8 +203,8 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 
 | Fase | Contenido | Criterio de salida | Duración |
 |---|---|---|---|
-| **0. Base** | Estructura del repo, CMake, JUCE, CI, plugin vacío que pasa audio; `docs/arquitectura.md`, primeros ADR, `CONTRIBUTING.md` | Carga en FL Studio y pasa `pluginval` | 1 a 2 semanas |
-| **1. Núcleo de filtros** | SVF, todos los tipos y pendientes, cálculo de la curva, tests | Respuesta medida = respuesta teórica (±0,1 dB) | 2 a 3 semanas |
+| **0. Base** ✅ | Estructura del repo, CMake, JUCE, CI, plugin vacío que pasa audio; `docs/arquitectura.md`, primeros ADR, `CONTRIBUTING.md` | Carga en FL Studio y pasa `pluginval` | 1 a 2 semanas |
+| **1. Núcleo de filtros** ✅ | SVF, todos los tipos y pendientes, cálculo de la curva, tests | Respuesta medida = respuesta teórica (±0,1 dB) | 2 a 3 semanas |
 | **2. EQ estático** | 8 bandas, parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** | 24 bandas, M/S y L/R por banda, presets, deshacer, instalador Windows, CLAP | Release en GitHub con binarios | 3 a 4 semanas |
