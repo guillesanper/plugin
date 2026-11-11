@@ -1,8 +1,8 @@
-# Plan: ecualizador dinámico open source
+# esceQ: plan del proyecto
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **borrador para debatir**. Las decisiones marcadas como *abiertas* en la sección 2 hay que cerrarlas antes de escribir código.
+Estado: **decisiones principales cerradas** (sección 2). Siguiente paso: fase 0.
 
 ---
 
@@ -33,59 +33,47 @@ Estado: **borrador para debatir**. Las decisiones marcadas como *abiertas* en la
 
 ---
 
-## 2. Decisiones abiertas (a debatir)
+## 2. Decisiones tomadas
 
-### 2.1 ¿Empezar de cero o partir de algo existente?
+| Tema | Decisión |
+|---|---|
+| Nombre | **esceQ** |
+| Punto de partida | De cero. ZL Equalizer (AGPLv3, JUCE) se usa solo como referencia de arquitectura, sin copiar código |
+| Framework | JUCE 8, confinado a las capas de plugin e interfaz |
+| Licencia | Plugin en AGPLv3; biblioteca DSP en MIT |
+| Primera versión | EQ estático sólido primero (fase 2), dinámica justo después (fase 3) |
+| Principio rector | **Todo lo anterior debe poder cambiarse en el futuro** (ver 2.1) |
 
-Ya existe un proyecto muy parecido a lo que describimos: **ZL Equalizer** (ZL-Audio), EQ dinámico libre, AGPLv3, hecho con JUCE, con versión 1.x publicada. Antes de invertir meses conviene decidir cuál es nuestra razón de ser:
+Pendiente: comprobar que "esceQ" no está en uso en KVR, GitHub ni registros de marca antes de la primera versión pública.
 
-| Opción | A favor | En contra |
+### 2.1 Diseñar para poder cambiar
+
+Las decisiones de framework y licencia son las más caras de revertir. Reglas para que sigan siendo reversibles:
+
+**Framework**
+- `dsp/` es C++20 puro: no incluye ninguna cabecera de JUCE ni de ningún SDK de plugin. El CI lo compila y testea por separado, sin JUCE presente, para que la regla no se rompa por descuido.
+- Entre el DSP y el framework hay una capa fina propia (`core/`): modelo de parámetros, estado y serialización definidos con tipos nuestros. La capa JUCE solo traduce entre ese modelo y el host.
+- El formato del estado guardado es nuestro (versionado, independiente de las utilidades de JUCE), de modo que un proyecto guardado hoy se pueda abrir aunque mañana el plugin esté hecho con otro framework.
+- Los identificadores de parámetro son estables y no dependen de cómo los numere el framework.
+- La lógica de la interfaz (qué nodo está seleccionado, cómo se convierte un arrastre en frecuencia y ganancia, escalas de los ejes) va separada del pintado, para que cambiar de biblioteca gráfica suponga reescribir solo el dibujo.
+
+**Licencia**
+- Cambiar la licencia exige el permiso de todos los titulares de derechos. Mientras el autor sea uno, es trivial; con contribuciones externas deja de serlo.
+- Por eso, desde el primer PR externo se pedirá un acuerdo de contribución (CLA) que permita relicenciar. Sin él, la licencia queda congelada de facto.
+- El DSP en MIT ya puede usarse en cualquier contexto. Lo único atado a AGPLv3 es lo que enlaza con JUCE: si se sustituye JUCE o se adquiere su licencia comercial, el plugin puede cambiar de licencia.
+- Cada archivo lleva su identificador SPDX para que quede claro qué licencia aplica a qué.
+- No se copia código de proyectos AGPL/GPL (incluido ZL Equalizer) dentro de `dsp/`: contaminaría la parte MIT.
+
+### 2.2 Alternativas descartadas
+
+| Framework | Licencia | Por qué no ahora |
 |---|---|---|
-| **A. De cero** | Aprendizaje completo, arquitectura y licencia a nuestra elección, identidad propia | Meses hasta igualar lo que ya existe |
-| **B. Contribuir a ZL Equalizer** | Impacto inmediato, base madura | No es "nuestro" plugin; hay que aceptar su diseño |
-| **C. Fork** | Arranque rápido | Heredamos AGPLv3 y una base de código grande que no conocemos; su logo y nombre no se pueden reutilizar |
+| CLAP nativo + clap-wrapper | MIT | Sin GUI propia: demasiado trabajo de fontanería para empezar. Es el candidato natural si algún día se abandona JUCE |
+| DPF | ISC | GUI demasiado básica para esta interfaz |
+| iPlug2 | Permisiva | Comunidad y documentación menores |
+| nih-plug (Rust) | ISC | Sin AU; ecosistema de GUI menos maduro |
 
-**Recomendación:** A, pero leyendo ZL Equalizer como referencia de arquitectura y fijando un diferenciador claro. Candidatos a diferenciador:
-
-1. Núcleo DSP como biblioteca independiente y bien testeada, reutilizable fuera del plugin.
-2. Flujo de trabajo e interfaz más pulidos para producción en FL Studio.
-3. Funciones que las alternativas libres cubren poco: fase lineal con bandas dinámicas, dinámica espectral, detección de colisiones entre pistas.
-
-Si el objetivo principal es aprender DSP y desarrollo de plugins, A es la respuesta sin más discusión.
-
-### 2.2 Framework
-
-| Framework | Lenguaje | Licencia | Formatos | GUI | Valoración |
-|---|---|---|---|---|---|
-| **JUCE 8** | C++ | AGPLv3 o comercial | VST3, AU, AAX, LV2, standalone; CLAP con `clap-juce-extensions` | Completa (software, OpenGL, Direct2D) | El estándar de facto. Más documentación, ejemplos y herramientas que ningún otro |
-| **CLAP nativo + clap-wrapper** | C/C++ | MIT | CLAP, y VST3/AU envolviendo | Ninguna: hay que traerla (VSTGUI, Visage, Dear ImGui, propia) | Máxima libertad de licencia; mucho más trabajo en GUI y en fontanería |
-| **DPF** | C++ | ISC | LV2, VST2, VST3, CLAP, standalone | Básica (OpenGL, NanoVG) | Ligero y permisivo; GUI pobre para una interfaz tan rica como esta |
-| **iPlug2** | C++ | Permisiva (tipo zlib) | VST3, AU, AAX, CLAP, Web | NanoVG o Skia | Buena opción intermedia; comunidad y documentación menores |
-| **nih-plug** | Rust | ISC | VST3, CLAP | egui, iced, VIZIA | Muy agradable y seguro; sin AU, ecosistema de GUI menos maduro, desarrollo del framework lento |
-
-**Recomendación:** JUCE 8 bajo AGPLv3, con una condición de arquitectura: el DSP vive en una biblioteca C++20 **sin ninguna dependencia de JUCE**. Así el framework queda confinado a la capa de plugin y de interfaz, y si algún día queremos cambiarlo o relicenciar el núcleo, se puede.
-
-Motivos: la interfaz (curva interactiva, analizador, muchas bandas) es la mitad del proyecto y JUCE es donde menos hay que inventar; VST3 en FL Studio vía JUCE está probadísimo; y `pluginval` se integra directamente.
-
-El coste: el plugin entero queda obligado a AGPLv3 (ver 2.3).
-
-### 2.3 Licencia
-
-- Con JUCE sin pagar licencia comercial, el plugin debe ser **AGPLv3**.
-- El SDK de VST3 es **MIT** desde la versión 3.8 (octubre de 2025), así que ya no impone GPLv3 por su lado. CLAP es MIT.
-- Propuesta: plugin en AGPLv3; biblioteca DSP en el mismo repo pero con licencia propia más permisiva (MIT) si queremos que otros la reutilicen. Es compatible: código MIT puede integrarse en una obra AGPLv3.
-
-*Abierto:* ¿nos importa que el núcleo DSP sea permisivo, o todo AGPLv3 y listo?
-
-### 2.4 Nombre
-
-Hace falta un nombre propio que no recuerde a marcas existentes. Pendiente de proponer y comprobar que no está usado en KVR, GitHub ni registros de marca.
-
-### 2.5 Alcance del MVP
-
-Propuesta de primera versión utilizable (ver fases 0 a 3 en la sección 6): 8 bandas, tipos bell / shelf / corte / notch, dinámica por banda, analizador, VST3 en Windows. Todo lo demás, después.
-
-*Abierto:* ¿la dinámica entra en el MVP o primero se publica un EQ estático sólido? Recomiendo estático primero (fase 2) y dinámica justo después (fase 3): la dinámica depende de que los filtros modulen sin artefactos, y eso se valida mejor por separado.
+Notas de licencias: el SDK de VST3 es MIT desde la 3.8 (octubre de 2025) y CLAP es MIT, así que ninguno de los dos formatos condiciona la licencia del plugin.
 
 ---
 
@@ -98,6 +86,7 @@ plugin/
 │   ├── dynamics/   Detector, seguidor de envolvente, curva de ganancia
 │   ├── analysis/   FFT, ventanas, suavizado del espectro
 │   └── phase/      Fase lineal (FIR / FFT)
+├── core/           Modelo de parámetros, estado y serialización. Sin JUCE.
 ├── plugin/         Capa JUCE: AudioProcessor, parámetros, estado, presets
 ├── ui/             Componentes: curva, nodos, analizador, panel de banda
 ├── tests/          Tests unitarios y de respuesta (Catch2)
@@ -202,7 +191,8 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | La interfaz consume más tiempo que el DSP | Empezar con una interfaz funcional y fea; pulir al final de cada fase, no antes |
 | Artefactos al modular filtros | SVF desde el principio y tests específicos de modulación en la fase 1 |
 | Fase lineal + dinámica resulta inviable con buena calidad | Está en la fase 5, fuera del camino crítico; se puede publicar sin ello |
-| Duplicar un proyecto que ya existe | Cerrar el diferenciador (2.1) antes de la fase 2 |
+| Duplicar un proyecto que ya existe | Elegir un diferenciador antes de la fase 2: núcleo DSP reutilizable, flujo de trabajo en FL Studio, o funciones poco cubiertas (fase lineal con dinámica, dinámica espectral) |
+| Quedar atados a JUCE o a AGPLv3 | Reglas de la sección 2.1, verificadas en CI |
 | Romper proyectos de usuarios al cambiar parámetros | Congelar identificadores y versionar el estado guardado desde la 0.1 |
 | Problemas de marca | Nombre e identidad visual propios; ninguna referencia a marcas ajenas en el producto |
 
