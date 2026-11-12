@@ -114,6 +114,10 @@ pluginval.exe --strictness-level 10 --validate build\plugin\esceQ_artefacts\Rele
 
 Debe terminar en `SUCCESS`. Es la misma comprobación que hace el CI en cada push.
 
+### 9. Presets de usuario durante el desarrollo
+
+Los presets de usuario se guardan en `%APPDATA%\esceQ\Presets`. Para no mezclar los de pruebas con los tuyos, define la variable de entorno `ESCEQ_PRESETS_DIR` con una ruta absoluta antes de abrir el host o la aplicación independiente: el plugin usará esa carpeta. Los tests de `tests/plugin` la apuntan a una carpeta temporal.
+
 ## Flujo de trabajo diario
 
 | Estoy trabajando en... | Configuración | Ciclo |

@@ -20,7 +20,9 @@ cmake --build build --config Release --parallel
 
 El VST3 queda en `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3`. Para probarlo en FL Studio, cópialo a `C:\Program Files\Common Files\VST3` y vuelve a escanear los plugins.
 
-Solo `dsp/` y `core/` con sus tests (rápido, sin JUCE):
+La compilación completa incluye dos grupos de tests: `esceq_tests` (`dsp/`, `core/` y `ui/logic`, sin JUCE) y `esceq_plugin_tests` (la capa `plugin/`: estado, deshacer y presets, con JUCE). `ctest --test-dir build` ejecuta los dos.
+
+Solo `dsp/`, `core/` y `ui/logic` con sus tests (rápido, sin JUCE):
 
 ```
 cmake -S . -B build-core -DESCEQ_BUILD_PLUGIN=OFF

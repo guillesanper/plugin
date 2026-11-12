@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0, 1, 2 y 3 completadas; fase 4 en curso** (hecho: canal por banda). Las fases 2 y 3 están pendientes de probarse en FL Studio con una mezcla real (incluido el enrutado del sidechain).
+Estado: **fases 0, 1, 2 y 3 completadas; fase 4 en curso** (hecho: canal por banda, interfaz con controles propios, deshacer/rehacer, presets y estado versión 2; falta la distribución). Las fases 2 y 3 están pendientes de probarse en FL Studio con una mezcla real (incluido el enrutado del sidechain).
 
 ---
 

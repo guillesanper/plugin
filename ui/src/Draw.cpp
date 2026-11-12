@@ -198,6 +198,47 @@ void pill(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& 
         focusRing(g, bounds, radius::control);
 }
 
+void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state, Corners corners)
+{
+    const float alpha = alphaFor(state);
+    g.setColour(body(state).withMultipliedAlpha(alpha));
+    g.fillPath(roundedCorners(bounds, radius::control, corners));
+    g.setColour(colour::lineStrong.withMultipliedAlpha(alpha));
+    g.strokePath(roundedCorners(bounds.reduced(0.5f), radius::control, corners), juce::PathStrokeType(stroke::hairline));
+
+    const auto c = bounds.getCentre();
+    juce::Path path;
+    switch (icon)
+    {
+    case Icon::Previous:
+    case Icon::Next:
+    {
+        const float d = icon == Icon::Next ? 1.0f : -1.0f;
+        path.startNewSubPath(c.x - 2.0f * d, c.y - 4.0f);
+        path.lineTo(c.x + 2.0f * d, c.y);
+        path.lineTo(c.x - 2.0f * d, c.y + 4.0f);
+        break;
+    }
+    case Icon::Undo:
+    case Icon::Redo:
+    {
+        // Flecha curva: un arco con una punta en su extremo.
+        const float d = icon == Icon::Redo ? 1.0f : -1.0f;
+        path.startNewSubPath(c.x - 5.0f * d, c.y + 4.0f);
+        path.cubicTo(c.x - 5.0f * d, c.y - 3.0f, c.x + 1.0f * d, c.y - 3.5f, c.x + 5.0f * d, c.y - 0.5f);
+        path.startNewSubPath(c.x + 5.5f * d, c.y - 4.5f);
+        path.lineTo(c.x + 5.5f * d, c.y);
+        path.lineTo(c.x + 1.0f * d, c.y);
+        break;
+    }
+    }
+    g.setColour((state.hover && state.enabled ? colour::text : colour::textMuted).withMultipliedAlpha(alpha));
+    g.strokePath(path, juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    if (state.focused)
+        focusRing(g, bounds, radius::control);
+}
+
 void dropdown(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state)
 {
     const float alpha = alphaFor(state);

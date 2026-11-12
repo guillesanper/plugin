@@ -18,7 +18,9 @@ add_executable(esceq_tests
     dsp/filter_golden_test.cpp
     dsp/gain_ramp_test.cpp
     core/band_model_test.cpp
+    core/history_test.cpp
     core/parameters_test.cpp
+    core/presets_test.cpp
     core/state_test.cpp
     ui/control_logic_test.cpp
     ui/curve_mapping_test.cpp

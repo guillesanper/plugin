@@ -26,7 +26,7 @@ jobs:
       - name: Configurar
         run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Debug
       - name: Compilar
-        run: cmake --build build --config Debug --parallel
+        run: cmake --build build --config Debug --parallel 4
       - name: Tests
         run: ctest --test-dir build -C Debug --output-on-failure
 
@@ -68,7 +68,7 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 
       - name: Compilar
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --config Release --parallel 4
 
       - name: Tests
         run: ctest --test-dir build -C Release --output-on-failure

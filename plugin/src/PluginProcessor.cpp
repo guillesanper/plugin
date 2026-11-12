@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PluginProcessor.h"
 
-#include "EqEditor.h"
-
 #include "esceq/core/band_model.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/decibels.h"
@@ -59,6 +57,7 @@ PluginProcessor::PluginProcessor()
         params_[i] = apvts_.getParameter(id);
         jassert(raw_[i] != nullptr && params_[i] != nullptr);
     }
+    history_ = std::make_unique<EditHistory>(*this);
 }
 
 // Los parámetros del host se generan a partir de la tabla de core: no se
@@ -139,6 +138,32 @@ float PluginProcessor::dynamicGainDb(int band) const noexcept
     if (band < 0 || band >= core::kNumBands)
         return 0.0f;
     return dynamicGains_[static_cast<std::size_t>(band)].load(std::memory_order_relaxed);
+}
+
+void PluginProcessor::applyValues(const core::ParameterValues& values)
+{
+    for (std::size_t i = 0; i < core::kNumParameters; ++i)
+    {
+        const float target = core::sanitize(core::parameters()[i], values[i]);
+        const float now = raw_[i]->load(std::memory_order_relaxed);
+        if (!(target < now) && !(target > now))
+            continue; // ya tiene ese valor
+        params_[i]->beginChangeGesture();
+        params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1(target));
+        params_[i]->endChangeGesture();
+    }
+}
+
+core::UiSettings PluginProcessor::uiSettings() const
+{
+    const juce::ScopedLock lock(uiSettingsLock_);
+    return uiSettings_;
+}
+
+void PluginProcessor::setUiSettings(const core::UiSettings& settings)
+{
+    const juce::ScopedLock lock(uiSettingsLock_);
+    uiSettings_ = core::sanitize(settings);
 }
 
 float PluginProcessor::takeOutputPeak(int channel) noexcept
@@ -228,16 +253,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     }
 }
 
-juce::AudioProcessorEditor* PluginProcessor::createEditor()
-{
-    return new ui::EqEditor(*this);
-}
-
 // El estado se guarda en el formato propio de core, no en el de JUCE:
-// así sigue siendo legible aunque cambie el framework.
+// así sigue siendo legible aunque cambie el framework. Lleva los parámetros
+// y las preferencias de la interfaz.
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    const std::string text = core::serializeState(currentValues());
+    const std::string text = core::serializePluginState({currentValues(), uiSettings()});
     destData.replaceAll(text.data(), text.size());
 }
 
@@ -247,12 +268,17 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
         return;
 
     const std::string_view text{static_cast<const char*>(data), static_cast<std::size_t>(sizeInBytes)};
-    const auto values = core::deserializeState(text);
-    if (!values)
+    const auto state = core::deserializePluginState(text);
+    if (!state)
         return;
 
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
-        params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1((*values)[i]));
+        params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1(state->parameters[i]));
+
+    setUiSettings(state->ui);
+    // Lo que había antes de cargar ya no se puede deshacer.
+    history_->reset();
+    stateRevision_.fetch_add(1, std::memory_order_relaxed);
 }
 
 } // namespace esceq

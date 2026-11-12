@@ -6,6 +6,7 @@
 #include "CurveView.h"
 #include "EsceqLookAndFeel.h"
 #include "OutputMeter.h"
+#include "PresetBar.h"
 
 #include "esceq/ui/layout.h"
 
@@ -29,11 +30,17 @@ public:
 
     void paint(juce::Graphics& g) override;
     void resized() override;
+    bool keyPressed(const juce::KeyPress& key) override;
 
     CurveView& curve() noexcept { return curve_; }
 
 private:
     void timerCallback() override;
+
+    /// Aplica las preferencias guardadas con el proyecto (analizador, rango y tamaño).
+    void applyUiSettings();
+    /// Guarda en el procesador las preferencias actuales de la interfaz.
+    void storeUiSettings();
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
@@ -44,11 +51,18 @@ private:
     OutputMeter meter_;
     BandPanel panel_;
 
+    PresetBar presets_;
+    IconButton undo_{draw::Icon::Undo, "Undo", draw::Corners::Left};
+    IconButton redo_{draw::Icon::Redo, "Redo", draw::Corners::Right};
+    juce::TooltipWindow tooltips_{this, 700};
     Dropdown analyzer_{"Analyzer"};
     Dropdown range_{"Display range"};
     Segmented size_;
     ParamControl output_{ParamControl::Style::Bar, "Output"};
     ToggleSwitch bypass_{ToggleSwitch::Style::Pill, "Bypass", "Bypass"};
+
+    int stateRevision_ = 0;
+    bool restoring_ = true; ///< Mientras se aplican preferencias guardadas, no se vuelven a guardar.
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EqEditor)
 };

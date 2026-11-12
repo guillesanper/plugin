@@ -40,8 +40,13 @@ set_target_properties(esceq_assets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 # La interfaz (ui/src) se compila aquí: los módulos de JUCE solo pueden
 # compilarse una vez por binario. La lista de fuentes está en ui/CMakeLists.txt.
 target_sources(esceQ PRIVATE
+    src/EditHistory.cpp
+    src/EditHistory.h
+    src/PluginEditorFactory.cpp
     src/PluginProcessor.cpp
     src/PluginProcessor.h
+    src/PresetManager.cpp
+    src/PresetManager.h
     ${ESCEQ_UI_SOURCES})
 
 target_include_directories(esceQ PRIVATE src ${ESCEQ_UI_DIR})

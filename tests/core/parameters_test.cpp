@@ -5,6 +5,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <cmath>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <limits>
@@ -263,4 +264,71 @@ TEST_CASE("Parametros: parseValue")
             REQUIRE(parsed.has_value());
             CHECK_THAT(*parsed, WithinRel(value, 0.01f) || WithinAbs(value, 0.051));
         }
+}
+
+TEST_CASE("Parametros: los valores redondos dan la vuelta exactos por la posicion del host")
+{
+    // El host guarda cada parametro como una posicion 0..1 en float. Al
+    // cargar un estado o un preset, cada valor pasa por ahi: si no volviera
+    // exacto, un preset recien cargado ya no coincidiria con su archivo.
+    for (const auto& spec : parameters())
+    {
+        INFO(spec.id);
+        CHECK(fromNormalized(spec, toNormalized(spec, spec.defaultValue)) == spec.defaultValue);
+        CHECK(fromNormalized(spec, toNormalized(spec, spec.min)) == spec.min);
+        CHECK(fromNormalized(spec, toNormalized(spec, spec.max)) == spec.max);
+    }
+
+    auto roundTrips = [](std::size_t index, std::initializer_list<float> values) {
+        const auto& spec = parameters()[index];
+        for (const float value : values)
+        {
+            INFO(spec.id << " = " << value);
+            CHECK(fromNormalized(spec, toNormalized(spec, value)) == value);
+        }
+    };
+    roundTrips(bandParameter(0, BandParam::Gain), {6.0f, -6.0f, 3.0f, -4.5f, 2.5f, 0.1f, -0.1f, 12.3f, -29.9f, 1.25f});
+    roundTrips(bandParameter(0, BandParam::Frequency), {25.0f, 30.0f, 90.0f, 120.0f, 250.0f, 432.0f, 777.0f, 2500.0f, 6500.0f, 12345.0f});
+    roundTrips(bandParameter(0, BandParam::Q), {0.7071f, 1.0f, 1.2f, 1.4f, 2.0f, 4.0f, 5.0f, 0.8f, 12.5f});
+    roundTrips(dynamicParameter(0, DynParam::Threshold), {-30.0f, -28.0f, -41.0f, -0.5f, -59.9f});
+    roundTrips(dynamicParameter(0, DynParam::Attack), {0.5f, 1.0f, 3.0f, 5.0f, 12.5f, 150.0f});
+    roundTrips(dynamicParameter(0, DynParam::Release), {60.0f, 80.0f, 100.0f, 250.0f, 1500.0f});
+    roundTrips(kOutputGain, {5.0f, -2.0f, -7.3125f, 3.0f, -4.0f});
+}
+
+TEST_CASE("Parametros: redondear el valor no cambia la posicion ni el orden")
+{
+    // El contrato de automatizacion: una posicion siempre da un valor que se
+    // normaliza a esa misma posicion, y posiciones mayores dan valores mayores.
+    std::uint32_t rng = 2024u;
+    for (const std::size_t index : {static_cast<std::size_t>(kOutputGain), bandParameter(0, BandParam::Frequency),
+                                    bandParameter(0, BandParam::Gain), bandParameter(0, BandParam::Q),
+                                    dynamicParameter(0, DynParam::Threshold), dynamicParameter(0, DynParam::Attack),
+                                    dynamicParameter(0, DynParam::Release), dynamicParameter(0, DynParam::Knee)})
+    {
+        const auto& spec = parameters()[index];
+        INFO(spec.id);
+        for (int i = 0; i < 2000; ++i)
+        {
+            rng = rng * 1664525u + 1013904223u;
+            const float n = static_cast<float>(rng >> 8) / 16777216.0f;
+            const float value = fromNormalized(spec, n);
+            // Una segunda vuelta ya no mueve nada: el estado guardado es estable.
+            const float again = fromNormalized(spec, toNormalized(spec, value));
+            CHECK(again == value);
+            // Y el valor esta donde dice la formula, salvo la resolucion del float.
+            const double expected = spec.scale == ParameterScale::Logarithmic
+                                        ? spec.min * std::pow(static_cast<double>(spec.max) / spec.min, static_cast<double>(n))
+                                        : spec.min + static_cast<double>(n) * (spec.max - spec.min);
+            CHECK_THAT(static_cast<double>(value), WithinRel(expected, 2e-6) || WithinAbs(expected, 4e-6));
+        }
+
+        float previous = fromNormalized(spec, 0.0f);
+        for (int i = 1; i <= 4000; ++i)
+        {
+            const float value = fromNormalized(spec, static_cast<float>(i) / 4000.0f);
+            CHECK(value > previous);
+            previous = value;
+        }
+    }
 }

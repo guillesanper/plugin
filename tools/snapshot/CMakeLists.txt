@@ -7,7 +7,10 @@ juce_add_console_app(esceq_snapshot PRODUCT_NAME "esceq_snapshot")
 
 target_sources(esceq_snapshot PRIVATE
     main.cpp
+    ${PROJECT_SOURCE_DIR}/plugin/src/EditHistory.cpp
+    ${PROJECT_SOURCE_DIR}/plugin/src/PluginEditorFactory.cpp
     ${PROJECT_SOURCE_DIR}/plugin/src/PluginProcessor.cpp
+    ${PROJECT_SOURCE_DIR}/plugin/src/PresetManager.cpp
     ${ESCEQ_UI_SOURCES})
 
 target_include_directories(esceq_snapshot PRIVATE ${PROJECT_SOURCE_DIR}/plugin/src ${ESCEQ_UI_DIR})

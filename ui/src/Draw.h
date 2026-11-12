@@ -42,6 +42,13 @@ enum class Corners { All, Left, Middle, Right };
 void pill(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& text, bool on, juce::Colour accent,
           const ControlState& state, Corners corners = Corners::All);
 
+/// Iconos de los botones de la barra superior.
+enum class Icon { Undo, Redo, Previous, Next };
+
+/// Botón cuadrado con un icono.
+void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state,
+                Corners corners = Corners::All);
+
 /// Cuerpo de un desplegable, con su flecha.
 void dropdown(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state);
 

@@ -148,6 +148,13 @@ float sanitize(const ParameterSpec& spec, float value) noexcept;
 
 /// Valor del parámetro <-> posición 0..1 del host (automatización).
 /// CONTRATO: cambiar esta correspondencia altera la automatización guardada.
+///
+/// La posición es un float y tiene menos resolución que el valor. De los
+/// valores que corresponden a una misma posición, fromNormalized() devuelve
+/// el de menos cifras significativas: así fromNormalized(toNormalized(v)) == v
+/// para los valores "redondos" (6 dB, 1200 Hz, los valores por defecto), que
+/// es lo que hace el host cada vez que se carga un estado o un preset.
+/// Seguras en tiempo real.
 float toNormalized(const ParameterSpec& spec, float value) noexcept;
 float fromNormalized(const ParameterSpec& spec, float normalized) noexcept;
 

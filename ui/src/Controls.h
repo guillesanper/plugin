@@ -173,6 +173,24 @@ private:
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Segmented)
 };
 
+/// Botón con un icono (deshacer, rehacer, preset anterior y siguiente).
+class IconButton final : public juce::Button
+{
+public:
+    IconButton(draw::Icon icon, const juce::String& accessibleName, draw::Corners corners = draw::Corners::All);
+
+    void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
+    void focusGained(FocusChangeType cause) override;
+    void focusLost(FocusChangeType cause) override;
+
+private:
+    draw::Icon icon_;
+    draw::Corners corners_;
+    bool keyboardFocus_ = false;
+
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IconButton)
+};
+
 /// Desplegable enlazado a un parámetro Choice. Es un juce::ComboBox pintado
 /// por EsceqLookAndFeel.
 class Dropdown final : public juce::ComboBox

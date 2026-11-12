@@ -38,6 +38,7 @@ EqEditor::EqEditor(PluginProcessor& owner)
       curve_(owner),
       meter_(owner),
       panel_(owner),
+      presets_(owner),
       size_(sizeOptions(), "Window size")
 {
     setLookAndFeel(&lookAndFeel_);
@@ -47,17 +48,19 @@ EqEditor::EqEditor(PluginProcessor& owner)
     analyzer_.addItem("Analyzer off", 1);
     analyzer_.addItem("Analyzer post", 2);
     analyzer_.addItem("Analyzer pre + post", 3);
-    analyzer_.setSelectedId(2, juce::dontSendNotification);
     analyzer_.onChange = [this] {
         const int id = analyzer_.getSelectedId();
         curve_.setAnalyzerMode(id == 1 ? AnalyzerMode::Off : id == 3 ? AnalyzerMode::PreAndPost : AnalyzerMode::Post);
+        storeUiSettings();
     };
     addAndMakeVisible(analyzer_);
 
     for (int range : {6, 12, 18, 30})
         range_.addItem(juce::String::fromUTF8("\xC2\xB1") + juce::String(range) + " dB", range);
-    range_.setSelectedId(18, juce::dontSendNotification);
-    range_.onChange = [this] { curve_.setRangeDb(range_.getSelectedId()); };
+    range_.onChange = [this] {
+        curve_.setRangeDb(range_.getSelectedId());
+        storeUiSettings();
+    };
     addAndMakeVisible(range_);
 
     size_.onSelect = [this](int index) {
@@ -65,6 +68,14 @@ EqEditor::EqEditor(PluginProcessor& owner)
         setSize(size.width, size.height);
     };
     addAndMakeVisible(size_);
+
+    undo_.onClick = [this] { processor_.history().undo(); };
+    redo_.onClick = [this] { processor_.history().redo(); };
+    undo_.setTooltip("Undo (Ctrl+Z)");
+    redo_.setTooltip("Redo (Ctrl+Shift+Z)");
+    addAndMakeVisible(presets_);
+    addAndMakeVisible(undo_);
+    addAndMakeVisible(redo_);
 
     output_.attach(owner.parameter(core::kOutputGain), core::parameters()[core::kOutputGain]);
     addAndMakeVisible(output_);
@@ -80,16 +91,66 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     // Orden de tabulación: barra superior, curva y panel.
     int order = 1;
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&analyzer_, &range_, &size_, &output_, &bypass_, &curve_,
+    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &analyzer_, &range_, &size_, &output_, &bypass_, &curve_,
                                                                       &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
     setResizeLimits(kMinWindow.width, kMinWindow.height, kMaxWindow.width, kMaxWindow.height);
-    const auto size = windowSize(kDefaultSizePreset);
-    setSize(size.width, size.height);
+    setWantsKeyboardFocus(true);
+
+    // Preferencias guardadas con el proyecto: analizador, rango y tamaño.
+    applyUiSettings();
 
     startTimerHz(kRefreshHz);
+}
+
+void EqEditor::applyUiSettings()
+{
+    restoring_ = true;
+    stateRevision_ = processor_.stateRevision();
+    const auto ui = processor_.uiSettings();
+
+    analyzer_.setSelectedId(ui.analyzerMode + 1, juce::sendNotificationSync);
+    range_.setSelectedId(ui.displayRangeDb, juce::sendNotificationSync);
+
+    const auto size = ui.windowWidth > 0 ? clampWindow({ui.windowWidth, ui.windowHeight}) : windowSize(kDefaultSizePreset);
+    setSize(size.width, size.height);
+    restoring_ = false;
+}
+
+void EqEditor::storeUiSettings()
+{
+    if (restoring_)
+        return;
+    auto ui = processor_.uiSettings();
+    ui.analyzerMode = analyzer_.getSelectedId() - 1;
+    ui.displayRangeDb = range_.getSelectedId();
+    ui.windowWidth = getWidth();
+    ui.windowHeight = getHeight();
+    processor_.setUiSettings(ui);
+}
+
+bool EqEditor::keyPressed(const juce::KeyPress& key)
+{
+    // Ctrl/Cmd+Z deshace; Ctrl/Cmd+Mayús+Z y Ctrl/Cmd+Y rehacen. Muchos hosts
+    // se quedan con estas teclas: por eso están también los botones.
+    const auto mods = key.getModifiers();
+    if (!mods.isCommandDown())
+        return false;
+    const bool z = key.isKeyCode('z') || key.isKeyCode('Z');
+    const bool y = key.isKeyCode('y') || key.isKeyCode('Y');
+    if (z && !mods.isShiftDown())
+    {
+        processor_.history().undo();
+        return true;
+    }
+    if ((z && mods.isShiftDown()) || y)
+    {
+        processor_.history().redo();
+        return true;
+    }
+    return false;
 }
 
 EqEditor::~EqEditor()
@@ -133,6 +194,9 @@ void EqEditor::resized()
     layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()));
     topBar_ = topBarLayout(layout_.topBar);
 
+    presets_.setBounds(toInt(topBar_.presets));
+    undo_.setBounds(toInt(topBar_.undo));
+    redo_.setBounds(toInt(topBar_.redo).withTrimmedLeft(-1)); // comparten el borde central
     analyzer_.setBounds(toInt(topBar_.analyzer));
     range_.setBounds(toInt(topBar_.range));
     size_.setBounds(toInt(topBar_.size));
@@ -147,13 +211,22 @@ void EqEditor::resized()
     // El selector de tamaño marca el preset solo si la ventana lo cumple exactamente.
     const auto preset = matchingPreset({getWidth(), getHeight()});
     size_.setSelected(preset ? static_cast<int>(*preset) : -1);
+
+    storeUiSettings();
 }
 
 void EqEditor::timerCallback()
 {
+    // El host ha cargado un estado con la ventana abierta: se aplican sus preferencias.
+    if (processor_.stateRevision() != stateRevision_)
+        applyUiSettings();
+
     curve_.refresh();
     meter_.refresh();
     panel_.refresh();
+    presets_.refresh();
+    undo_.setEnabled(processor_.history().canUndo());
+    redo_.setEnabled(processor_.history().canRedo());
 }
 
 } // namespace esceq::ui

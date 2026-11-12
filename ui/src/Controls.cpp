@@ -584,6 +584,41 @@ void Segmented::enablementChanged()
 }
 
 // ---------------------------------------------------------------------------
+// IconButton
+
+IconButton::IconButton(draw::Icon icon, const juce::String& accessibleName, draw::Corners corners)
+    : juce::Button(accessibleName),
+      icon_(icon),
+      corners_(corners)
+{
+    setTitle(accessibleName);
+    setTooltip(accessibleName);
+    setWantsKeyboardFocus(true);
+}
+
+void IconButton::paintButton(juce::Graphics& g, bool highlighted, bool down)
+{
+    draw::ControlState state;
+    state.hover = highlighted;
+    state.pressed = down;
+    state.enabled = isEnabled();
+    state.focused = keyboardFocus_ && hasKeyboardFocus(false);
+    draw::iconButton(g, getLocalBounds().toFloat(), icon_, state, corners_);
+}
+
+void IconButton::focusGained(FocusChangeType cause)
+{
+    keyboardFocus_ = cause == focusChangedByTabKey;
+    repaint();
+}
+
+void IconButton::focusLost(FocusChangeType)
+{
+    keyboardFocus_ = false;
+    repaint();
+}
+
+// ---------------------------------------------------------------------------
 // Dropdown
 
 Dropdown::Dropdown(const juce::String& accessibleName)

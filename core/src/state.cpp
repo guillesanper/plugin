@@ -1,15 +1,48 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/state.h"
 
+#include "text_utils.h"
+
+#include <algorithm>
+#include <cctype>
 #include <limits>
 #include <locale>
 #include <sstream>
+#include <utility>
+#include <vector>
 
 namespace esceq::core {
 
 namespace {
 
 constexpr std::string_view kMagic = "esceQ-state";
+constexpr std::string_view kUiPrefix = "ui.";
+
+constexpr std::string_view kUiAnalyzer = "ui.analyzer";
+constexpr std::string_view kUiRange = "ui.range";
+constexpr std::string_view kUiWidth = "ui.width";
+constexpr std::string_view kUiHeight = "ui.height";
+constexpr std::string_view kUiPreset = "ui.preset";
+
+constexpr int kDisplayRanges[] = {6, 12, 18, 30};
+constexpr int kMinStoredWindow = 100;
+constexpr int kMaxStoredWindow = 16384;
+
+/// Una línea del estado: `clave valor`, donde el valor es el resto de la línea.
+struct Entry
+{
+    std::string_view key;
+    std::string_view value;
+};
+
+std::string_view trim(std::string_view text)
+{
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
+        text.remove_prefix(1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
+        text.remove_suffix(1);
+    return text;
+}
 
 /// Devuelve la siguiente línea de `text` (sin '\r' final) y la consume.
 std::string_view nextLine(std::string_view& text)
@@ -22,16 +55,92 @@ std::string_view nextLine(std::string_view& text)
     return line;
 }
 
-/// Lee `clave valor` con la configuración regional clásica ("C").
-template <typename T>
-bool parsePair(std::string_view line, std::string& key, T& value)
+Entry splitLine(std::string_view line)
 {
-    std::istringstream in{std::string{line}};
+    line = trim(line);
+    const auto space = line.find_first_of(" \t");
+    if (space == std::string_view::npos)
+        return {line, {}};
+    return {line.substr(0, space), trim(line.substr(space + 1))};
+}
+
+/// Lee el número con el que empieza `text`, con la configuración regional
+/// clásica ("C"). Lo que venga detrás se ignora, como en la versión 1.
+template <typename T>
+bool parseNumber(std::string_view text, T& value)
+{
+    std::istringstream in{std::string{text}};
     in.imbue(std::locale::classic());
-    return static_cast<bool>(in >> key >> value);
+    return static_cast<bool>(in >> value);
+}
+
+/// Migración de la versión 1 a la 2.
+///
+/// La versión 1 solo guardaba parámetros. La 2 añade las preferencias de la
+/// interfaz (`ui.*`). Un estado de la versión 1 no las tiene, así que toman
+/// sus valores por defecto; y si alguna línea `ui.*` aparece en un estado
+/// que dice ser de la versión 1, no la escribió esceQ y se descarta.
+void migrate1to2(std::vector<Entry>& entries)
+{
+    std::erase_if(entries, [](const Entry& entry) { return entry.key.starts_with(kUiPrefix); });
+}
+
+std::string cleanPresetName(std::string_view name)
+{
+    std::string out;
+    for (const char c : trim(name))
+    {
+        // Sin caracteres de control: el nombre ocupa una sola línea del estado.
+        if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f)
+            continue;
+        out.push_back(c);
+    }
+    detail::truncateUtf8(out, static_cast<std::size_t>(kMaxPresetNameLength));
+    return out;
 }
 
 } // namespace
+
+UiSettings sanitize(UiSettings settings)
+{
+    const UiSettings defaults{};
+
+    if (settings.analyzerMode < 0 || settings.analyzerMode >= kNumAnalyzerModes)
+        settings.analyzerMode = defaults.analyzerMode;
+
+    if (std::find(std::begin(kDisplayRanges), std::end(kDisplayRanges), settings.displayRangeDb) == std::end(kDisplayRanges))
+        settings.displayRangeDb = defaults.displayRangeDb;
+
+    // El tamaño es un par: si una de las dos medidas no vale, se descartan las dos.
+    const auto valid = [](int size) { return size >= kMinStoredWindow && size <= kMaxStoredWindow; };
+    if (!valid(settings.windowWidth) || !valid(settings.windowHeight))
+    {
+        settings.windowWidth = 0;
+        settings.windowHeight = 0;
+    }
+
+    settings.presetName = cleanPresetName(settings.presetName);
+    return settings;
+}
+
+std::string serializePluginState(const PluginState& state)
+{
+    std::string out = serializeState(state.parameters);
+
+    const UiSettings ui = sanitize(state.ui);
+    std::ostringstream extra;
+    extra.imbue(std::locale::classic());
+    extra << kUiAnalyzer << ' ' << ui.analyzerMode << '\n';
+    extra << kUiRange << ' ' << ui.displayRangeDb << '\n';
+    if (ui.windowWidth > 0)
+    {
+        extra << kUiWidth << ' ' << ui.windowWidth << '\n';
+        extra << kUiHeight << ' ' << ui.windowHeight << '\n';
+    }
+    if (!ui.presetName.empty())
+        extra << kUiPreset << ' ' << ui.presetName << '\n';
+    return out + extra.str();
+}
 
 std::string serializeState(const ParameterValues& values)
 {
@@ -45,26 +154,62 @@ std::string serializeState(const ParameterValues& values)
     return out.str();
 }
 
-std::optional<ParameterValues> deserializeState(std::string_view text)
+std::optional<PluginState> deserializePluginState(std::string_view text)
 {
-    std::string key;
+    const Entry header = splitLine(nextLine(text));
     int version = 0;
-    if (!parsePair(nextLine(text), key, version) || key != kMagic || version < 1)
+    if (header.key != kMagic || !parseNumber(header.value, version) || version < 1)
         return std::nullopt;
 
-    // Aquí irán las migraciones cuando kStateVersion suba:
-    // cada una transforma el contenido de la versión N a la N+1.
-
-    ParameterValues values = defaultValues();
+    std::vector<Entry> entries;
     while (!text.empty())
     {
-        float value = 0.0f;
-        if (!parsePair(nextLine(text), key, value))
-            continue;
-        if (const auto index = findParameter(key))
-            values[*index] = sanitize(parameters()[*index], value);
+        const Entry entry = splitLine(nextLine(text));
+        if (!entry.key.empty())
+            entries.push_back(entry);
     }
-    return values;
+
+    // Migraciones: cada una lleva el contenido de la versión N a la N+1.
+    // Un estado de una versión más nueva que esta no se migra: se lee lo
+    // que se conozca.
+    if (version < 2)
+        migrate1to2(entries);
+
+    PluginState state;
+    for (const Entry& entry : entries)
+    {
+        if (const auto index = findParameter(entry.key))
+        {
+            float value = 0.0f;
+            if (parseNumber(entry.value, value))
+                state.parameters[*index] = sanitize(parameters()[*index], value);
+            continue;
+        }
+
+        int number = 0;
+        if (entry.key == kUiPreset)
+            state.ui.presetName = std::string(entry.value);
+        else if (!parseNumber(entry.value, number))
+            continue;
+        else if (entry.key == kUiAnalyzer)
+            state.ui.analyzerMode = number;
+        else if (entry.key == kUiRange)
+            state.ui.displayRangeDb = number;
+        else if (entry.key == kUiWidth)
+            state.ui.windowWidth = number;
+        else if (entry.key == kUiHeight)
+            state.ui.windowHeight = number;
+    }
+
+    state.ui = sanitize(std::move(state.ui));
+    return state;
+}
+
+std::optional<ParameterValues> deserializeState(std::string_view text)
+{
+    if (auto state = deserializePluginState(text))
+        return state->parameters;
+    return std::nullopt;
 }
 
 } // namespace esceq::core

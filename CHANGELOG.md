@@ -6,6 +6,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Corregido
 
+- Los valores de los parámetros ya no se desvían al pasar por el host (6 dB volvía como 6,0000014 dB al cargar un proyecto). La posición de automatización de cada valor no cambia.
 - Un nodo arrastrado por debajo (o por encima) del rango visible desaparecía de la curva y no se podía volver a seleccionar. Ahora el arrastre se detiene en el borde de la vista, y un nodo con más ganancia de la que se muestra se dibuja pegado al borde, donde se puede seguir arrastrando.
 
 ### Cambiado
@@ -15,6 +16,9 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Añadido
 
+- Deshacer y rehacer dentro del plugin (botones de la barra superior, Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z). Un arrastre entero es una sola acción.
+- Presets: cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal, Gentle Master) y presets de usuario en una carpeta del sistema, con navegador en la barra superior.
+- El modo del analizador, el rango de la curva y el tamaño de la ventana se guardan con el proyecto. **Formato de estado, versión 2:** los proyectos guardados con la versión 1 cargan igual.
 - Etiqueta flotante con frecuencia, ganancia y Q al señalar o arrastrar un nodo; medidor de la ganancia dinámica junto al nodo y en el panel; flecha en el borde cuando la ganancia de una banda no cabe en el rango visible.
 - Medidor de nivel de salida con pico retenido y aviso de recorte.
 - Tamaños de ventana predefinidos (S, M, L), además del redimensionado libre.

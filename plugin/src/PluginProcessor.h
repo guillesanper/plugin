@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "EditHistory.h"
+#include "PresetManager.h"
+
 #include "esceq/core/parameters.h"
+#include "esceq/core/state.h"
 #include "esceq/dsp/equalizer.h"
 #include "esceq/dsp/gain_ramp.h"
 #include "esceq/dsp/spsc_fifo.h"
@@ -10,6 +14,7 @@
 
 #include <array>
 #include <atomic>
+#include <memory>
 
 namespace esceq {
 
@@ -55,6 +60,22 @@ public:
     /// Valores actuales de todos los parámetros.
     core::ParameterValues currentValues() const noexcept;
 
+    /// Pone todos los parámetros a `values`, avisando al host. Cada parámetro
+    /// que cambia va en su propio gesto, para que el host lo registre.
+    void applyValues(const core::ParameterValues& values);
+
+    /// Deshacer y rehacer, y presets.
+    EditHistory& history() noexcept { return *history_; }
+    PresetManager& presets() noexcept { return presets_; }
+
+    /// Preferencias de la interfaz que se guardan con el proyecto.
+    core::UiSettings uiSettings() const;
+    void setUiSettings(const core::UiSettings& settings);
+
+    /// Cambia cada vez que el host carga un estado: la interfaz abierta
+    /// vuelve a leer las preferencias.
+    int stateRevision() const noexcept { return stateRevision_.load(std::memory_order_relaxed); }
+
     /// Audio mono antes y después del ecualizador, para el analizador.
     /// Un único lector: el editor abierto.
     dsp::SpscFifo& preAnalyzerFifo() noexcept { return preFifo_; }
@@ -95,6 +116,12 @@ private:
     std::atomic<bool> sidechainConnected_{false};
     std::array<std::atomic<float>, 2> outputPeaks_{};
     std::atomic<int> outputChannels_{2};
+
+    core::UiSettings uiSettings_;
+    juce::CriticalSection uiSettingsLock_;
+    std::atomic<int> stateRevision_{0};
+    std::unique_ptr<EditHistory> history_;
+    PresetManager presets_{*this};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

@@ -175,6 +175,20 @@ float sanitize(const ParameterSpec& spec, float value) noexcept
     return std::clamp(value, spec.min, spec.max);
 }
 
+namespace {
+
+/// Redondea a `digits` cifras significativas.
+double roundToSignificant(double value, int digits) noexcept
+{
+    if (value == 0.0 || !std::isfinite(value))
+        return value;
+    const double magnitude = std::floor(std::log10(std::abs(value)));
+    const double scale = std::pow(10.0, static_cast<double>(digits - 1) - magnitude);
+    return std::round(value * scale) / scale;
+}
+
+} // namespace
+
 float toNormalized(const ParameterSpec& spec, float value) noexcept
 {
     const float v = sanitize(spec, value);
@@ -183,7 +197,9 @@ float toNormalized(const ParameterSpec& spec, float value) noexcept
     if (spec.kind == ParameterKind::Continuous && spec.scale == ParameterScale::Logarithmic)
         normalized = static_cast<float>(std::log(static_cast<double>(v) / spec.min) / std::log(static_cast<double>(spec.max) / spec.min));
     else
-        normalized = (v - spec.min) / (spec.max - spec.min);
+        // En doble precisión: con float, la resta ya pierde lo que luego
+        // hace falta para volver al mismo valor.
+        normalized = static_cast<float>((static_cast<double>(v) - spec.min) / (static_cast<double>(spec.max) - spec.min));
 
     return std::clamp(normalized, 0.0f, 1.0f);
 }
@@ -196,7 +212,25 @@ float fromNormalized(const ParameterSpec& spec, float normalized) noexcept
     if (spec.kind == ParameterKind::Continuous && spec.scale == ParameterScale::Logarithmic)
         value = spec.min * std::pow(static_cast<double>(spec.max) / spec.min, n);
 
-    return sanitize(spec, static_cast<float>(value));
+    const float exact = sanitize(spec, static_cast<float>(value));
+    if (spec.kind != ParameterKind::Continuous)
+        return exact;
+
+    // La posición 0..1 es un float: tiene menos resolución que el valor, y
+    // 6 dB volvería del host como 6,0000014 dB. Entre todos los valores que
+    // corresponden a ESTA MISMA posición se devuelve el más "redondo" (el de
+    // menos cifras significativas). Así los valores escritos a mano, los de
+    // los presets y los valores por defecto dan la vuelta exactos, y la
+    // correspondencia con la posición (el contrato de automatización) no
+    // cambia: el valor devuelto sigue normalizándose a `normalized`.
+    const float position = toNormalized(spec, exact);
+    for (int digits = 1; digits <= 7; ++digits)
+    {
+        const float candidate = sanitize(spec, static_cast<float>(roundToSignificant(exact, digits)));
+        if (toNormalized(spec, candidate) == position)
+            return candidate;
+    }
+    return exact;
 }
 
 std::string formatValue(const ParameterSpec& spec, float value)

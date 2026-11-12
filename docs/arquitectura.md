@@ -21,6 +21,7 @@ Las flechas indican "depende de". Nunca al revés.
 | `ui/src/` | Capa gráfica (JUCE): tema, dibujo, controles propios, curva, panel de banda, medidor y editor. Ver [ui.md](ui.md) | `plugin/`, `ui/logic/`, `core/`, JUCE | AGPLv3 |
 | `ui/assets/` | Fuentes embebidas (Inter) | — | SIL OFL 1.1 |
 | `tests/` | Tests de `dsp/`, `core/` y `ui/logic/` | Esos tres, Catch2 | La del código que prueban |
+| `tests/plugin/` | Tests de `plugin/` (estado, deshacer, presets). Usan JUCE, sin la interfaz | `plugin/`, Catch2, JUCE | AGPLv3 |
 | `tools/` | Herramientas de desarrollo (captura del editor). Solo con `-DESCEQ_BUILD_TOOLS=ON` | `plugin/`, `ui/src/` | AGPLv3 |
 
 `ui/src/` no es una biblioteca: sus fuentes se compilan dentro del objetivo del plugin, porque los módulos de JUCE solo pueden compilarse una vez por binario.
@@ -40,7 +41,8 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | Correspondencia valor ↔ posición 0..1 del host (automatización) | `core::toNormalized` / `fromNormalized` | `tests/core/parameters_test.cpp` · [ADR 0005](decisiones/0005-bandas-y-normalizacion.md) |
 | Orden de los tipos de filtro (índice guardado en el estado) | `core::kFilterTypeChoices` y `dsp::FilterType` | `static_assert` en `core/src/band_model.cpp` |
 | Orden de los canales de banda (índice guardado en el estado) | `core::kChannelChoices` y `dsp::ChannelMode` | `static_assert` en `core/src/band_model.cpp` · [ADR 0007](decisiones/0007-canal-por-banda.md) |
-| Formato del estado guardado | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md) |
+| Formato del estado guardado (versiones 1 y 2) | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
+| Nombre, orden y sonido de los presets de fábrica | `core/src/presets.cpp` | `tests/core/presets_test.cpp` · [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
 | Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
 | Buses: entrada y salida principales, y sidechain opcional como segundo bus de entrada | `plugin/src/PluginProcessor.cpp` | Revisión manual: reordenar los buses rompe el enrutado guardado en los proyectos |
 | Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` y `tests/dsp/filter_golden_test.cpp` · [docs/dsp/filtros.md](dsp/filtros.md). La dinámica: `tests/dsp/dynamics_test.cpp` y [docs/dsp/dinamica.md](dsp/dinamica.md). El canal por banda: `tests/dsp/equalizer_channel_test.cpp` |
@@ -66,8 +68,19 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | Cabecera | Qué ofrece |
 |---|---|
 | `parameters.h` | La tabla de parámetros, su normalización para el host y su formato como texto |
-| `state.h` | Lectura y escritura del estado guardado |
+| `state.h` | Lectura y escritura del estado guardado: parámetros y preferencias de la interfaz (`UiSettings`), con migraciones entre versiones |
+| `history.h` | Historial de deshacer y rehacer por instantáneas (`UndoHistory`) |
+| `presets.h` | Presets de fábrica, texto de un preset y nombres de preset válidos como nombre de archivo |
 | `band_model.h` | De los valores de los parámetros a `dsp::BandSettings`, dinámica incluida. El procesador y la interfaz usan la misma función, así que **la curva que se dibuja es siempre la que suena** (la interfaz le suma la ganancia dinámica que publica el procesador) |
+
+## Contenido de `plugin/`
+
+| Archivo | Qué hace |
+|---|---|
+| `PluginProcessor` | Buses, parámetros del host generados a partir de la tabla de `core`, `processBlock`, estado, colas del analizador y picos de salida |
+| `EditHistory` | Deshacer y rehacer: convierte los gestos de los parámetros en acciones de `core::UndoHistory` |
+| `PresetManager` | Presets de fábrica y de usuario (archivos en una carpeta del sistema) |
+| `PluginEditorFactory.cpp` | Único punto en el que el procesador conoce a la interfaz (`createEditor`) |
 
 ## Contenido de `ui/logic/`
 
@@ -99,26 +112,39 @@ No hace falta tocar el código de estado ni registrar nada en JUCE.
 
 ## Estado guardado
 
-Texto UTF-8 con formato propio (no el de JUCE), versionado:
+Texto UTF-8 con formato propio (no el de JUCE), versionado. Lleva los parámetros y, desde la versión 2, las preferencias de la interfaz (claves `ui.*`, que no son parámetros):
 
 ```
-esceQ-state 1
+esceQ-state 2
 output_gain 0
 bypass 0
+...
+ui.analyzer 1
+ui.range 18
+ui.width 1180
+ui.height 700
+ui.preset Vocal
 ```
 
-Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Al subir `kStateVersion` se añade una migración en `deserializeState` y un fixture nuevo; los fixtures antiguos no se tocan.
+Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Los estados de versiones anteriores se migran paso a paso (`migrate1to2`...). Al subir `kStateVersion` se añade una migración en `core/src/state.cpp` y un fixture nuevo; los fixtures antiguos no se tocan. Un preset es este mismo formato con solo parámetros. Ver [ADR 0003](decisiones/0003-formato-de-estado.md) y [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md).
+
+## Deshacer, rehacer y presets
+
+- `core::UndoHistory` guarda instantáneas de todos los parámetros. `plugin/src/EditHistory` decide cuándo hay una acción nueva: al cerrarse el último gesto abierto de la interfaz, tras 300 ms sin más gestos. Un arrastre, una banda nueva o una ráfaga de rueda son una acción. La automatización del host no crea acciones.
+- Cargar un proyecto borra el historial; cargar un preset es una acción más.
+- `plugin/src/PresetManager` lista los presets de fábrica (`core::factoryPresets()`) y los de usuario (archivos `.esceq`), y los carga con `PluginProcessor::applyValues`, que avisa al host de cada parámetro que cambia.
 
 ## Hilos
 
 | Hilo | Qué hace | Restricciones |
 |---|---|---|
 | Audio | `processBlock` | No asigna memoria, no bloquea, no hace E/S |
-| Mensajes / interfaz | Editor (refresco a 30 Hz), analizador, carga y guardado de estado | Ninguna especial |
+| Mensajes / interfaz | Editor (refresco a 30 Hz), analizador, carga y guardado de estado, historial de deshacer, presets (lectura y escritura de archivos) | Ninguna especial |
 
 Comunicación:
 
 - **Interfaz → audio:** solo mediante parámetros del host. El hilo de audio lee sus valores atómicos una vez por bloque. Los gestos de la curva (arrastrar, rueda, doble clic) van envueltos en `beginChangeGesture`/`endChangeGesture` para que el host los registre como una sola acción de deshacer y de automatización.
+- **Preferencias de la interfaz:** viven en el procesador (`uiSettings()`), protegidas con un cerrojo que el hilo de audio nunca toma. El editor las lee al abrirse y cuando el host carga un estado (`stateRevision()`), y las escribe cuando cambian.
 - **Audio → interfaz:** dos `dsp::SpscFifo` (audio mono antes y después del EQ). El hilo de audio escribe; si la cola está llena, descarta. El editor abierto es el **único** lector. Si algún host abriera dos editores a la vez del mismo plugin, habría dos lectores: no está soportado.
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
 - **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.

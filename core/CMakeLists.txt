@@ -5,7 +5,9 @@
 # Ver docs/arquitectura.md.
 add_library(esceq_core STATIC
     src/band_model.cpp
+    src/history.cpp
     src/parameters.cpp
+    src/presets.cpp
     src/state.cpp)
 
 target_include_directories(esceq_core PUBLIC include)
