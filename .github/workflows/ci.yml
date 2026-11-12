@@ -223,8 +223,10 @@ jobs:
           $clap = "$env:CommonProgramFiles\CLAP\esceQ.clap"
           if (-not (Test-Path "$vst3\Contents\x86_64-win\esceQ.vst3")) { throw "Falta el VST3 en $vst3" }
           if (-not (Test-Path $clap)) { throw "Falta el CLAP en $clap" }
-          ${{ matrix.pluginval_bin }} --strictness-level 5 --validate "$vst3"
-          if ($LASTEXITCODE -ne 0) { throw "pluginval ha fallado con el VST3 instalado" }
+          # pluginval es una aplicacion de ventana: PowerShell no espera a que
+          # termine si no se lanza con -Wait.
+          $validation = Start-Process -FilePath "${{ matrix.pluginval_bin }}" -ArgumentList "--strictness-level", "5", "--validate", "`"$vst3`"" -Wait -PassThru -NoNewWindow
+          if ($validation.ExitCode -ne 0) { throw "pluginval ha fallado con el VST3 instalado (codigo $($validation.ExitCode))" }
           # Y se desinstala limpio.
           $uninstaller = Get-ChildItem "$env:ProgramFiles\esceQ\unins*.exe" | Select-Object -First 1
           Start-Process -FilePath $uninstaller.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
