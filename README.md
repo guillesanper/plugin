@@ -2,9 +2,21 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-**Estado: fase 4 en curso (primera versión pública).** Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo y procesado por banda en estéreo, L, R, Mid o Side. Aún no hay versión publicada. La hoja de ruta está en [PLAN.md](PLAN.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
+
+## Instalar
+
+Descarga la última versión en [Releases](https://github.com/guillesanper/plugin/releases).
+
+| Sistema | Archivo | Cómo |
+|---|---|---|
+| Windows (x64) | `esceQ-X.Y.Z-windows-x64-setup.exe` | Ejecuta el instalador: deja el VST3 en `C:\Program Files\Common Files\VST3` y el CLAP en `C:\Program Files\Common Files\CLAP`. Como no está firmado, Windows SmartScreen avisa: "Más información" → "Ejecutar de todas formas". En FL Studio: *Options → Manage plugins → Find installed plugins* |
+| macOS (Apple Silicon e Intel) | `esceQ-X.Y.Z-macos-universal.zip` | Copia `esceQ.vst3`, `esceQ.component` y `esceQ.clap` a las carpetas de `~/Library/Audio/Plug-Ins/`. No están firmados con un certificado de Apple: `INSTALL.txt` explica cómo permitir su carga |
+| Linux (x64) | `esceQ-X.Y.Z-linux-x64.tar.gz` | Copia `esceQ.vst3` a `~/.vst3/` y `esceQ.clap` a `~/.clap/` |
+
+FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1 o posterior).
 
 ## Uso
 

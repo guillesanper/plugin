@@ -100,7 +100,7 @@ void Equalizer::prepare(double sampleRate) noexcept
     reset();
 }
 
-void Equalizer::setBand(int index, const BandSettings& settings) noexcept
+void Equalizer::setBand(int index, const BandSettings& settings) noexcept ESCEQ_NONBLOCKING
 {
     if (index < 0 || index >= kMaxBands)
         return;
@@ -149,7 +149,7 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept
     applyDesign(band, true);
 }
 
-void Equalizer::setBypassed(bool bypassed) noexcept
+void Equalizer::setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING
 {
     if (bypassed == bypassed_)
         return;
@@ -163,7 +163,7 @@ void Equalizer::setBypassed(bool bypassed) noexcept
     bypassed_ = bypassed;
 }
 
-void Equalizer::reset() noexcept
+void Equalizer::reset() noexcept ESCEQ_NONBLOCKING
 {
     for (auto& band : bands_)
         snapBand(band);
@@ -240,7 +240,7 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
 }
 
 void Equalizer::process(float* const* channels, int numChannels, int numSamples, const float* const* sidechain,
-                        int numSidechainChannels) noexcept
+                        int numSidechainChannels) noexcept ESCEQ_NONBLOCKING
 {
     const int usedChannels = std::min(numChannels, kMaxChannels);
     Sidechain sc{sidechain, sidechain != nullptr ? std::clamp(numSidechainChannels, 0, kMaxChannels) : 0, 0};

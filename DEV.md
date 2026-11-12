@@ -8,7 +8,7 @@ Las reglas que debe respetar cualquier cambio están en [CONTRIBUTING.md](CONTRI
 
 | Herramienta | Para qué | Notas |
 |---|---|---|
-| **Visual Studio 2022 Community** (o posterior) | Compilador, depurador e IDE | Gratuito. Es la opción recomendada: trae el compilador MSVC, CMake y Ninja |
+| **Visual Studio Community 2026** (o 2022) | Compilador, depurador e IDE | Gratuito. Es la opción recomendada: trae el compilador MSVC, CMake y Ninja. El CI usa la versión 2026 |
 | **Git for Windows** | Control de versiones | |
 | **FL Studio** (2024.1 o posterior) | Probar el plugin en el host objetivo | La versión de prueba sirve para cargar plugins |
 | **pluginval** | Validar que el plugin se comporta bien en cualquier host | Opcional en local: el CI ya lo ejecuta |
@@ -36,9 +36,11 @@ Descárgalo de https://git-scm.com/download/win e instálalo con las opciones po
 
 ### 3. Clonar el repositorio
 
-Usa una ruta **corta y sin espacios**: las dependencias generan rutas largas y Windows tiene un límite de 260 caracteres.
+Usa una ruta **corta y sin espacios**: las dependencias generan rutas largas y Windows tiene un límite de 260 caracteres (ver "Rutas largas en Windows" más abajo).
 
 ```
+git config --global core.longpaths true
+mkdir C:\dev
 cd C:\dev
 git clone https://github.com/guillesanper/plugin.git esceQ
 ```
@@ -118,6 +120,43 @@ Debe terminar en `SUCCESS`. Es la misma comprobación que hace el CI en cada pus
 
 Los presets de usuario se guardan en `%APPDATA%\esceQ\Presets`. Para no mezclar los de pruebas con los tuyos, define la variable de entorno `ESCEQ_PRESETS_DIR` con una ruta absoluta antes de abrir el host o la aplicación independiente: el plugin usará esa carpeta. Los tests de `tests/plugin` la apuntan a una carpeta temporal.
 
+### Rutas largas en Windows
+
+Es la causa más habitual de que la configuración de CMake o la compilación fallen en Windows con errores que no dicen nada claro ("no se encuentra el archivo", "the specified path is too long", `MSB3491`, `C1083`, o un `FetchContent` que se queda a medias).
+
+Por qué pasa: Windows limita las rutas a 260 caracteres. JUCE se descarga dentro de la carpeta de compilación y crea rutas muy profundas (por ejemplo, `build\_deps\juce-build\tools\extras\Build\juceaide\...` o las del SDK de VST3). Si el repositorio está en `C:\Users\nombre\Desktop\proyectos\esceQ\esceQ`, la ruta de partida ya gasta 50 caracteres y el límite se alcanza.
+
+Qué hacer, por orden de eficacia:
+
+1. **Clonar en una ruta corta**, como `C:\dev\esceQ`. Es lo que resuelve el problema siempre.
+2. Si no quieres mover el repositorio, **compilar en una carpeta corta** fuera de él:
+
+   ```
+   cmake -S . -B C:\b\esceq -DCMAKE_BUILD_TYPE=Release
+   cmake --build C:\b\esceq --config Release --parallel
+   ```
+
+   (En Visual Studio, con "Abrir carpeta", la carpeta de compilación la fijan los presets: esta opción es para la línea de comandos.)
+3. Activar las rutas largas en Git, para que el `git clone` de las dependencias no falle: `git config --global core.longpaths true`.
+4. Activar las rutas largas en Windows (PowerShell como administrador, y reiniciar):
+
+   ```
+   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name "LongPathsEnabled" -Value 1 -PropertyType DWORD -Force
+   ```
+
+   Ayuda con Git y CMake, pero **no basta por sí solo**: partes de MSBuild y del compilador siguen sin admitir rutas largas. Por eso los puntos 1 o 2 son los importantes.
+
+Después de cambiar de ruta, borra la carpeta `build` anterior y vuelve a configurar. CMake avisa al configurar si la carpeta de compilación tiene una ruta larga.
+
+### Versiones de Visual Studio
+
+El CI compila en Windows con la imagen `windows-latest` de GitHub, que desde 2026 trae **Visual Studio 2026 (MSVC 19.51)**: es el mismo compilador que instala Visual Studio Community 2026. El código es C++20 estándar, y `dsp/`, `core/` y `ui/logic` se compilan con `/W4 /WX /permissive-`, así que si el CI está en verde, compilan sin avisos con ese compilador.
+
+Con otra versión (más antigua o más nueva) puede aparecer algún aviso distinto, y en esos módulos un aviso es un error. Si te encuentras uno:
+
+1. Copia el mensaje completo (archivo, línea y código del aviso) en una incidencia: se arregla en el repositorio.
+2. Mientras tanto, para seguir trabajando, configura con `-DESCEQ_WARNINGS_AS_ERRORS=OFF`.
+
 ## Flujo de trabajo diario
 
 | Estoy trabajando en... | Configuración | Ciclo |
@@ -160,12 +199,26 @@ ctest --preset plugin
 
 Copia `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3` a `~/.vst3`.
 
+### RealtimeSanitizer
+
+Con Clang 20 o posterior se pueden ejecutar los tests con RealtimeSanitizer, que aborta si una función del hilo de audio (las marcadas `ESCEQ_NONBLOCKING`) asigna memoria o bloquea. El CI lo hace en cada push.
+
+```
+sudo apt-get install clang-20 libclang-rt-20-dev
+CC=clang-20 CXX=clang++-20 cmake -S . -B build-rtsan -DESCEQ_BUILD_PLUGIN=OFF -DESCEQ_RTSAN=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+cmake --build build-rtsan --parallel
+ctest --test-dir build-rtsan --output-on-failure
+```
+
+El test `rtsan_detecta_asignaciones` es un canario: un programa que asigna memoria a propósito en una función de tiempo real y que **debe** abortar. Si pasara sin abortar, el sanitizador no estaría actuando.
+
 ## Problemas frecuentes
 
 | Síntoma | Causa y solución |
 |---|---|
 | CMake no encuentra un compilador | Falta la carga de trabajo de C++ en Visual Studio, o la terminal no es la "Developer PowerShell" |
-| Errores de ruta demasiado larga al descargar JUCE | Clona en una ruta corta (`C:\dev\esceQ`) |
+| La configuración de CMake falla, o errores de ruta demasiado larga, o archivos que "no existen" dentro de `build\_deps` | Ruta larga. Clona en una ruta corta (`C:\dev\esceQ`) o compila en `C:\b\esceq`. Ver "Rutas largas en Windows" |
+| Un aviso del compilador detiene la compilación con una versión nueva de Visual Studio | Ver "Versiones de Visual Studio": `-DESCEQ_WARNINGS_AS_ERRORS=OFF` y avisa con el mensaje |
 | `LNK1104` o "acceso denegado" al enlazar | FL Studio tiene el plugin cargado. Ciérralo y recompila |
 | FL Studio no muestra el plugin | Revisa la ruta en *Plugin search paths* y pulsa *Find installed plugins*; comprueba que es la versión de 64 bits |
 | FL Studio muestra el plugin dos veces | Están añadidas a la vez las rutas de Release y de Debug |

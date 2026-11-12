@@ -5,7 +5,7 @@
 
 namespace esceq::dsp {
 
-void BandFilter::setDesign(const BandDesign& design) noexcept
+void BandFilter::setDesign(const BandDesign& design) noexcept ESCEQ_NONBLOCKING
 {
     const int previous = design_.numSections;
     design_ = design;
@@ -22,12 +22,12 @@ void BandFilter::setDesign(const BandDesign& design) noexcept
     }
 }
 
-void BandFilter::reset() noexcept
+void BandFilter::reset() noexcept ESCEQ_NONBLOCKING
 {
     state_ = {};
 }
 
-void BandFilter::process(float* const* channels, int numChannels, int numSamples) noexcept
+void BandFilter::process(float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING
 {
     const int usedChannels = std::min(numChannels, kMaxChannels);
 

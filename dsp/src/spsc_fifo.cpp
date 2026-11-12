@@ -23,7 +23,7 @@ SpscFifo::SpscFifo(int capacity)
 {
 }
 
-int SpscFifo::write(const float* samples, int numSamples) noexcept
+int SpscFifo::write(const float* samples, int numSamples) noexcept ESCEQ_NONBLOCKING
 {
     const std::size_t write = writePos_.load(std::memory_order_relaxed);
     const std::size_t read = readPos_.load(std::memory_order_acquire);
@@ -37,7 +37,7 @@ int SpscFifo::write(const float* samples, int numSamples) noexcept
     return static_cast<int>(count);
 }
 
-int SpscFifo::writeMix(const float* const* channels, int numChannels, int numSamples) noexcept
+int SpscFifo::writeMix(const float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING
 {
     if (numChannels <= 0)
         return 0;

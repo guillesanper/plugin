@@ -87,7 +87,7 @@ std::complex<double> sectionResponse(const SectionCoeffs& c, double tanHalfOmega
 
 } // namespace
 
-BandDesign designBand(const FilterParams& params, double sampleRate) noexcept
+BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     const double frequency = std::clamp(params.frequencyHz, kMinFrequencyHz, kMaxFrequencyRatio * sampleRate);
     const double q = std::clamp(params.q, kMinQ, kMaxQ);
@@ -150,7 +150,7 @@ BandDesign designBand(const FilterParams& params, double sampleRate) noexcept
     return design;
 }
 
-std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept
+std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     const double frequency = std::clamp(frequencyHz, 0.0, 0.4999 * sampleRate);
     const double tanHalfOmega = std::tan(kPi * frequency / sampleRate);
@@ -161,7 +161,7 @@ std::complex<double> response(const BandDesign& design, double frequencyHz, doub
     return h;
 }
 
-double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept
+double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     const double magnitude = std::abs(response(design, frequencyHz, sampleRate));
     return 20.0 * std::log10(std::max(magnitude, 1.0e-15));

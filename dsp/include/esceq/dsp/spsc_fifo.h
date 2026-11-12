@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
+
 #include <atomic>
 #include <cstddef>
 #include <vector>
@@ -24,10 +26,10 @@ public:
     int capacity() const noexcept { return static_cast<int>(buffer_.size()); }
 
     /// Productor: escribe hasta `numSamples` muestras. Devuelve cuántas cupieron.
-    int write(const float* samples, int numSamples) noexcept;
+    int write(const float* samples, int numSamples) noexcept ESCEQ_NONBLOCKING;
 
     /// Productor: escribe la media de `numChannels` canales.
-    int writeMix(const float* const* channels, int numChannels, int numSamples) noexcept;
+    int writeMix(const float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING;
 
     /// Consumidor: lee hasta `maxSamples`. Devuelve cuántas leyó.
     int read(float* destination, int maxSamples) noexcept;

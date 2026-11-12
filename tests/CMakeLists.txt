@@ -21,6 +21,7 @@ add_executable(esceq_tests
     core/history_test.cpp
     core/parameters_test.cpp
     core/presets_test.cpp
+    core/release_contract_test.cpp
     core/state_test.cpp
     ui/control_logic_test.cpp
     ui/curve_mapping_test.cpp
@@ -42,3 +43,13 @@ target_link_libraries(esceq_tests PRIVATE
 list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 include(Catch)
 catch_discover_tests(esceq_tests)
+
+# Con RealtimeSanitizer, un "canario": un programa que asigna memoria dentro
+# de una función marcada como de tiempo real. DEBE fallar: si pasa, el
+# sanitizador no está actuando y los demás tests no estarían comprobando nada.
+if(ESCEQ_RTSAN)
+    add_executable(esceq_rtsan_canary rtsan_canary.cpp)
+    target_link_libraries(esceq_rtsan_canary PRIVATE esceq_dsp)
+    add_test(NAME rtsan_detecta_asignaciones COMMAND esceq_rtsan_canary)
+    set_tests_properties(rtsan_detecta_asignaciones PROPERTIES WILL_FAIL TRUE)
+endif()

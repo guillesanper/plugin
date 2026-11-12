@@ -1,0 +1,29 @@
+esceQ - free parametric and dynamic equalizer
+https://github.com/guillesanper/plugin
+
+HOW TO INSTALL
+
+macOS
+  Copy the plugins to these folders (create them if they do not exist):
+
+    esceQ.vst3       ->  ~/Library/Audio/Plug-Ins/VST3/
+    esceQ.component  ->  ~/Library/Audio/Plug-Ins/Components/
+    esceQ.clap       ->  ~/Library/Audio/Plug-Ins/CLAP/
+
+  The plugins are not signed with an Apple developer certificate. If macOS
+  refuses to load them, remove the quarantine flag in Terminal:
+
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/VST3/esceQ.vst3
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/Components/esceQ.component
+    xattr -dr com.apple.quarantine ~/Library/Audio/Plug-Ins/CLAP/esceQ.clap
+
+Linux
+    esceQ.vst3  ->  ~/.vst3/
+    esceQ.clap  ->  ~/.clap/
+
+Then rescan the plugins in your host.
+
+LICENSE
+  esceQ is free software under the GNU Affero General Public License v3 or
+  later (LICENSE.txt). It includes the Inter typeface under the SIL Open Font
+  License 1.1 (Inter-font-license.txt).

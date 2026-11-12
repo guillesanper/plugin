@@ -22,7 +22,8 @@ Las flechas indican "depende de". Nunca al revés.
 | `ui/assets/` | Fuentes embebidas (Inter) | — | SIL OFL 1.1 |
 | `tests/` | Tests de `dsp/`, `core/` y `ui/logic/` | Esos tres, Catch2 | La del código que prueban |
 | `tests/plugin/` | Tests de `plugin/` (estado, deshacer, presets). Usan JUCE, sin la interfaz | `plugin/`, Catch2, JUCE | AGPLv3 |
-| `tools/` | Herramientas de desarrollo (captura del editor). Solo con `-DESCEQ_BUILD_TOOLS=ON` | `plugin/`, `ui/src/` | AGPLv3 |
+| `tools/` | Herramientas de desarrollo (captura del editor, con `-DESCEQ_BUILD_TOOLS=ON`; notas de la release) | `plugin/`, `ui/src/` | AGPLv3 |
+| `packaging/` | Instalador de Windows (Inno Setup) e instrucciones de los paquetes de macOS y Linux | — | AGPLv3 |
 
 `ui/src/` no es una biblioteca: sus fuentes se compilan dentro del objetivo del plugin, porque los módulos de JUCE solo pueden compilarse una vez por binario.
 
@@ -30,6 +31,7 @@ Cómo se hace cumplir:
 
 - `dsp/`, `core/` y `ui/logic/` solo ven sus propias rutas de inclusión y las de lo que tienen debajo, así que un `#include` hacia arriba no compila.
 - El job `core` del CI compila y testea los tres con `-DESCEQ_BUILD_PLUGIN=OFF`, es decir, sin JUCE descargado.
+- En esos tres módulos los avisos del compilador son errores (`/W4 /WX` en MSVC; `-Wall -Wextra -Wpedantic -Wconversion -Wshadow -Werror` en GCC y Clang).
 
 ## Contratos públicos
 
@@ -43,7 +45,9 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | Orden de los canales de banda (índice guardado en el estado) | `core::kChannelChoices` y `dsp::ChannelMode` | `static_assert` en `core/src/band_model.cpp` · [ADR 0007](decisiones/0007-canal-por-banda.md) |
 | Formato del estado guardado (versiones 1 y 2) | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
 | Nombre, orden y sonido de los presets de fábrica | `core/src/presets.cpp` | `tests/core/presets_test.cpp` · [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
-| Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
+| Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, `CLAP_ID` (`org.esceq.esceq`), nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
+| Identidad de la instalación en Windows: `AppId` | `packaging/windows/esceQ.iss` | Revisión manual: si cambia, una versión nueva no actualiza la anterior |
+| Lo que publicó cada versión: parámetros, estado, presets y sonido de un proyecto de referencia | `tests/fixtures/*/release_0.1*` | `tests/core/release_contract_test.cpp` · [ADR 0010](decisiones/0010-distribucion.md) |
 | Buses: entrada y salida principales, y sidechain opcional como segundo bus de entrada | `plugin/src/PluginProcessor.cpp` | Revisión manual: reordenar los buses rompe el enrutado guardado en los proyectos |
 | Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` y `tests/dsp/filter_golden_test.cpp` · [docs/dsp/filtros.md](dsp/filtros.md). La dinámica: `tests/dsp/dynamics_test.cpp` y [docs/dsp/dinamica.md](dsp/dinamica.md). El canal por banda: `tests/dsp/equalizer_channel_test.cpp` |
 
@@ -149,7 +153,7 @@ Comunicación:
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
 - **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.
 
-Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y si es segura entre hilos.
+Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y si es segura entre hilos. Las que se llaman desde el hilo de audio llevan además la marca `ESCEQ_NONBLOCKING` (`esceq/dsp/realtime.h`): el job `RealtimeSanitizer` del CI ejecuta todos los tests con Clang y `-fsanitize=realtime`, y aborta si alguna de ellas, o algo que llamen, asigna memoria o bloquea. Un test "canario" comprueba que el sanitizador está actuando.
 
 ## Flujo de audio actual (fase 4)
 
@@ -163,6 +167,17 @@ Cada bloque, el procesador lee los 338 parámetros, los traduce con `core::bandS
 
 El búfer que entrega el host contiene los canales de todos los buses: el procesador toma el bus principal con `getBusBuffer` y el sidechain como solo lectura.
 
+## Formatos, CI y publicación
+
+| Formato | Plataformas | Lo genera | Lo valida el CI |
+|---|---|---|---|
+| VST3 | Windows, macOS, Linux | JUCE | pluginval, nivel 10 |
+| AU | macOS | JUCE | — |
+| CLAP | Windows, macOS, Linux | clap-juce-extensions | clap-validator |
+| Standalone | Todas | JUCE | — (para depurar; no se distribuye) |
+
+El workflow `CI` (`.github/workflows/ci.yml`) tiene tres jobs: `core` (los módulos sin JUCE, en las tres plataformas), `rtsan` (los tests con RealtimeSanitizer) y `plugin` (compila todo, tests, validadores y paquetes; en Windows prueba el instalador). El workflow `Release` (`release.yml`) lo reutiliza al subir una etiqueta `vX.Y.Z` y publica los paquetes. Ver [ADR 0010](decisiones/0010-distribucion.md).
+
 ## Dependencias externas
 
 Se fijan por versión en CMake y se descargan con `FetchContent`.
@@ -170,6 +185,9 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 | Dependencia | Versión | Uso | Licencia |
 |---|---|---|---|
 | JUCE | 9.0.5 | `plugin/`, `ui/src/`, `tools/` | AGPLv3 |
+| clap-juce-extensions | commit `6bde108` (incluye CLAP 1.2.7) | Formato CLAP del plugin | MIT |
 | Catch2 | 3.16.1 | `tests/` | BSL-1.0 |
+
+En el CI, además: pluginval (última versión) y clap-validator 0.3.2 para validar los formatos, e Inno Setup 6 para el instalador de Windows.
 
 Además, la tipografía Inter 4.1 (SIL OFL 1.1) va copiada en `ui/assets/fonts/`, sin modificar y con su licencia, y se embebe en el binario.

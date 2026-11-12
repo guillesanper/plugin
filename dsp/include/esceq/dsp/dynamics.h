@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
 #include "esceq/dsp/filter_design.h"
 
 /// Piezas de la dinámica por banda: curva de ganancia, seguidor de
@@ -45,7 +46,7 @@ bool supportsDynamics(FilterType type) noexcept;
 ///     ganancia = signo(rango) · min(y, |rango|)
 ///
 /// Segura en tiempo real.
-double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double kneeDb) noexcept;
+double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double kneeDb) noexcept ESCEQ_NONBLOCKING;
 
 /// Filtro que alimenta al detector de una banda (ver docs/dsp/dinamica.md):
 ///  - Campana: paso banda con la frecuencia y el Q de la banda.
@@ -53,7 +54,7 @@ double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double 
 ///  - Shelf de agudos: paso alto de 12 dB/oct.
 ///  - Tilt y el resto: sin filtro (banda completa).
 /// Segura en tiempo real.
-BandDesign designDetector(const FilterParams& params, double sampleRate) noexcept;
+BandDesign designDetector(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
 /// Seguidor de envolvente de pico con ataque y relajación separados
 /// ("branching peak detector", Giannoulis, Massberg y Reiss, 2012).
@@ -76,7 +77,7 @@ public:
     void reset() noexcept { envelope_ = 0.0; }
 
     /// Avanza una muestra con el nivel (valor absoluto) de entrada.
-    double process(double level) noexcept
+    double process(double level) noexcept ESCEQ_NONBLOCKING
     {
         const double coeff = level > envelope_ ? attack_ : release_;
         envelope_ = level + coeff * (envelope_ - level);

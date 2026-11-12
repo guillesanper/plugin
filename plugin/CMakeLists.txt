@@ -26,6 +26,14 @@ juce_add_plugin(esceQ
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
+# CLAP. CONTRATO: CLAP_ID identifica al plugin ante el host, como los códigos
+# de arriba para VST3 y AU. No cambiarlo.
+if(ESCEQ_BUILD_CLAP)
+    clap_juce_extensions_plugin(TARGET esceQ
+        CLAP_ID "org.esceq.esceq"
+        CLAP_FEATURES audio-effect equalizer stereo mono)
+endif()
+
 # Recursos embebidos en el binario: la fuente de la interfaz (Inter, licencia
 # OFL, ver ui/assets/fonts/OFL.txt). Así se ve igual en todos los sistemas.
 juce_add_binary_data(esceq_assets
@@ -68,3 +76,10 @@ target_link_libraries(esceQ
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# Con GCC, la optimización en el enlazado (LTO) que activa JUCE se hace en
+# serie y cada formato tarda minutos en enlazar. "-flto=auto" reparte el
+# trabajo entre los núcleos disponibles; el resultado es el mismo.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    target_link_options(esceQ PUBLIC -flto=auto)
+endif()

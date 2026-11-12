@@ -5,9 +5,12 @@ on:
   push:
     branches: [main]
   pull_request:
+  # El workflow de release reutiliza este: publica exactamente lo que aquí se
+  # ha compilado, validado y empaquetado.
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -30,10 +33,41 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -C Debug --output-on-failure
 
+  # RealtimeSanitizer: todos los tests de dsp/, core/ y ui/logic, y aborta si
+  # una función del hilo de audio (ESCEQ_NONBLOCKING) asigna memoria o bloquea.
+  rtsan:
+    name: RealtimeSanitizer
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CC: clang-20
+      CXX: clang++-20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Clang 20
+        timeout-minutes: 10
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          APT="sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o DPkg::Lock::Timeout=120"
+          $APT update
+          $APT install -y --no-install-recommends clang-20 libclang-rt-20-dev llvm-20
+      - name: Configurar
+        run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DESCEQ_RTSAN=ON -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - name: Compilar
+        run: cmake --build build --parallel 4
+      - name: Tests
+        env:
+          RTSAN_OPTIONS: external_symbolizer_path=/usr/lib/llvm-20/bin/llvm-symbolizer
+        run: ctest --test-dir build --output-on-failure
+
+  # Plugin completo: compila, pasa los tests, valida cada formato con su
+  # validador y empaqueta lo que se publicará en una release.
   plugin:
     name: plugin (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 40
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -41,12 +75,21 @@ jobs:
           - os: ubuntu-24.04
             pluginval: pluginval_Linux.zip
             pluginval_bin: ./pluginval
+            clap_validator: clap-validator-0.3.2-ubuntu-18.04.tar.gz
+            cmake_args: ""
           - os: windows-latest
             pluginval: pluginval_Windows.zip
             pluginval_bin: ./pluginval.exe
+            clap_validator: clap-validator-0.3.2-windows.zip
+            cmake_args: ""
           - os: macos-latest
             pluginval: pluginval_macOS.zip
             pluginval_bin: ./pluginval.app/Contents/MacOS/pluginval
+            clap_validator: clap-validator-0.3.2-macos-universal.tar.gz
+            # Binario universal: Apple Silicon e Intel.
+            cmake_args: -DCMAKE_OSX_ARCHITECTURES=arm64;x86_64
+    env:
+      ARTEFACTS: build/plugin/esceQ_artefacts/Release
     steps:
       - uses: actions/checkout@v5
 
@@ -64,8 +107,18 @@ jobs:
             libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
             libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
 
+      - name: Version
+        id: version
+        shell: bash
+        run: |
+          VERSION=$(sed -n 's/^project(esceQ VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version $VERSION"
+
       - name: Configurar
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        shell: bash
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release "${{ matrix.cmake_args }}"
 
       - name: Compilar
         run: cmake --build build --config Release --parallel 4
@@ -73,28 +126,115 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Descargar pluginval
+      - name: Descargar validadores
         shell: bash
         run: |
-          curl -sSfL -o pluginval.zip \
+          curl -sSfL --retry 3 -o pluginval.zip \
             "https://github.com/Tracktion/pluginval/releases/latest/download/${{ matrix.pluginval }}"
           unzip -q pluginval.zip
+          # clap-validator, fijado por version.
+          mkdir clap-validator-dir
+          curl -sSfL --retry 3 -o "${{ matrix.clap_validator }}" \
+            "https://github.com/free-audio/clap-validator/releases/download/0.3.2/${{ matrix.clap_validator }}"
+          case "${{ matrix.clap_validator }}" in
+            *.zip) unzip -q "${{ matrix.clap_validator }}" -d clap-validator-dir ;;
+            *) tar xzf "${{ matrix.clap_validator }}" -C clap-validator-dir ;;
+          esac
+          ls clap-validator-dir
 
-      - name: pluginval (nivel 10)
+      - name: pluginval (VST3, nivel 10)
         shell: bash
         run: |
-          VST3="build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3"
+          VST3="$ARTEFACTS/VST3/esceQ.vst3"
           if [ "$RUNNER_OS" = "Linux" ]; then
             xvfb-run -a ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
           else
             ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
           fi
 
-      - name: Subir binarios
+      - name: clap-validator (CLAP)
+        shell: bash
+        run: |
+          CLAP="$ARTEFACTS/CLAP/esceQ.clap"
+          VALIDATOR=$(find clap-validator-dir -type f -name 'clap-validator*' | head -1)
+          chmod +x "$VALIDATOR"
+          # --only-failed: el informe completo es largo; interesa lo que falle.
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a "$VALIDATOR" validate --only-failed "$CLAP"
+          else
+            "$VALIDATOR" validate --only-failed "$CLAP"
+          fi
+
+      # --- Paquetes: lo que se publica en una release -------------------------
+
+      - name: Paquete (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          NAME="esceQ-${{ steps.version.outputs.version }}-linux-x64"
+          mkdir -p "dist/$NAME"
+          cp -r "$ARTEFACTS/VST3/esceQ.vst3" "$ARTEFACTS/CLAP/esceQ.clap" "dist/$NAME/"
+          cp LICENSE "dist/$NAME/LICENSE.txt"
+          cp ui/assets/fonts/OFL.txt "dist/$NAME/Inter-font-license.txt"
+          cp packaging/unix/INSTALL.txt "dist/$NAME/"
+          tar -C dist -czf "dist/$NAME.tar.gz" "$NAME"
+          rm -rf "dist/$NAME"
+
+      - name: Paquete (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          # Los binarios deben llevar las dos arquitecturas.
+          lipo -archs "$ARTEFACTS/VST3/esceQ.vst3/Contents/MacOS/esceQ" | tee archs.txt
+          grep -q arm64 archs.txt && grep -q x86_64 archs.txt
+          NAME="esceQ-${{ steps.version.outputs.version }}-macos-universal"
+          mkdir -p "dist/$NAME"
+          cp -R "$ARTEFACTS/VST3/esceQ.vst3" "$ARTEFACTS/AU/esceQ.component" "$ARTEFACTS/CLAP/esceQ.clap" "dist/$NAME/"
+          cp LICENSE "dist/$NAME/LICENSE.txt"
+          cp ui/assets/fonts/OFL.txt "dist/$NAME/Inter-font-license.txt"
+          cp packaging/unix/INSTALL.txt "dist/$NAME/"
+          # ditto conserva los paquetes (bundles) y sus firmas ad hoc.
+          ditto -c -k --keepParent "dist/$NAME" "dist/$NAME.zip"
+          rm -rf "dist/$NAME"
+
+      - name: Instalador (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
+            $env:PATH += ";${env:ProgramFiles(x86)}\Inno Setup 6"
+          }
+          $version = "${{ steps.version.outputs.version }}"
+          $source = (Resolve-Path "$env:ARTEFACTS").Path
+          $out = Join-Path (Get-Location) "dist"
+          iscc "/DAppVersion=$version" "/DSourceDir=$source" "/DOutputDir=$out" packaging\windows\esceQ.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem dist
+
+      # El instalador se prueba de verdad: se instala en silencio, se comprueba
+      # que deja cada formato en su carpeta y se valida el VST3 instalado.
+      - name: Probar el instalador (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist\esceQ-*-windows-x64-setup.exe | Select-Object -First 1
+          $process = Start-Process -FilePath $setup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "El instalador termino con codigo $($process.ExitCode)" }
+          $vst3 = "$env:CommonProgramFiles\VST3\esceQ.vst3"
+          $clap = "$env:CommonProgramFiles\CLAP\esceQ.clap"
+          if (-not (Test-Path "$vst3\Contents\x86_64-win\esceQ.vst3")) { throw "Falta el VST3 en $vst3" }
+          if (-not (Test-Path $clap)) { throw "Falta el CLAP en $clap" }
+          ${{ matrix.pluginval_bin }} --strictness-level 5 --validate "$vst3"
+          if ($LASTEXITCODE -ne 0) { throw "pluginval ha fallado con el VST3 instalado" }
+          # Y se desinstala limpio.
+          $uninstaller = Get-ChildItem "$env:ProgramFiles\esceQ\unins*.exe" | Select-Object -First 1
+          Start-Process -FilePath $uninstaller.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path $vst3) { throw "El desinstalador ha dejado $vst3" }
+          if (Test-Path $clap) { throw "El desinstalador ha dejado $clap" }
+
+      - name: Subir paquetes
         uses: actions/upload-artifact@v4
         with:
           name: esceQ-${{ runner.os }}
-          path: |
-            build/plugin/esceQ_artefacts/Release/VST3
-            build/plugin/esceQ_artefacts/Release/AU
+          path: dist/*
           if-no-files-found: error

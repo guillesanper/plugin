@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
 #include "esceq/dsp/band_filter.h"
 #include "esceq/dsp/dynamics.h"
 #include "esceq/dsp/filter_design.h"
@@ -82,12 +83,12 @@ public:
     void prepare(double sampleRate) noexcept;
 
     /// Nuevos ajustes objetivo para una banda. Índices fuera de rango se ignoran.
-    void setBand(int index, const BandSettings& settings) noexcept;
+    void setBand(int index, const BandSettings& settings) noexcept ESCEQ_NONBLOCKING;
 
-    void setBypassed(bool bypassed) noexcept;
+    void setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING;
 
     /// Borra la memoria de los filtros y salta sin transición a los ajustes objetivo.
-    void reset() noexcept;
+    void reset() noexcept ESCEQ_NONBLOCKING;
 
     /// Procesa en el sitio. Como mucho kMaxChannels canales; el resto no se toca.
     ///
@@ -96,7 +97,7 @@ public:
     /// `numSamples` muestras. Sin sidechain, esas bandas no reciben señal y su
     /// ganancia dinámica vuelve a 0 dB.
     void process(float* const* channels, int numChannels, int numSamples,
-                 const float* const* sidechain = nullptr, int numSidechainChannels = 0) noexcept;
+                 const float* const* sidechain = nullptr, int numSidechainChannels = 0) noexcept ESCEQ_NONBLOCKING;
 
     /// Ajustes objetivo (los últimos recibidos, ya saneados).
     const BandSettings& target(int index) const noexcept;

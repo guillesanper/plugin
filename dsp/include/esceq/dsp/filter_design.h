@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
+
 #include <array>
 #include <complex>
 
@@ -75,14 +77,14 @@ struct BandDesign
 /// Calcula los coeficientes de una banda.
 /// Segura en tiempo real (no asigna memoria); usa tan() y pow(), así que
 /// conviene llamarla una vez por bloque y no por muestra.
-BandDesign designBand(const FilterParams& params, double sampleRate) noexcept;
+BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
 /// Respuesta compleja exacta del filtro digital en `frequencyHz`.
 /// Coincide con lo que mide BandFilter, incluida la deformación de la
 /// transformada bilineal cerca de Nyquist. Segura en tiempo real.
-std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept;
+std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
 /// Magnitud de response() en decibelios.
-double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept;
+double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
 } // namespace esceq::dsp

@@ -2,7 +2,7 @@
 
 ## Compilar
 
-Requisitos: CMake ≥ 3.24 y un compilador con C++20 (MSVC 2022, Clang 15+, GCC 12+).
+Requisitos: CMake ≥ 3.24 y un compilador con C++20 (Visual Studio 2022 o 2026, Clang 15+, GCC 12+).
 
 En Linux, además:
 
@@ -18,7 +18,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel
 ```
 
-El VST3 queda en `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3`. Para probarlo en FL Studio, cópialo a `C:\Program Files\Common Files\VST3` y vuelve a escanear los plugins.
+El VST3 queda en `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3` y el CLAP en `.../Release/CLAP/esceQ.clap`. Para probarlo en FL Studio, copia el VST3 a `C:\Program Files\Common Files\VST3` y vuelve a escanear los plugins.
 
 La compilación completa incluye dos grupos de tests: `esceq_tests` (`dsp/`, `core/` y `ui/logic`, sin JUCE) y `esceq_plugin_tests` (la capa `plugin/`: estado, deshacer y presets, con JUCE). `ctest --test-dir build` ejecuta los dos.
 
@@ -36,10 +36,10 @@ ctest --test-dir build-core --output-on-failure
 2. **No rompas los contratos públicos:** identificadores y rangos de parámetros, formato del estado, identidad del plugin. Si un test de contrato falla, el cambio es incompatible: no edites el test para que pase.
 3. **Los fixtures de `tests/fixtures/` no se modifican ni se borran.** Solo se añaden. Para añadir parámetros al contrato usa `ESCEQ_APPEND_PARAMETERS=1` (ver [docs/arquitectura.md](docs/arquitectura.md)), que solo escribe líneas nuevas al final.
 4. **Cada bug arreglado deja un test** que lo reproduce.
-5. **El hilo de audio no asigna memoria, no bloquea y no hace E/S.**
+5. **El hilo de audio no asigna memoria, no bloquea y no hace E/S.** Las funciones de `dsp/` que se llaman desde él llevan la marca `ESCEQ_NONBLOCKING`, y el CI las comprueba con RealtimeSanitizer.
 6. **Documenta en las cabeceras públicas** qué garantiza cada función: si es segura en tiempo real, si es segura entre hilos, unidades y rangos.
 7. **Actualiza la documentación en el mismo commit:** `docs/arquitectura.md` si cambia la estructura, una nota nueva en `docs/decisiones/` si tomas una decisión de diseño, y `CHANGELOG.md` si el cambio lo nota el usuario.
-8. **El CI debe estar en verde.** Incluye tests y `pluginval` al nivel 10 en Windows, macOS y Linux.
+8. **El CI debe estar en verde.** Incluye tests y `pluginval` al nivel 10 en Windows, macOS y Linux, y los tests con RealtimeSanitizer.
 
 ## Revisar la interfaz sin host
 
@@ -78,6 +78,17 @@ Ver [docs/ui.md](docs/ui.md). En corto:
 - Los avisos del compilador son errores en nuestro código.
 - Los nombres de los tests (`TEST_CASE`) van en ASCII, sin tildes ni eñes: en Windows CTest no encuentra los que las llevan.
 - Cada archivo empieza con su `SPDX-License-Identifier`: `MIT` en `dsp/` y sus tests, `AGPL-3.0-or-later` en el resto. Las fuentes de `ui/assets/fonts/` son de terceros (SIL OFL 1.1) y no se modifican.
+
+## Publicar una versión
+
+1. Comprobar que el CI de `main` está en verde y probar el plugin en FL Studio.
+2. Poner la versión en `project(esceQ VERSION X.Y.Z ...)` de `CMakeLists.txt`.
+3. En `CHANGELOG.md`, convertir "Sin publicar" en `## [X.Y.Z] - AAAA-MM-DD` y dejar una sección "Sin publicar" vacía encima. Ese texto es el de la release: `tools/release-notes.sh X.Y.Z` lo imprime.
+4. Si la versión cambia parámetros, estado, presets o sonido, añadir sus archivos `release_X.Y*` en `tests/fixtures/` y sus comprobaciones en `tests/core/release_contract_test.cpp`. Los de versiones anteriores no se tocan.
+5. Hacer commit, push y esperar al CI.
+6. Subir la etiqueta: `git tag vX.Y.Z && git push origin vX.Y.Z`. El workflow `Release` compila, valida, empaqueta y publica. Si la etiqueta no coincide con la versión de `CMakeLists.txt`, o el CHANGELOG no tiene esa sección, falla antes de compilar.
+
+Para ensayar el proceso sin publicar: pestaña **Actions** de GitHub → **Release** → **Run workflow**.
 
 ## Git
 

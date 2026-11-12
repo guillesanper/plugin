@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
 #include "esceq/dsp/filter_design.h"
 
 #include <array>
@@ -25,14 +26,14 @@ class BandFilter
 public:
     /// Sustituye los coeficientes conservando el estado interno. Si cambia
     /// el número de secciones, el estado de las secciones nuevas se limpia.
-    void setDesign(const BandDesign& design) noexcept;
+    void setDesign(const BandDesign& design) noexcept ESCEQ_NONBLOCKING;
 
     /// Pone a cero el estado interno (silencio previo).
-    void reset() noexcept;
+    void reset() noexcept ESCEQ_NONBLOCKING;
 
     /// Procesa en el sitio. `numChannels` debe ser <= kMaxChannels; los
     /// canales que excedan ese límite se dejan sin tocar.
-    void process(float* const* channels, int numChannels, int numSamples) noexcept;
+    void process(float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING;
 
     const BandDesign& design() const noexcept { return design_; }
 

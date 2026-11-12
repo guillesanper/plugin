@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0, 1, 2 y 3 completadas; fase 4 en curso** (hecho: canal por banda, interfaz con controles propios, deshacer/rehacer, presets y estado versión 2; falta la distribución). Las fases 2 y 3 están pendientes de probarse en FL Studio con una mezcla real (incluido el enrutado del sidechain).
+Estado: **fases 0 a 3 completadas; fase 4 lista para publicar.** Todo lo de la 0.1 está hecho y el CI lo compila, valida y empaqueta en Windows, macOS y Linux. Falta la revisión en FL Studio con una mezcla real (incluido el enrutado del sidechain) y subir la etiqueta `v0.1.0`, que publica la release.
 
 ---
 
@@ -44,7 +44,7 @@ Estado: **fases 0, 1, 2 y 3 completadas; fase 4 en curso** (hecho: canal por ban
 | Primera versión | EQ estático sólido primero (fase 2), dinámica justo después (fase 3) |
 | Principio rector | **Diseñar y documentar de forma que un cambio no rompa nada** (ver 2.1) |
 
-Pendiente: comprobar que "esceQ" no está en uso en KVR, GitHub ni registros de marca antes de la primera versión pública.
+Nombre comprobado en noviembre de 2026: no se ha encontrado ningún plugin, producto ni marca registrada llamado "esceQ" (detalle y límites de la búsqueda en la [ADR 0010](docs/decisiones/0010-distribucion.md)).
 
 ### 2.1 Diseñar y documentar para que un cambio no rompa nada
 
@@ -207,7 +207,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **1. Núcleo de filtros** ✅ | SVF, todos los tipos y pendientes, cálculo de la curva, tests | Respuesta medida = respuesta teórica (±0,1 dB) | 2 a 3 semanas |
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
-| **4. Primera versión pública (0.1)** | M/S y L/R por banda, presets, deshacer, instalador Windows, CLAP | Release en GitHub con binarios | 3 a 4 semanas |
+| **4. Primera versión pública (0.1)** | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
 | **5. Calidad** | Corrección en agudos, fase lineal, auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
 | **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias, surround | Versión 1.0 | Abierto |
 

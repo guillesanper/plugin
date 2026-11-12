@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "esceq/dsp/realtime.h"
+
 namespace esceq::dsp {
 
 /// Aplica una ganancia a un bloque multicanal, interpolando linealmente
@@ -20,13 +22,13 @@ public:
     void prepare(double sampleRate, double rampSeconds) noexcept;
 
     /// Salta a `gain` sin rampa.
-    void reset(float gain) noexcept;
+    void reset(float gain) noexcept ESCEQ_NONBLOCKING;
 
     /// Nueva ganancia objetivo (lineal). La rampa empieza desde el valor actual.
-    void setTarget(float gain) noexcept;
+    void setTarget(float gain) noexcept ESCEQ_NONBLOCKING;
 
     /// Procesa en el sitio `numSamples` muestras de `numChannels` canales.
-    void process(float* const* channels, int numChannels, int numSamples) noexcept;
+    void process(float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING;
 
     float current() const noexcept { return current_; }
     bool isRamping() const noexcept { return remaining_ > 0; }

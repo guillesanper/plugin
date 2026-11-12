@@ -4,35 +4,45 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## Sin publicar
 
-### Corregido
+## [0.1.0] - 2026-11-12
 
-- Los valores de los parámetros ya no se desvían al pasar por el host (6 dB volvía como 6,0000014 dB al cargar un proyecto). La posición de automatización de cada valor no cambia.
-- Un nodo arrastrado por debajo (o por encima) del rango visible desaparecía de la curva y no se podía volver a seleccionar. Ahora el arrastre se detiene en el borde de la vista, y un nodo con más ganancia de la que se muestra se dibuja pegado al borde, donde se puede seguir arrastrando.
+Primera versión pública.
 
-### Cambiado
+### Qué es
 
-- Interfaz rediseñada con controles propios: potenciómetros con arco de valor (desde el centro en ganancia y rango), valor editable con un clic, ajuste fino con Mayús, rueda, y doble clic o Ctrl/Cmd + clic para volver al valor por defecto. Panel de banda en tres tarjetas (banda, EQ y dinámica) y tipografía propia embebida, igual en Windows, macOS y Linux.
-- La ventana mínima pasa a 960 × 540.
+esceQ es un ecualizador paramétrico y dinámico, libre (AGPLv3), pensado para funcionar bien en FL Studio y en cualquier host VST3, CLAP o AU.
 
-### Añadido
+### Qué trae
 
-- Deshacer y rehacer dentro del plugin (botones de la barra superior, Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z). Un arrastre entero es una sola acción.
-- Presets: cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal, Gentle Master) y presets de usuario en una carpeta del sistema, con navegador en la barra superior.
-- El modo del analizador, el rango de la curva y el tamaño de la ventana se guardan con el proyecto. **Formato de estado, versión 2:** los proyectos guardados con la versión 1 cargan igual.
-- Etiqueta flotante con frecuencia, ganancia y Q al señalar o arrastrar un nodo; medidor de la ganancia dinámica junto al nodo y en el panel; flecha en el borde cuando la ganancia de una banda no cabe en el rango visible.
-- Medidor de nivel de salida con pico retenido y aviso de recorte.
-- Tamaños de ventana predefinidos (S, M, L), además del redimensionado libre.
-- Manejo con teclado y nombres accesibles en todos los controles.
-- Canal por banda: cada banda puede actuar en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid o Side. La dinámica de la banda escucha ese mismo canal. 24 parámetros nuevos (`bNN_chan`), añadidos al final: los proyectos guardados antes cargan en estéreo y suenan igual.
+- **Ecualizador de 24 bandas**, cada una con nueve tipos de filtro: campana, shelf de graves y de agudos, corte de graves y de agudos (de 6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Cambios de parámetros sin chasquidos y latencia cero.
+- **Dinámica por banda** en campanas, shelves y tilt: umbral, rango (negativo reduce, positivo realza), ataque, relajación y rodilla. Sirve de de-esser y para controlar resonancias. El detector escucha la entrada del plugin o un **sidechain externo**, a elegir en cada banda.
+- **Canal por banda:** estéreo, solo izquierdo, solo derecho, Mid o Side. La dinámica de la banda escucha ese mismo canal.
+- **Curva interactiva:** doble clic para añadir una banda, arrastrar para moverla, rueda para el Q, clic derecho para el tipo, el canal y la dinámica. Etiqueta flotante con frecuencia, ganancia y Q; la curva muestra en tiempo real la ganancia dinámica.
+- **Analizador de espectro** antes y después del ecualizador, y **medidor de nivel de salida** con pico retenido y aviso de recorte.
+- **Controles propios:** potenciómetros con valor editable con un clic, ajuste fino con Mayús, rueda, y doble clic o Ctrl/Cmd + clic para volver al valor por defecto. Manejo con teclado y nombres accesibles.
+- **Deshacer y rehacer** dentro del plugin: un arrastre entero es una sola acción.
+- **Presets:** cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) y los tuyos, en una carpeta del sistema.
+- **Ventana redimensionable**, con tres tamaños predefinidos (S, M, L). El tamaño, el modo del analizador y el rango de la curva se guardan con el proyecto.
+- 338 parámetros automatizables, con valores legibles en el host ("1.20 kHz", "+3.0 dB").
 
-- Estructura del proyecto: módulos `dsp`, `core` y `plugin`, tests y CI.
-- Plugin VST3 (y AU en macOS) que deja pasar el audio, con ganancia de salida y bypass.
-- Formato de estado propio, versión 1.
-- Núcleo de filtros en `dsp/`: campana, shelves, cortes de 6 a 96 dB/oct, notch, paso banda, paso todo y tilt, con cálculo exacto de la respuesta en frecuencia.
-- Ecualizador de 24 bandas conectado al plugin, con suavizado de parámetros y fundidos al activar, cambiar de tipo o hacer bypass, sin chasquidos.
-- Interfaz propia: curva interactiva con nodos arrastrables, panel de la banda seleccionada, rango de visualización ajustable.
-- Analizador de espectro antes y después del EQ.
-- 146 parámetros automatizables (338 con la dinámica y el canal), con escala logarítmica para frecuencia y Q y valores legibles en el host ("1.20 kHz", "+3.0 dB").
-- Dinámica por banda en campanas, shelves y tilt: umbral, rango (negativo comprime, positivo expande), ataque, relajación y rodilla, sin chasquidos al modularla. 168 parámetros nuevos (7 por banda), añadidos al final: los estados guardados antes cargan con la dinámica desactivada y suenan igual.
-- Sidechain externo como bus de entrada opcional, elegible por banda.
-- La curva muestra la ganancia dinámica en tiempo real, con la curva estática punteada y una barra con el rango junto al nodo.
+### Formatos y plataformas
+
+- **Windows (x64):** VST3 y CLAP, con instalador.
+- **macOS (Apple Silicon e Intel):** VST3, AU y CLAP. Los binarios no están firmados con un certificado de Apple: el archivo `INSTALL.txt` del paquete explica cómo permitir su carga.
+- **Linux (x64):** VST3 y CLAP.
+
+### Compatibilidad a partir de esta versión
+
+Desde la 0.1.0 quedan congelados, para que los proyectos guardados sigan abriendo y sonando igual en las versiones siguientes:
+
+- los identificadores, rangos y posiciones de los 338 parámetros;
+- el formato del estado guardado (versión 2; también se leen los estados de la versión 1, de las compilaciones de desarrollo);
+- el nombre y el sonido de los presets de fábrica;
+- la identidad del plugin ante el host (VST3, AU y CLAP).
+
+### Limitaciones conocidas
+
+- Fase mínima únicamente: sin fase lineal ni corrección de la respuesta cerca de Nyquist (previstas para la 0.5).
+- La dinámica no tiene ratio ni anticipación (lookahead).
+- El analizador muestra la media de los canales, y la curva total suma todas las bandas sin distinguir su canal.
+- El enrutado del sidechain en FL Studio está descrito en el README, pero aún no se ha verificado paso a paso en FL Studio.

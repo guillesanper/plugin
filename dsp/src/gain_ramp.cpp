@@ -12,7 +12,7 @@ void GainRamp::prepare(double sampleRate, double rampSeconds) noexcept
     rampSamples_ = static_cast<int>(std::clamp(samples, 1.0, 1.0e9));
 }
 
-void GainRamp::reset(float gain) noexcept
+void GainRamp::reset(float gain) noexcept ESCEQ_NONBLOCKING
 {
     current_ = gain;
     target_ = gain;
@@ -20,7 +20,7 @@ void GainRamp::reset(float gain) noexcept
     remaining_ = 0;
 }
 
-void GainRamp::setTarget(float gain) noexcept
+void GainRamp::setTarget(float gain) noexcept ESCEQ_NONBLOCKING
 {
     if (gain == target_)
         return;
@@ -30,7 +30,7 @@ void GainRamp::setTarget(float gain) noexcept
     step_ = (target_ - current_) / static_cast<float>(remaining_);
 }
 
-void GainRamp::process(float* const* channels, int numChannels, int numSamples) noexcept
+void GainRamp::process(float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING
 {
     if (remaining_ == 0 && current_ == 1.0f)
         return;

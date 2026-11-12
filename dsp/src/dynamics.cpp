@@ -20,7 +20,7 @@ bool supportsDynamics(FilterType type) noexcept
     }
 }
 
-double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double kneeDb) noexcept
+double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double kneeDb) noexcept ESCEQ_NONBLOCKING
 {
     if (!std::isfinite(levelDb) || !std::isfinite(thresholdDb) || !std::isfinite(rangeDb) || rangeDb == 0.0)
         return 0.0;
@@ -41,7 +41,7 @@ double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double 
     return std::copysign(std::min(amount, limit), rangeDb);
 }
 
-BandDesign designDetector(const FilterParams& params, double sampleRate) noexcept
+BandDesign designDetector(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     FilterParams detector = params;
     detector.gainDb = 0.0;

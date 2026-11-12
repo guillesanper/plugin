@@ -16,3 +16,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0007](0007-canal-por-banda.md) | Canal por banda: Mid/Side por diferencia, detección que sigue al canal | Aceptada |
 | [0008](0008-sistema-visual.md) | Sistema visual propio: tema en código, controles propios y lógica fuera de la capa gráfica | Aceptada |
 | [0009](0009-preferencias-deshacer-y-presets.md) | Estado versión 2 con preferencias de la interfaz, deshacer por instantáneas y presets en el formato de estado | Aceptada |
+| [0010](0010-distribucion.md) | Distribución: CLAP con clap-juce-extensions, instalador de Windows y releases desde el CI | Aceptada |

@@ -1,0 +1,84 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# Publica una release en GitHub al subir una etiqueta vX.Y.Z:
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# Reutiliza el CI completo (compilar, tests, pluginval, clap-validator,
+# instalador) y publica exactamente los paquetes que ese CI ha generado:
+#   esceQ-X.Y.Z-windows-x64-setup.exe   (instalador: VST3 y CLAP)
+#   esceQ-X.Y.Z-macos-universal.zip     (VST3, AU y CLAP)
+#   esceQ-X.Y.Z-linux-x64.tar.gz        (VST3 y CLAP)
+#
+# La etiqueta debe coincidir con la versión de CMakeLists.txt, y CHANGELOG.md
+# debe tener una sección para esa versión: es el texto de la release.
+#
+# También se puede lanzar a mano (workflow_dispatch) para ensayarlo: hace
+# todo menos publicar.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  # Comprobaciones baratas antes de gastar minutos de compilación.
+  check:
+    name: Comprobar version y notas
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+      - name: Version
+        id: version
+        run: |
+          VERSION=$(sed -n 's/^project(esceQ VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          test -n "$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [ "$GITHUB_REF_TYPE" = "tag" ] && [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::La etiqueta $GITHUB_REF_NAME no coincide con la version $VERSION de CMakeLists.txt"
+            exit 1
+          fi
+      - name: Notas de la version
+        run: tools/release-notes.sh "${{ steps.version.outputs.version }}"
+
+  build:
+    name: CI
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    name: Publicar
+    needs: [check, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Paquetes
+        run: |
+          VERSION="${{ needs.check.outputs.version }}"
+          ls -la dist
+          # Deben estar los tres, con la version en el nombre.
+          test -f "dist/esceQ-$VERSION-windows-x64-setup.exe"
+          test -f "dist/esceQ-$VERSION-macos-universal.zip"
+          test -f "dist/esceQ-$VERSION-linux-x64.tar.gz"
+          (cd dist && sha256sum esceQ-* > SHA256SUMS.txt && cat SHA256SUMS.txt)
+          tools/release-notes.sh "$VERSION" > notes.md
+      - name: Publicar en GitHub
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "esceQ ${{ needs.check.outputs.version }}" \
+            --notes-file notes.md \
+            --verify-tag
