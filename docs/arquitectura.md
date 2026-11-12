@@ -16,9 +16,10 @@ Las flechas indican "depende de". Nunca al revés.
 |---|---|---|---|
 | `dsp/` | Algoritmos de audio y análisis. C++20 puro | Solo la biblioteca estándar | MIT |
 | `core/` | Tabla de parámetros, formato del estado guardado y traducción de parámetros a ajustes del motor. C++20 puro | `dsp/` | AGPLv3 |
-| `ui/logic/` | Geometría de la interfaz: escalas, posición de nodos, detección de clics. C++20 puro | `core/`, `dsp/` | AGPLv3 |
+| `ui/logic/` | Lógica de la interfaz: geometría de la curva, comportamiento de los controles, medidores y disposición de la ventana. C++20 puro | `core/`, `dsp/` | AGPLv3 |
 | `plugin/` | Adaptador con el host (JUCE): buses, parámetros, estado, colas del analizador | `core/`, `dsp/`, JUCE | AGPLv3 |
-| `ui/src/` | Componentes gráficos (JUCE): curva, panel de banda, editor | `plugin/`, `ui/logic/`, `core/`, JUCE | AGPLv3 |
+| `ui/src/` | Capa gráfica (JUCE): tema, dibujo, controles propios, curva, panel de banda, medidor y editor. Ver [ui.md](ui.md) | `plugin/`, `ui/logic/`, `core/`, JUCE | AGPLv3 |
+| `ui/assets/` | Fuentes embebidas (Inter) | — | SIL OFL 1.1 |
 | `tests/` | Tests de `dsp/`, `core/` y `ui/logic/` | Esos tres, Catch2 | La del código que prueban |
 | `tools/` | Herramientas de desarrollo (captura del editor). Solo con `-DESCEQ_BUILD_TOOLS=ON` | `plugin/`, `ui/src/` | AGPLv3 |
 
@@ -68,6 +69,17 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | `state.h` | Lectura y escritura del estado guardado |
 | `band_model.h` | De los valores de los parámetros a `dsp::BandSettings`, dinámica incluida. El procesador y la interfaz usan la misma función, así que **la curva que se dibuja es siempre la que suena** (la interfaz le suma la ganancia dinámica que publica el procesador) |
 
+## Contenido de `ui/logic/`
+
+| Cabecera | Qué ofrece |
+|---|---|
+| `curve_mapping.h` | Frecuencia y ganancia ↔ píxeles, posición y selección de nodos, rejillas, etiqueta flotante, indicador de ganancia fuera de rango |
+| `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto |
+| `meter_logic.h` | Escala y balística del medidor de salida; fracción del medidor de dinámica |
+| `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control |
+
+Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/src` solo pinta y traduce gestos ([ADR 0008](decisiones/0008-sistema-visual.md), [ui.md](ui.md)).
+
 ## Parámetros: una sola fuente de verdad
 
 `core::parameters()` es la única lista de parámetros, 338 en total, en este orden:
@@ -109,13 +121,14 @@ Comunicación:
 - **Interfaz → audio:** solo mediante parámetros del host. El hilo de audio lee sus valores atómicos una vez por bloque. Los gestos de la curva (arrastrar, rueda, doble clic) van envueltos en `beginChangeGesture`/`endChangeGesture` para que el host los registre como una sola acción de deshacer y de automatización.
 - **Audio → interfaz:** dos `dsp::SpscFifo` (audio mono antes y después del EQ). El hilo de audio escribe; si la cola está llena, descarta. El editor abierto es el **único** lector. Si algún host abriera dos editores a la vez del mismo plugin, habría dos lectores: no está soportado.
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
+- **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.
 
 Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y si es segura entre hilos.
 
 ## Flujo de audio actual (fase 4)
 
 ```
-entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp::GainRamp (salida) ─► cola "post" ─► salida
+entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp::GainRamp (salida) ─► cola "post" + picos ─► salida
                               ▲ detectores
 sidechain (bus opcional) ─────┘
 ```
@@ -132,3 +145,5 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 |---|---|---|---|
 | JUCE | 9.0.5 | `plugin/`, `ui/src/`, `tools/` | AGPLv3 |
 | Catch2 | 3.16.1 | `tests/` | BSL-1.0 |
+
+Además, la tipografía Inter 4.1 (SIL OFL 1.1) va copiada en `ui/assets/fonts/`, sin modificar y con su licencia, y se embebe en el binario.

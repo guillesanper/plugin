@@ -49,14 +49,33 @@ cmake --build build --target esceq_snapshot
 ./build/tools/snapshot/esceq_snapshot_artefacts/Release/esceq_snapshot captura.png
 ```
 
-En Linux sin pantalla, anteponer `xvfb-run -a`. La imagen de `docs/img/esceq.png` se genera así: actualízala cuando cambie el aspecto de la interfaz.
+En Linux sin pantalla, anteponer `xvfb-run -a`. Opciones: `ancho alto`, `--scale F` (1, 1.25, 1.5, 2), `--select N`, `--hover N` (etiqueta flotante de esa banda), `--overflow`, `--bypass` y `--gallery` (estados de los controles).
+
+Cuando cambie el aspecto de la interfaz, regenera las imágenes de la documentación y míralas:
+
+```
+S=./build/tools/snapshot/esceq_snapshot_artefacts/Release/esceq_snapshot
+$S docs/img/esceq.png --hover 6
+$S docs/img/ui/controles.png --gallery
+$S docs/img/ui/fuera-de-rango.png 960 580 --overflow --hover 3 --select 3
+$S docs/img/ui/sin-seleccion.png 960 580 --select 0
+```
+
+## Reglas de la interfaz
+
+Ver [docs/ui.md](docs/ui.md). En corto:
+
+- Colores, letra y medidas de estilo salen de `ui/src/Theme.h`. No se escriben a mano en los componentes.
+- Lo que se pueda calcular sin ventana (de gesto a valor, escalas, posiciones) va en `ui/logic` con su test.
+- Un control nuevo tiene nombre accesible, se maneja con el teclado y dibuja sus seis estados.
+- Los textos visibles van en inglés. Nada de nombres, logos ni aspecto de productos comerciales.
 
 ## Estilo
 
 - C++20, formateado con `clang-format` (configuración en la raíz).
 - Los avisos del compilador son errores en nuestro código.
 - Los nombres de los tests (`TEST_CASE`) van en ASCII, sin tildes ni eñes: en Windows CTest no encuentra los que las llevan.
-- Cada archivo empieza con su `SPDX-License-Identifier`: `MIT` en `dsp/` y sus tests, `AGPL-3.0-or-later` en el resto.
+- Cada archivo empieza con su `SPDX-License-Identifier`: `MIT` en `dsp/` y sus tests, `AGPL-3.0-or-later` en el resto. Las fuentes de `ui/assets/fonts/` son de terceros (SIL OFL 1.1) y no se modifican.
 
 ## Git
 

@@ -68,6 +68,13 @@ public:
     /// desde cualquier hilo.
     float dynamicGainDb(int band) const noexcept;
 
+    /// Mayor valor absoluto de la salida del canal `channel` desde la última
+    /// llamada, y lo pone a cero. Un único lector: el medidor del editor.
+    float takeOutputPeak(int channel) noexcept;
+
+    /// Canales de la salida principal (1 o 2).
+    int outputChannelCount() const noexcept { return outputChannels_.load(std::memory_order_relaxed); }
+
     /// true si el host tiene conectado el bus de sidechain.
     bool sidechainConnected() const noexcept { return sidechainConnected_.load(std::memory_order_relaxed); }
 
@@ -86,6 +93,8 @@ private:
     std::atomic<double> sampleRate_{0.0};
     std::array<std::atomic<float>, core::kNumBands> dynamicGains_{};
     std::atomic<bool> sidechainConnected_{false};
+    std::array<std::atomic<float>, 2> outputPeaks_{};
+    std::atomic<int> outputChannels_{2};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

@@ -8,8 +8,17 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 - Un nodo arrastrado por debajo (o por encima) del rango visible desaparecía de la curva y no se podía volver a seleccionar. Ahora el arrastre se detiene en el borde de la vista, y un nodo con más ganancia de la que se muestra se dibuja pegado al borde, donde se puede seguir arrastrando.
 
+### Cambiado
+
+- Interfaz rediseñada con controles propios: potenciómetros con arco de valor (desde el centro en ganancia y rango), valor editable con un clic, ajuste fino con Mayús, rueda, y doble clic o Ctrl/Cmd + clic para volver al valor por defecto. Panel de banda en tres tarjetas (banda, EQ y dinámica) y tipografía propia embebida, igual en Windows, macOS y Linux.
+- La ventana mínima pasa a 960 × 540.
+
 ### Añadido
 
+- Etiqueta flotante con frecuencia, ganancia y Q al señalar o arrastrar un nodo; medidor de la ganancia dinámica junto al nodo y en el panel; flecha en el borde cuando la ganancia de una banda no cabe en el rango visible.
+- Medidor de nivel de salida con pico retenido y aviso de recorte.
+- Tamaños de ventana predefinidos (S, M, L), además del redimensionado libre.
+- Manejo con teclado y nombres accesibles en todos los controles.
 - Canal por banda: cada banda puede actuar en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid o Side. La dinámica de la banda escucha ese mismo canal. 24 parámetros nuevos (`bNN_chan`), añadidos al final: los proyectos guardados antes cargan en estéreo y suenan igual.
 
 - Estructura del proyecto: módulos `dsp`, `core` y `plugin`, tests y CI.

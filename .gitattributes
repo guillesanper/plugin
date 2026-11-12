@@ -1,2 +1,4 @@
 * text=auto
 tests/fixtures/** -text
+*.ttf binary
+*.png binary

@@ -20,7 +20,10 @@ add_executable(esceq_tests
     core/band_model_test.cpp
     core/parameters_test.cpp
     core/state_test.cpp
-    ui/curve_mapping_test.cpp)
+    ui/control_logic_test.cpp
+    ui/curve_mapping_test.cpp
+    ui/layout_test.cpp
+    ui/meter_logic_test.cpp)
 
 target_compile_definitions(esceq_tests PRIVATE
     ESCEQ_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

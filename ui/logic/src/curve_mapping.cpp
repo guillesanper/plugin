@@ -53,12 +53,14 @@ float CurveMapping::yForAnalyzerDb(double db) const noexcept
     return area_.y + static_cast<float>(t) * area_.height;
 }
 
-Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept
+Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band, float verticalMargin) noexcept
 {
     const double gain = core::usesGain(band.filter.type) ? band.filter.gainDb : 0.0;
     const Rect area = mapping.area();
+    // El margen nunca pasa de media altura: en una vista diminuta el nodo va al centro.
+    const float margin = std::clamp(verticalMargin, 0.0f, 0.5f * area.height);
     return {std::clamp(mapping.xForFrequency(band.filter.frequencyHz), area.x, area.x + area.width),
-            std::clamp(mapping.yForGain(gain), area.y, area.y + area.height)};
+            std::clamp(mapping.yForGain(gain), area.y + margin, area.y + area.height - margin)};
 }
 
 double draggedGain(const CurveMapping& mapping, double currentDb, float deltaY) noexcept
@@ -67,6 +69,57 @@ double draggedGain(const CurveMapping& mapping, double currentDb, float deltaY) 
     const double next = currentDb - static_cast<double>(deltaY) * dbPerPixel;
     const double range = mapping.rangeDb();
     return std::clamp(next, std::min(-range, currentDb), std::max(range, currentDb));
+}
+
+int gainOverflow(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept
+{
+    if (!core::usesGain(band.filter.type))
+        return 0;
+    // Medio píxel de margen: un nodo justo en el borde no se considera fuera.
+    const double margin = mapping.rangeDb() / mapping.area().height;
+    if (band.filter.gainDb > mapping.rangeDb() + margin)
+        return 1;
+    if (band.filter.gainDb < -mapping.rangeDb() - margin)
+        return -1;
+    return 0;
+}
+
+Rect floatingLabelRect(Rect area, Point node, float width, float height, float gap) noexcept
+{
+    const float w = std::min(width, area.width);
+    const float h = std::min(height, area.height);
+
+    float y = node.y - gap - h;
+    if (y < area.y)
+        y = node.y + gap; // arriba no cabe: debajo del nodo
+    y = std::clamp(y, area.y, area.y + area.height - h);
+
+    const float x = std::clamp(node.x - 0.5f * w, area.x, area.x + area.width - w);
+    return {x, y, w, h};
+}
+
+NodeReadout nodeReadout(const core::ParameterValues& values, int band)
+{
+    const auto& specs = core::parameters();
+    auto text = [&](std::size_t index) { return core::formatValue(specs[index], values[index]); };
+
+    const auto settings = core::bandSettings(values, band);
+    const auto type = settings.filter.type;
+
+    NodeReadout out;
+    out.title = "Band " + std::to_string(band + 1) + " \xC2\xB7 " + text(core::bandParameter(band, core::BandParam::Type));
+    if (settings.channel != dsp::ChannelMode::Stereo)
+        out.title += " \xC2\xB7 " + text(core::channelParameter(band));
+
+    out.frequency = text(core::bandParameter(band, core::BandParam::Frequency));
+    if (core::usesGain(type))
+        out.gain = text(core::bandParameter(band, core::BandParam::Gain));
+    if (core::usesQ(type, settings.filter.slopeDbPerOct))
+        out.q = "Q " + text(core::bandParameter(band, core::BandParam::Q));
+    if (core::usesSlope(type))
+        out.q = out.q.empty() ? text(core::bandParameter(band, core::BandParam::Slope))
+                              : text(core::bandParameter(band, core::BandParam::Slope)) + "  " + out.q;
+    return out;
 }
 
 std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bool> visible, Point p,

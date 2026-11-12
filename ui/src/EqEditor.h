@@ -1,13 +1,16 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
-#include "BandControls.h"
+#include "BandPanel.h"
+#include "Controls.h"
 #include "CurveView.h"
+#include "EsceqLookAndFeel.h"
+#include "OutputMeter.h"
+
+#include "esceq/ui/layout.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
-
-#include <memory>
 
 namespace esceq {
 class PluginProcessor;
@@ -15,8 +18,9 @@ class PluginProcessor;
 
 namespace esceq::ui {
 
-/// Ventana del plugin: barra superior (analizador, rango, salida, bypass),
-/// vista de la curva y panel de la banda seleccionada.
+/// Ventana del plugin: barra superior (analizador, rango, tamaño, salida y
+/// bypass), curva, medidor de salida y panel de la banda seleccionada.
+/// La disposición sale de esceq/ui/layout.h.
 class EqEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
 public:
@@ -26,24 +30,25 @@ public:
     void paint(juce::Graphics& g) override;
     void resized() override;
 
+    CurveView& curve() noexcept { return curve_; }
+
 private:
     void timerCallback() override;
 
     PluginProcessor& processor_;
-    juce::LookAndFeel_V4 lookAndFeel_;
+    EsceqLookAndFeel lookAndFeel_;
+    EditorLayout layout_{};
+    TopBarLayout topBar_{};
 
     CurveView curve_;
-    BandControls controls_;
+    OutputMeter meter_;
+    BandPanel panel_;
 
-    juce::Label title_;
-    juce::ComboBox analyzer_;
-    juce::ComboBox range_;
-    juce::Slider output_;
-    juce::Label outputLabel_;
-    juce::ToggleButton bypass_{"Bypass"};
-
-    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> outputAttachment_;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment_;
+    Dropdown analyzer_{"Analyzer"};
+    Dropdown range_{"Display range"};
+    Segmented size_;
+    ParamControl output_{ParamControl::Style::Bar, "Output"};
+    ToggleSwitch bypass_{ToggleSwitch::Style::Pill, "Bypass", "Bypass"};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(EqEditor)
 };

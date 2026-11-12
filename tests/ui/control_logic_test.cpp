@@ -1,0 +1,228 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+#include "esceq/ui/control_logic.h"
+
+#include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_floating_point.hpp>
+
+#include <cmath>
+#include <limits>
+
+using Catch::Matchers::WithinAbs;
+using Catch::Matchers::WithinRel;
+using namespace esceq;
+using namespace esceq::ui;
+
+namespace {
+
+const core::ParameterSpec& frequency()
+{
+    return core::parameters()[core::bandParameter(0, core::BandParam::Frequency)];
+}
+const core::ParameterSpec& gain()
+{
+    return core::parameters()[core::bandParameter(0, core::BandParam::Gain)];
+}
+const core::ParameterSpec& threshold()
+{
+    return core::parameters()[core::dynamicParameter(0, core::DynParam::Threshold)];
+}
+const core::ParameterSpec& type()
+{
+    return core::parameters()[core::bandParameter(0, core::BandParam::Type)];
+}
+const core::ParameterSpec& enabled()
+{
+    return core::parameters()[core::bandParameter(0, core::BandParam::Enabled)];
+}
+
+} // namespace
+
+TEST_CASE("Controles: el arrastre recorre el rango en kDragPixelsForFullRange pixeles")
+{
+    CHECK_THAT(dragNormalized(0.0f, kDragPixelsForFullRange, false), WithinAbs(1.0, 1e-6));
+    CHECK_THAT(dragNormalized(0.5f, 50.0f, false), WithinAbs(0.75, 1e-6));
+    CHECK_THAT(dragNormalized(0.5f, -50.0f, false), WithinAbs(0.25, 1e-6));
+
+    // No se sale de 0..1.
+    CHECK(dragNormalized(0.9f, 500.0f, false) == 1.0f);
+    CHECK(dragNormalized(0.1f, -500.0f, false) == 0.0f);
+}
+
+TEST_CASE("Controles: con ajuste fino el arrastre avanza diez veces menos")
+{
+    const float coarse = dragNormalized(0.5f, 40.0f, false) - 0.5f;
+    const float fine = dragNormalized(0.5f, 40.0f, true) - 0.5f;
+    CHECK_THAT(fine, WithinRel(coarse * kFineFactor, 1e-4f));
+    CHECK(fine > 0.0f);
+}
+
+TEST_CASE("Controles: un arrastre lento se acumula y no se pierde")
+{
+    // 200 movimientos de 1 pixel = un movimiento de 200 pixeles.
+    float position = 0.0f;
+    for (int i = 0; i < 200; ++i)
+        position = dragNormalized(position, 1.0f, false);
+    CHECK_THAT(position, WithinAbs(1.0, 1e-4));
+
+    // Lo mismo con el ajuste fino: 2000 pixeles.
+    position = 0.0f;
+    for (int i = 0; i < 2000; ++i)
+        position = dragNormalized(position, 1.0f, true);
+    CHECK_THAT(position, WithinAbs(1.0, 1e-3));
+}
+
+TEST_CASE("Controles: entradas no finitas en el arrastre no se propagan")
+{
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    CHECK(dragNormalized(0.3f, nan, false) == 0.3f);
+    CHECK(dragNormalized(nan, 10.0f, false) == 0.0f);
+    CHECK(dragNormalized(0.3f, std::numeric_limits<float>::infinity(), false) == 0.3f);
+}
+
+TEST_CASE("Controles: la rueda mueve los parametros continuos en su escala")
+{
+    // Frecuencia (logaritmica): el mismo movimiento multiplica igual en graves que en agudos.
+    const float low = wheelValue(frequency(), 100.0f, 0.1f, false) / 100.0f;
+    const float high = wheelValue(frequency(), 5000.0f, 0.1f, false) / 5000.0f;
+    CHECK(low > 1.0f);
+    CHECK_THAT(low, WithinRel(high, 1e-3f));
+
+    // Ganancia (lineal): suma lo mismo en cualquier punto.
+    const float a = wheelValue(gain(), 0.0f, 0.1f, false) - 0.0f;
+    const float b = wheelValue(gain(), -12.0f, 0.1f, false) - -12.0f;
+    CHECK_THAT(a, WithinAbs(60.0f * 0.1f * kWheelRangePerUnit, 1e-3));
+    CHECK_THAT(a, WithinAbs(b, 1e-3));
+
+    // Hacia abajo, y con ajuste fino.
+    CHECK(wheelValue(gain(), 0.0f, -0.1f, false) < 0.0f);
+    CHECK_THAT(wheelValue(gain(), 0.0f, 0.1f, true), WithinAbs(a * kFineFactor, 1e-3));
+
+    // Sin movimiento, o con un movimiento no finito, el valor no cambia.
+    CHECK(wheelValue(gain(), 3.0f, 0.0f, false) == 3.0f);
+    CHECK(wheelValue(gain(), 3.0f, std::numeric_limits<float>::quiet_NaN(), false) == 3.0f);
+
+    // No se sale del rango.
+    CHECK(wheelValue(gain(), 29.0f, 5.0f, false) == 30.0f);
+}
+
+TEST_CASE("Controles: la rueda y las teclas avanzan las opciones de una en una")
+{
+    CHECK(wheelValue(type(), 2.0f, 0.01f, false) == 3.0f);
+    CHECK(wheelValue(type(), 2.0f, -3.0f, false) == 1.0f);
+    CHECK(wheelValue(type(), 8.0f, 1.0f, false) == 8.0f); // ultima opcion
+    CHECK(wheelValue(type(), 0.0f, -1.0f, false) == 0.0f);
+    CHECK(keyStepValue(type(), 2.0f, 2, false) == 4.0f);
+    CHECK(keyStepValue(type(), 2.0f, -1, true) == 1.0f); // el ajuste fino no cambia el paso
+    CHECK(keyStepValue(enabled(), 0.0f, 1, false) == 1.0f);
+    CHECK(keyStepValue(enabled(), 1.0f, 1, false) == 1.0f);
+    CHECK(keyStepValue(enabled(), 1.0f, -1, false) == 0.0f);
+}
+
+TEST_CASE("Controles: cada tecla mueve un 1 % del rango, o un 0,1 % con ajuste fino")
+{
+    CHECK_THAT(keyStepValue(gain(), 0.0f, 1, false), WithinAbs(0.6, 1e-4));
+    CHECK_THAT(keyStepValue(gain(), 0.0f, -5, false), WithinAbs(-3.0, 1e-4));
+    CHECK_THAT(keyStepValue(gain(), 0.0f, 1, true), WithinAbs(0.06, 1e-4));
+    CHECK(keyStepValue(gain(), 30.0f, 1, false) == 30.0f);
+}
+
+TEST_CASE("Controles: que parametros son bipolares")
+{
+    CHECK(isBipolar(gain()));
+    CHECK(isBipolar(core::parameters()[core::dynamicParameter(0, core::DynParam::Range)]));
+    CHECK(isBipolar(core::parameters()[core::kOutputGain]));
+
+    CHECK_FALSE(isBipolar(frequency()));
+    CHECK_FALSE(isBipolar(threshold())); // de -60 a 0: el cero es un extremo
+    CHECK_FALSE(isBipolar(core::parameters()[core::bandParameter(0, core::BandParam::Q)]));
+    CHECK_FALSE(isBipolar(type()));
+    CHECK_FALSE(isBipolar(enabled()));
+}
+
+TEST_CASE("Controles: el arco de valor sale del centro en los bipolares y del minimo en el resto")
+{
+    // Bipolar: en 0 dB no hay arco, y el indicador apunta a las 12.
+    auto arc = valueArc(gain(), 0.0f);
+    CHECK_THAT(arc.from, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(arc.indicator, WithinAbs(0.0, 1e-6));
+
+    arc = valueArc(gain(), 30.0f);
+    CHECK_THAT(arc.from, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(kArcHalfSpan, 1e-6));
+
+    arc = valueArc(gain(), -15.0f);
+    CHECK_THAT(arc.from, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(-0.5 * kArcHalfSpan, 1e-5));
+    CHECK(arc.indicator == arc.to);
+
+    // No bipolar: desde el minimo.
+    arc = valueArc(threshold(), -60.0f);
+    CHECK_THAT(arc.from, WithinAbs(-kArcHalfSpan, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(-kArcHalfSpan, 1e-6));
+
+    arc = valueArc(threshold(), 0.0f);
+    CHECK_THAT(arc.from, WithinAbs(-kArcHalfSpan, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(kArcHalfSpan, 1e-6));
+
+    // Logaritmico: 632 Hz es el centro geometrico de 20 Hz a 20 kHz.
+    arc = valueArc(frequency(), 632.4555f);
+    CHECK_THAT(arc.from, WithinAbs(-kArcHalfSpan, 1e-6));
+    CHECK_THAT(arc.to, WithinAbs(0.0, 1e-4));
+
+    // Valores fuera de rango se recortan.
+    CHECK_THAT(valueArc(gain(), 500.0f).to, WithinAbs(kArcHalfSpan, 1e-6));
+}
+
+TEST_CASE("Controles: tramo de valor de una barra horizontal")
+{
+    auto span = valueSpan(gain(), -15.0f);
+    CHECK_THAT(span.from, WithinAbs(0.25, 1e-6));
+    CHECK_THAT(span.to, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(span.position, WithinAbs(0.25, 1e-6));
+
+    span = valueSpan(gain(), 15.0f);
+    CHECK_THAT(span.from, WithinAbs(0.5, 1e-6));
+    CHECK_THAT(span.to, WithinAbs(0.75, 1e-6));
+
+    span = valueSpan(threshold(), -30.0f);
+    CHECK_THAT(span.from, WithinAbs(0.0, 1e-6));
+    CHECK_THAT(span.to, WithinAbs(0.5, 1e-6));
+}
+
+TEST_CASE("Controles: el texto de edicion se vuelve a leer como el mismo valor")
+{
+    // Para todos los parametros y varios puntos del rango: lo que se muestra
+    // al abrir el campo, confirmado sin tocar, no mueve el valor mas de lo
+    // que se pierde al redondear para mostrarlo.
+    for (const auto& spec : core::parameters())
+    {
+        for (float n : {0.0f, 0.13f, 0.5f, 0.77f, 1.0f})
+        {
+            const float value = core::fromNormalized(spec, n);
+            const auto text = editText(spec, value);
+            const auto back = commitText(spec, text);
+            INFO(spec.id << " = " << value << " -> \"" << text << "\"");
+            REQUIRE(back.has_value());
+            CHECK_THAT(core::toNormalized(spec, *back), WithinAbs(core::toNormalized(spec, value), 0.004));
+            // Y confirmarlo otra vez ya no lo mueve nada.
+            CHECK(editText(spec, *back) == text);
+        }
+    }
+}
+
+TEST_CASE("Controles: confirmar texto escrito a mano")
+{
+    CHECK(commitText(frequency(), "1.2k") == 1200.0f);
+    CHECK(commitText(frequency(), "440") == 440.0f);
+    CHECK(commitText(frequency(), " 80 hz ") == 80.0f);
+    CHECK(commitText(gain(), "-4.5") == -4.5f);
+    CHECK(commitText(gain(), "+3 dB") == 3.0f);
+    CHECK(commitText(gain(), "99") == 30.0f); // se ajusta al rango
+    CHECK(commitText(type(), "low cut") == 3.0f);
+
+    // Lo que no se entiende no cambia el valor.
+    CHECK_FALSE(commitText(gain(), "").has_value());
+    CHECK_FALSE(commitText(gain(), "abc").has_value());
+    CHECK_FALSE(commitText(frequency(), "   ").has_value());
+}

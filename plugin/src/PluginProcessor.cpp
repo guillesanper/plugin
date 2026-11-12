@@ -7,6 +7,8 @@
 #include "esceq/core/state.h"
 #include "esceq/dsp/decibels.h"
 
+#include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -139,6 +141,13 @@ float PluginProcessor::dynamicGainDb(int band) const noexcept
     return dynamicGains_[static_cast<std::size_t>(band)].load(std::memory_order_relaxed);
 }
 
+float PluginProcessor::takeOutputPeak(int channel) noexcept
+{
+    if (channel < 0 || channel >= static_cast<int>(outputPeaks_.size()))
+        return 0.0f;
+    return outputPeaks_[static_cast<std::size_t>(channel)].exchange(0.0f, std::memory_order_relaxed);
+}
+
 double PluginProcessor::currentSampleRate() const noexcept
 {
     const double rate = sampleRate_.load(std::memory_order_relaxed);
@@ -203,6 +212,20 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     outputGain_.process(channels, numChannels, numSamples);
 
     postFifo_.writeMix(channels, numChannels, numSamples);
+
+    // Pico de salida para el medidor. El hilo de audio solo sube el valor; el
+    // medidor lo lee y lo pone a cero. Si ambos coinciden puede perderse un
+    // pico de un bloque: es un medidor, no una medida.
+    outputChannels_.store(numChannels, std::memory_order_relaxed);
+    for (int ch = 0; ch < std::min(numChannels, static_cast<int>(outputPeaks_.size())); ++ch)
+    {
+        float peak = 0.0f;
+        for (int i = 0; i < numSamples; ++i)
+            peak = std::max(peak, std::abs(channels[ch][i]));
+        auto& published = outputPeaks_[static_cast<std::size_t>(ch)];
+        if (peak > published.load(std::memory_order_relaxed))
+            published.store(peak, std::memory_order_relaxed);
+    }
 }
 
 juce::AudioProcessorEditor* PluginProcessor::createEditor()

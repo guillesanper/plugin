@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "esceq/core/parameters.h"
 #include "esceq/dsp/equalizer.h"
 
 #include <optional>
 #include <span>
+#include <string>
 #include <vector>
 
 /// Geometría de la vista de la curva, sin dependencias gráficas.
@@ -60,13 +62,36 @@ private:
 /// El nodo nunca queda fuera de la vista: si la ganancia supera el rango que
 /// se muestra (por ejemplo, -30 dB con la vista en ±18 dB, puesta desde el
 /// panel o por automatización), se dibuja pegado al borde, donde se puede
-/// seguir seleccionando y arrastrando.
-Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept;
+/// seguir seleccionando y arrastrando. Con `verticalMargin`, se queda a esa
+/// distancia del borde superior o inferior: así el nodo se ve entero y queda
+/// sitio para la flecha que indica que la ganancia sigue más allá.
+Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band, float verticalMargin = 0.0f) noexcept;
 
 /// Nueva ganancia al arrastrar verticalmente `deltaY` píxeles un nodo con
 /// ganancia `currentDb`. El arrastre no puede sacar el nodo de la vista
 /// (±rangeDb); si ya estaba fuera, solo puede acercarlo, sin saltos.
 double draggedGain(const CurveMapping& mapping, double currentDb, float deltaY) noexcept;
+
+/// Hacia dónde se sale de la vista la ganancia de una banda: +1 si queda por
+/// encima del rango visible, -1 si queda por debajo y 0 si se ve. La vista
+/// lo señala con una flecha en el borde, junto al nodo.
+int gainOverflow(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept;
+
+/// Rectángulo de la etiqueta flotante de un nodo: centrada sobre él, a `gap`
+/// píxeles; debajo si arriba no cabe; y siempre dentro del área de la curva.
+Rect floatingLabelRect(Rect area, Point node, float width, float height, float gap) noexcept;
+
+/// Textos de la etiqueta flotante de una banda. Los campos que no influyen
+/// con el tipo de filtro actual quedan vacíos.
+struct NodeReadout
+{
+    std::string title;     ///< "Band 3 · Bell" o "Band 3 · Bell · Mid".
+    std::string frequency; ///< "1.20 kHz"
+    std::string gain;      ///< "+3.0 dB"; vacío en los tipos sin ganancia.
+    std::string q;         ///< "Q 1.50", o la pendiente en los cortes de 6 dB/oct.
+};
+
+NodeReadout nodeReadout(const core::ParameterValues& values, int band);
 
 /// Índice del nodo visible más cercano a `p` dentro de `radius` píxeles.
 /// `visible[i]` indica si el nodo i se dibuja.

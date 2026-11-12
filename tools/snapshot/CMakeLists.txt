@@ -5,14 +5,10 @@
 # Sirve para revisar la interfaz sin FL Studio y para la documentación.
 juce_add_console_app(esceq_snapshot PRODUCT_NAME "esceq_snapshot")
 
-set(ESCEQ_UI_DIR ${PROJECT_SOURCE_DIR}/ui/src)
-
 target_sources(esceq_snapshot PRIVATE
     main.cpp
     ${PROJECT_SOURCE_DIR}/plugin/src/PluginProcessor.cpp
-    ${ESCEQ_UI_DIR}/BandControls.cpp
-    ${ESCEQ_UI_DIR}/CurveView.cpp
-    ${ESCEQ_UI_DIR}/EqEditor.cpp)
+    ${ESCEQ_UI_SOURCES})
 
 target_include_directories(esceq_snapshot PRIVATE ${PROJECT_SOURCE_DIR}/plugin/src ${ESCEQ_UI_DIR})
 
@@ -25,6 +21,7 @@ target_link_libraries(esceq_snapshot PRIVATE
     esceq_core
     esceq_dsp
     esceq_ui_logic
+    esceq_assets
     juce::juce_audio_utils
     juce::juce_recommended_config_flags
     juce::juce_recommended_warning_flags)

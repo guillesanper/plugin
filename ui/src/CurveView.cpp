@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "CurveView.h"
 
-#include "Palette.h"
+#include "Draw.h"
 #include "PluginProcessor.h"
+#include "Theme.h"
+
+#include "esceq/ui/control_logic.h"
+#include "esceq/ui/meter_logic.h"
 
 #include "esceq/core/band_model.h"
 #include "esceq/dsp/filter_design.h"
@@ -16,16 +20,29 @@ namespace esceq::ui {
 namespace {
 
 constexpr int kAnalyzerPoints = 320;
-constexpr float kNodeRadius = 7.0f;
-constexpr float kHitRadius = 12.0f;
+constexpr float kNodeRadius = 8.0f;
+constexpr float kHitRadius = 13.0f;
+constexpr float kNodeEdgeMargin = kNodeRadius + 10.0f; // sitio para la flecha de "fuera de rango"
 constexpr double kAnalyzerRiseSeconds = 0.06;  // constante de tiempo al subir
 constexpr double kAnalyzerFallSeconds = 0.35;  // y al bajar: más lenta, para que se pueda leer
 constexpr double kAnalyzerTiltDbPerOctave = 4.5;
 constexpr float kDefaultQ = 0.7071f;
 
+using namespace theme;
+
 juce::String frequencyLabel(double hz)
 {
     return hz >= 1000.0 ? juce::String(hz / 1000.0, 0) + "k" : juce::String(static_cast<int>(hz));
+}
+
+juce::String toJuce(const std::string& text)
+{
+    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
+}
+
+bool isDynamic(const dsp::BandSettings& settings)
+{
+    return settings.dynamics.enabled && core::usesDynamics(settings.filter.type);
 }
 
 } // namespace
@@ -44,6 +61,11 @@ CurveView::CurveView(PluginProcessor& processor)
     postAnalyzer_->setTiltDbPerOctave(kAnalyzerTiltDbPerOctave);
     values_ = processor_.currentValues();
     setOpaque(true);
+    setWantsKeyboardFocus(true);
+    setTitle("Equalizer curve");
+    setHelpText("Double-click to add a band. Drag a node to set frequency and gain; use the wheel for Q. "
+                "With the keyboard: left and right select a band, up and down change its gain, "
+                "Ctrl or Cmd with left and right change its frequency, Delete removes it.");
 }
 
 CurveView::~CurveView() = default;
@@ -55,6 +77,12 @@ void CurveView::setSelectedBand(int band)
     selected_ = band;
     if (onSelectionChanged)
         onSelectionChanged(selected_);
+    repaint();
+}
+
+void CurveView::setHoveredBand(int band)
+{
+    hovered_ = band;
     repaint();
 }
 
@@ -155,45 +183,66 @@ void CurveView::updateAnalyzer()
 
 void CurveView::paint(juce::Graphics& g)
 {
-    g.fillAll(palette::background);
+    g.fillAll(colour::window);
+    const auto bounds = getLocalBounds().toFloat();
     const auto m = mapping();
 
-    drawAnalyzer(g, m);
-    drawGrid(g, m);
-    drawCurves(g, m);
-    drawNodes(g, m);
+    {
+        // Todo lo de dentro se recorta a la tarjeta redondeada.
+        juce::Graphics::ScopedSaveState save(g);
+        juce::Path shape;
+        shape.addRoundedRectangle(bounds, radius::card);
+        g.reduceClipRegion(shape);
+        g.fillAll(colour::plot);
 
-    g.setColour(palette::gridStrong);
-    g.drawRect(getLocalBounds(), 1);
+        drawAnalyzer(g, m);
+        drawGrid(g, m);
+        drawCurves(g, m);
+        drawNodes(g, m);
+        drawReadout(g, m);
+    }
+
+    const bool focused = keyboardFocus_ && hasKeyboardFocus(false);
+    g.setColour(focused ? colour::accent : colour::line);
+    g.drawRoundedRectangle(bounds.reduced(0.5f), radius::card, focused ? stroke::thin : stroke::hairline);
 }
 
 void CurveView::drawGrid(juce::Graphics& g, const CurveMapping& m) const
 {
     const auto area = m.area();
-    g.setFont(juce::FontOptions(11.0f));
+    g.setFont(font(type::caption, Weight::Regular, true));
 
     for (const auto& line : frequencyGrid())
     {
-        const float x = m.xForFrequency(line.value);
-        g.setColour(line.labelled ? palette::gridStrong : palette::grid);
-        g.drawVerticalLine(juce::roundToInt(x), area.y, area.y + area.height);
-        if (line.labelled && line.value < 20000.0)
+        const float x = std::round(m.xForFrequency(line.value));
+        if (line.value > kMinDisplayHz && line.value < kMaxDisplayHz)
         {
-            g.setColour(palette::textDim);
-            g.drawText(frequencyLabel(line.value), juce::Rectangle<float>(x + 3.0f, area.y + area.height - 16.0f, 40.0f, 14.0f),
-                       juce::Justification::centredLeft);
+            g.setColour(line.labelled ? colour::lineStrong.withAlpha(0.7f) : colour::line.withAlpha(0.7f));
+            g.fillRect(juce::Rectangle<float>(x, area.y, 1.0f, area.height));
+        }
+        if (line.labelled && line.value < kMaxDisplayHz)
+        {
+            g.setColour(colour::textDim);
+            g.drawText(frequencyLabel(line.value), juce::Rectangle<float>(x + 5.0f, area.y + area.height - 17.0f, 40.0f, 12.0f),
+                       juce::Justification::centredLeft, false);
         }
     }
 
     for (const auto& line : gainGrid(m.rangeDb()))
     {
-        const float y = m.yForGain(line.value);
-        g.setColour(std::abs(line.value) < 1.0e-9 ? palette::gridStrong.brighter(0.2f) : palette::grid);
-        g.drawHorizontalLine(juce::roundToInt(y), area.x, area.x + area.width);
-        g.setColour(palette::textDim);
+        const bool zero = std::abs(line.value) < 1.0e-9;
+        const float y = std::round(m.yForGain(line.value));
+        if (std::abs(line.value) < m.rangeDb() - 1.0e-9)
+        {
+            g.setColour(zero ? colour::lineStrong : colour::line.withAlpha(0.7f));
+            g.fillRect(juce::Rectangle<float>(area.x, y, area.width, 1.0f));
+        }
         const juce::String label = (line.value > 0.0 ? "+" : "") + juce::String(static_cast<int>(line.value));
-        g.drawText(label, juce::Rectangle<float>(area.x + area.width - 34.0f, y - 14.0f, 30.0f, 13.0f),
-                   juce::Justification::centredRight);
+        // Las etiquetas de los extremos se meten hacia dentro para no cortarse.
+        const float labelY = std::clamp(y - 15.0f, area.y + 4.0f, area.y + area.height - 17.0f);
+        g.setColour(zero ? colour::textMuted : colour::textDim);
+        g.drawText(label, juce::Rectangle<float>(area.x + area.width - 40.0f, labelY, 32.0f, 12.0f),
+                   juce::Justification::centredRight, false);
     }
 }
 
@@ -229,15 +278,17 @@ void CurveView::drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const
         return path;
     };
 
-    g.setColour(palette::analyzerPost.withAlpha(0.18f));
-    g.fillPath(makePath(postLevels_, true));
-    g.setColour(palette::analyzerPost.withAlpha(0.55f));
-    g.strokePath(makePath(postLevels_, false), juce::PathStrokeType(1.0f));
+    const auto fill = makePath(postLevels_, true);
+    g.setGradientFill(juce::ColourGradient(colour::analyzerPost.withAlpha(0.30f), 0.0f, area.y + 0.35f * area.height,
+                                           colour::analyzerPost.withAlpha(0.06f), 0.0f, bottom, false));
+    g.fillPath(fill);
+    g.setColour(colour::analyzerPost.withAlpha(0.75f));
+    g.strokePath(makePath(postLevels_, false), juce::PathStrokeType(stroke::hairline));
 
     if (analyzerMode_ == AnalyzerMode::PreAndPost)
     {
-        g.setColour(palette::analyzerPre.withAlpha(0.6f));
-        g.strokePath(makePath(preLevels_, false), juce::PathStrokeType(1.0f));
+        g.setColour(colour::analyzerPre.withAlpha(0.6f));
+        g.strokePath(makePath(preLevels_, false), juce::PathStrokeType(stroke::hairline));
     }
 }
 
@@ -311,12 +362,14 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
         fill.lineTo(xs.back(), zeroY);
         fill.closeSubPath();
 
-        const auto colour = palette::band(band);
+        const auto colour = theme::band(band);
         const bool isSelected = band == selected_;
-        g.setColour(colour.withAlpha(isSelected ? 0.22f : 0.07f));
+        const bool isHot = isSelected || band == hovered_ || band == dragging_;
+        g.setColour(colour.withAlpha(isSelected ? 0.20f : isHot ? 0.14f : 0.06f));
         g.fillPath(fill);
-        g.setColour(colour.withAlpha(isSelected ? 0.9f : 0.45f));
-        g.strokePath(line, juce::PathStrokeType(isSelected ? 1.5f : 1.0f));
+        g.setColour(colour.withAlpha(isHot ? 0.95f : 0.45f));
+        g.strokePath(line, juce::PathStrokeType(isHot ? stroke::thin : stroke::hairline, juce::PathStrokeType::curved,
+                                                juce::PathStrokeType::rounded));
 
         if (dynamic[index])
         {
@@ -335,58 +388,187 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
         const float y = any ? clampY(total[idx]) : zeroY;
         i == 0 ? curve.startNewSubPath(xs[idx], y) : curve.lineTo(xs[idx], y);
     }
-    g.setColour(palette::curve);
-    g.strokePath(curve, juce::PathStrokeType(2.0f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    // Con el bypass puesto la curva no suena: se atenúa.
+    g.setColour(colour::curve.withAlpha(values_[core::kBypass] >= 0.5f ? 0.35f : 1.0f));
+    g.strokePath(curve, juce::PathStrokeType(stroke::medium, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const
 {
-    g.setFont(juce::FontOptions(10.0f, juce::Font::bold));
+    const auto area = m.area();
+    const bool bypassed = values_[core::kBypass] >= 0.5f;
 
+    // De atrás adelante, y el nodo activo el último: queda siempre encima.
+    std::array<int, core::kNumBands> order{};
+    int count = 0;
+    const int top = dragging_ >= 0 ? dragging_ : (hovered_ >= 0 ? hovered_ : selected_);
     for (int band = 0; band < core::kNumBands; ++band)
+        if (band != top && core::bandSettings(values_, band).enabled)
+            order[static_cast<std::size_t>(count++)] = band;
+    if (top >= 0 && core::bandSettings(values_, top).enabled)
+        order[static_cast<std::size_t>(count++)] = top;
+
+    for (int n = 0; n < count; ++n)
     {
+        const int band = order[static_cast<std::size_t>(n)];
         const auto settings = core::bandSettings(values_, band);
-        if (!settings.enabled)
-            continue;
+        const auto p = nodePosition(m, settings, kNodeEdgeMargin);
+        const juce::Point<float> centre{p.x, p.y};
+        const auto colour = bypassed ? theme::band(band).withSaturation(0.15f).withMultipliedBrightness(0.7f) : theme::band(band);
 
-        const auto p = nodePosition(m, settings);
-        const auto colour = palette::band(band);
         const bool isSelected = band == selected_;
-        const float r = kNodeRadius + (isSelected || band == hovered_ ? 2.0f : 0.0f);
-        const juce::Rectangle<float> circle(p.x - r, p.y - r, 2.0f * r, 2.0f * r);
+        const bool isHovered = band == hovered_;
+        const bool isDragged = band == dragging_;
+        const float r = kNodeRadius + (isDragged ? 2.0f : isSelected || isHovered ? 1.0f : 0.0f);
+        const auto circle = juce::Rectangle<float>(2.0f * r, 2.0f * r).withCentre(centre);
 
-        // Dinámica: barra hasta el límite del rango y marca de la ganancia actual.
-        if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
+        // Dinámica: junto al nodo, una guía hasta el límite del rango y una
+        // barra con la ganancia que se está aplicando ahora. Van en el mismo
+        // eje de dB que la curva: se lee cuánto baja o sube la banda.
+        if (isDynamic(settings))
         {
             const double staticGain = settings.filter.gainDb;
-            const float limitY = m.yForGain(staticGain + settings.dynamics.rangeDb);
-            const float nowY = m.yForGain(staticGain + dynamicGains_[static_cast<std::size_t>(band)]);
-            const float barX = p.x + r + 5.0f;
+            const float gainNow = dynamicGains_[static_cast<std::size_t>(band)];
+            const float limitY = std::clamp(m.yForGain(staticGain + settings.dynamics.rangeDb), area.y + 3.0f,
+                                            area.y + area.height - 3.0f);
+            const float fraction = dynamicMeterFraction(gainNow, settings.dynamics.rangeDb);
+            const float nowY = p.y + fraction * (limitY - p.y);
+            const float x = p.x + r + 7.0f;
+
             g.setColour(colour.withAlpha(0.35f));
-            g.fillRect(juce::Rectangle<float>(barX - 1.0f, std::min(p.y, limitY), 2.0f, std::abs(limitY - p.y)));
-            g.drawHorizontalLine(juce::roundToInt(limitY), barX - 3.0f, barX + 3.0f);
-            g.setColour(colour);
-            g.fillRect(juce::Rectangle<float>(barX - 2.0f, std::min(p.y, nowY), 4.0f, std::max(1.5f, std::abs(nowY - p.y))));
+            g.fillRoundedRectangle(juce::Rectangle<float>(x - 1.0f, std::min(p.y, limitY), 2.0f, std::abs(limitY - p.y)), 1.0f);
+            g.fillRoundedRectangle(juce::Rectangle<float>(x - 4.0f, limitY - 1.0f, 8.0f, 2.0f), 1.0f);
+            if (std::abs(nowY - p.y) > 0.5f)
+            {
+                g.setColour(colour);
+                g.fillRoundedRectangle(juce::Rectangle<float>(x - 2.5f, std::min(p.y, nowY), 5.0f, std::abs(nowY - p.y)), 2.0f);
+            }
         }
 
-        g.setColour(colour.withAlpha(isSelected ? 1.0f : 0.85f));
+        // Halo: el nodo responde antes de moverse.
+        if (isHovered || isDragged)
+        {
+            g.setColour(colour.withAlpha(isDragged ? 0.30f : 0.20f));
+            g.fillEllipse(circle.expanded(isDragged ? 9.0f : 6.0f));
+        }
+
+        // Cuerpo, con un reborde del color del fondo que lo separa de las curvas.
+        g.setColour(colour::plot);
+        g.fillEllipse(circle.expanded(1.5f));
+        g.setColour(colour);
         g.fillEllipse(circle);
         if (isSelected)
         {
-            g.setColour(palette::curve);
-            g.drawEllipse(circle.expanded(2.0f), 1.5f);
+            g.setColour(colour::text);
+            g.drawEllipse(circle.expanded(2.5f), stroke::thin);
         }
-        g.setColour(palette::background);
-        g.drawText(juce::String(band + 1), circle, juce::Justification::centred);
 
-        // Canal: una letra junto al nodo cuando la banda no es estéreo.
+        g.setColour(colour::plot);
+        g.setFont(font(type::caption, Weight::SemiBold, true));
+        g.drawText(juce::String(band + 1), circle, juce::Justification::centred, false);
+
+        // Canal: una insignia con su letra cuando la banda no es estéreo.
         if (settings.channel != dsp::ChannelMode::Stereo)
         {
             static constexpr const char* kLetters[] = {"", "L", "R", "M", "S"};
+            const auto badge = juce::Rectangle<float>(12.0f, 12.0f).withCentre({p.x - r - 2.0f, p.y - r - 2.0f});
+            g.setColour(colour::plot);
+            g.fillEllipse(badge);
             g.setColour(colour);
-            g.drawText(kLetters[static_cast<int>(settings.channel)],
-                       juce::Rectangle<float>(p.x - r - 14.0f, p.y - 7.0f, 12.0f, 14.0f), juce::Justification::centredRight);
+            g.drawEllipse(badge.reduced(0.5f), stroke::hairline);
+            g.setFont(font(type::caption - 2.0f, Weight::SemiBold));
+            g.drawText(kLetters[static_cast<int>(settings.channel)], badge, juce::Justification::centred, false);
         }
+
+        // Ganancia fuera del rango visible: una flecha hacia donde sigue.
+        if (const int overflow = gainOverflow(m, settings); overflow != 0)
+        {
+            const float direction = overflow > 0 ? -1.0f : 1.0f; // hacia arriba o hacia abajo en pantalla
+            const float base = p.y + direction * (r + 4.0f);
+            juce::Path arrow;
+            arrow.addTriangle(p.x - 4.5f, base, p.x + 4.5f, base, p.x, base + direction * 5.0f);
+            g.setColour(colour);
+            g.fillPath(arrow);
+        }
+    }
+}
+
+void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
+{
+    // Etiqueta flotante de la banda que se está tocando o señalando.
+    const int band = dragging_ >= 0 ? dragging_ : hovered_;
+    if (band < 0)
+        return;
+    const auto settings = core::bandSettings(values_, band);
+    if (!settings.enabled)
+        return;
+
+    const auto readout = nodeReadout(values_, band);
+    const auto titleFont = captionFont();
+    const auto valueFont = font(type::body, Weight::Medium, true);
+
+    juce::StringArray fields;
+    fields.add(toJuce(readout.frequency));
+    if (!readout.gain.empty())
+        fields.add(toJuce(readout.gain));
+    if (!readout.q.empty())
+        fields.add(toJuce(readout.q));
+
+    // La ganancia dinámica del momento, si la banda es dinámica.
+    juce::String dynamicText;
+    if (isDynamic(settings))
+    {
+        const float gain = dynamicGains_[static_cast<std::size_t>(band)];
+        dynamicText = "Dyn " + toJuce(core::formatValue(
+                                   core::parameters()[core::dynamicParameter(band, core::DynParam::Range)], gain));
+    }
+
+    constexpr float kPadding = space::x2 + 2.0f;
+    constexpr float kFieldGap = space::x3;
+    auto width = [](const juce::Font& f, const juce::String& text) { return juce::GlyphArrangement::getStringWidth(f, text); };
+
+    float valuesWidth = 0.0f;
+    for (const auto& field : fields)
+        valuesWidth += width(valueFont, field) + kFieldGap;
+    if (dynamicText.isNotEmpty())
+        // Con el ancho del valor más largo, para que la etiqueta no cambie de tamaño al moverse la ganancia.
+        valuesWidth += width(valueFont, "Dyn -30.0 dB") + kFieldGap;
+    valuesWidth -= kFieldGap;
+
+    const auto title = toJuce(readout.title).toUpperCase();
+    const float labelWidth = std::ceil(std::max(valuesWidth, width(titleFont, title)) + 2.0f * kPadding + 4.0f);
+    constexpr float kLabelHeight = 44.0f;
+
+    const auto node = nodePosition(m, settings, kNodeEdgeMargin);
+    const auto r = floatingLabelRect(m.area(), node, labelWidth, kLabelHeight, kNodeRadius + 12.0f);
+    const juce::Rectangle<float> box(r.x, r.y, r.width, r.height);
+    const auto colour = theme::band(band);
+
+    g.setColour(colour::card.withAlpha(0.96f));
+    g.fillRoundedRectangle(box, radius::control);
+    g.setColour(colour::lineStrong);
+    g.drawRoundedRectangle(box.reduced(0.5f), radius::control, stroke::hairline);
+    g.setColour(colour);
+    g.fillRoundedRectangle(box.withWidth(3.0f).reduced(0.0f, 7.0f).translated(5.0f, 0.0f), 1.5f);
+
+    auto content = box.reduced(kPadding, 6.0f).withTrimmedLeft(4.0f);
+    g.setFont(titleFont);
+    g.setColour(colour::textMuted);
+    g.drawText(title, content.removeFromTop(13.0f), juce::Justification::centredLeft, false);
+    content.removeFromTop(3.0f);
+
+    g.setFont(valueFont);
+    g.setColour(colour::text);
+    for (const auto& field : fields)
+    {
+        const float w = width(valueFont, field);
+        g.drawText(field, content.removeFromLeft(w + 1.0f), juce::Justification::centredLeft, false);
+        content.removeFromLeft(kFieldGap - 1.0f);
+    }
+    if (dynamicText.isNotEmpty())
+    {
+        g.setColour(colour);
+        g.drawText(dynamicText, content, juce::Justification::centredLeft, false);
     }
 }
 
@@ -402,7 +584,7 @@ std::optional<int> CurveView::bandAt(juce::Point<float> position) const
     {
         const auto settings = core::bandSettings(values_, band);
         visible[static_cast<std::size_t>(band)] = settings.enabled;
-        nodes[static_cast<std::size_t>(band)] = nodePosition(m, settings);
+        nodes[static_cast<std::size_t>(band)] = nodePosition(m, settings, kNodeEdgeMargin);
     }
     return hitTestNodes(nodes, visible, {position.x, position.y}, kHitRadius);
 }
@@ -495,6 +677,7 @@ void CurveView::mouseUp(const juce::MouseEvent&)
     if (draggingGain_)
         endGesture(dragging_, core::BandParam::Gain);
     dragging_ = -1;
+    repaint();
 }
 
 void CurveView::mouseDoubleClick(const juce::MouseEvent& e)
@@ -521,6 +704,87 @@ void CurveView::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
     beginGesture(band, core::BandParam::Q);
     setParameter(band, core::BandParam::Q, q);
     endGesture(band, core::BandParam::Q);
+    repaint();
+}
+
+void CurveView::mouseExit(const juce::MouseEvent&)
+{
+    if (hovered_ >= 0)
+    {
+        hovered_ = -1;
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+        repaint();
+    }
+}
+
+bool CurveView::keyPressed(const juce::KeyPress& key)
+{
+    const bool left = key.isKeyCode(juce::KeyPress::leftKey);
+    const bool right = key.isKeyCode(juce::KeyPress::rightKey);
+    const bool up = key.isKeyCode(juce::KeyPress::upKey);
+    const bool down = key.isKeyCode(juce::KeyPress::downKey);
+    const auto mods = key.getModifiers();
+
+    // Izquierda y derecha, sin modificadores: banda anterior o siguiente (en orden de número).
+    if ((left || right) && !mods.isCommandDown())
+    {
+        const int step = right ? 1 : -1;
+        int band = selected_;
+        for (int i = 0; i < core::kNumBands; ++i)
+        {
+            band = (band + step + core::kNumBands + (band < 0 && step < 0 ? 1 : 0)) % core::kNumBands;
+            if (values_[core::bandParameter(band, core::BandParam::Enabled)] >= 0.5f)
+            {
+                keyboardFocus_ = true;
+                setSelectedBand(band);
+                return true;
+            }
+        }
+        return true;
+    }
+
+    if (selected_ < 0)
+        return false;
+
+    if (key.isKeyCode(juce::KeyPress::deleteKey) || key.isKeyCode(juce::KeyPress::backspaceKey))
+    {
+        removeBand(selected_);
+        return true;
+    }
+
+    // Arriba y abajo: ganancia. Ctrl/Cmd + izquierda y derecha: frecuencia. Mayús: ajuste fino.
+    auto nudge = [&](core::BandParam param, int steps) {
+        const auto index = core::bandParameter(selected_, param);
+        const float next = keyStepValue(core::parameters()[index], values_[index], steps, mods.isShiftDown());
+        beginGesture(selected_, param);
+        setParameter(selected_, param, next);
+        endGesture(selected_, param);
+        repaint();
+    };
+
+    if (up || down)
+    {
+        if (core::usesGain(core::bandSettings(values_, selected_).filter.type))
+            nudge(core::BandParam::Gain, up ? 1 : -1);
+        return true;
+    }
+    if (left || right)
+    {
+        nudge(core::BandParam::Frequency, right ? 1 : -1);
+        return true;
+    }
+    return false;
+}
+
+void CurveView::focusGained(FocusChangeType cause)
+{
+    keyboardFocus_ = cause == focusChangedByTabKey;
+    repaint();
+}
+
+void CurveView::focusLost(FocusChangeType)
+{
+    keyboardFocus_ = false;
     repaint();
 }
 

@@ -26,20 +26,23 @@ juce_add_plugin(esceQ
     IS_MIDI_EFFECT FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE)
 
-# La interfaz (ui/src) se compila aquí: los módulos de JUCE solo pueden
-# compilarse una vez por binario. Ver ui/CMakeLists.txt.
-set(ESCEQ_UI_DIR ${PROJECT_SOURCE_DIR}/ui/src)
+# Recursos embebidos en el binario: la fuente de la interfaz (Inter, licencia
+# OFL, ver ui/assets/fonts/OFL.txt). Así se ve igual en todos los sistemas.
+juce_add_binary_data(esceq_assets
+    HEADER_NAME BinaryData.h
+    NAMESPACE BinaryData
+    SOURCES
+        ${PROJECT_SOURCE_DIR}/ui/assets/fonts/Inter-Regular.ttf
+        ${PROJECT_SOURCE_DIR}/ui/assets/fonts/Inter-Medium.ttf
+        ${PROJECT_SOURCE_DIR}/ui/assets/fonts/Inter-SemiBold.ttf)
+set_target_properties(esceq_assets PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
+# La interfaz (ui/src) se compila aquí: los módulos de JUCE solo pueden
+# compilarse una vez por binario. La lista de fuentes está en ui/CMakeLists.txt.
 target_sources(esceQ PRIVATE
     src/PluginProcessor.cpp
     src/PluginProcessor.h
-    ${ESCEQ_UI_DIR}/BandControls.cpp
-    ${ESCEQ_UI_DIR}/BandControls.h
-    ${ESCEQ_UI_DIR}/CurveView.cpp
-    ${ESCEQ_UI_DIR}/CurveView.h
-    ${ESCEQ_UI_DIR}/EqEditor.cpp
-    ${ESCEQ_UI_DIR}/EqEditor.h
-    ${ESCEQ_UI_DIR}/Palette.h)
+    ${ESCEQ_UI_SOURCES})
 
 target_include_directories(esceQ PRIVATE src ${ESCEQ_UI_DIR})
 
@@ -54,6 +57,7 @@ target_link_libraries(esceQ
         esceq_core
         esceq_dsp
         esceq_ui_logic
+        esceq_assets
         juce::juce_audio_utils
     PUBLIC
         juce::juce_recommended_config_flags

@@ -16,7 +16,11 @@ Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL S
 | Cambiar el tipo de filtro | Clic derecho en el nodo, o el panel inferior |
 | Eliminar una banda | Doble clic en el nodo |
 | Hacer dinámica una banda | Botón "Dynamic" del panel inferior, o clic derecho en el nodo |
-| Elegir el canal de una banda | Desplegable del panel inferior, o clic derecho en el nodo |
+| Elegir el canal de una banda | Selector ST / L / R / M / S del panel inferior, o clic derecho en el nodo |
+| Ajustar un potenciómetro | Arrastrar; Mayús para ajuste fino; rueda; doble clic o Ctrl/Cmd + clic para el valor por defecto |
+| Escribir un valor | Clic en el número bajo el potenciómetro ("1.2k", "-3", "350 Hz") |
+| Cambiar el tamaño de la ventana | Botones S, M, L de la barra superior, o arrastrar la esquina |
+| Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
 Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host.
 
@@ -40,6 +44,7 @@ Detalles, requisitos y reglas de contribución en [CONTRIBUTING.md](CONTRIBUTING
 - [DEV.md](DEV.md): cómo montar el entorno de desarrollo, paso a paso.
 - [PLAN.md](PLAN.md): objetivos, decisiones y hoja de ruta.
 - [docs/arquitectura.md](docs/arquitectura.md): módulos, contratos y modelo de hilos.
+- [docs/ui.md](docs/ui.md): sistema visual, controles y accesibilidad.
 - [docs/dsp/filtros.md](docs/dsp/filtros.md): cómo están hechos los filtros.
 - [docs/dsp/ecualizador.md](docs/dsp/ecualizador.md): suavizado, fundidos y analizador.
 - [docs/dsp/dinamica.md](docs/dsp/dinamica.md): detector, envolvente y curva de ganancia de las bandas dinámicas.
@@ -48,4 +53,4 @@ Detalles, requisitos y reglas de contribución en [CONTRIBUTING.md](CONTRIBUTING
 
 ## Licencia
 
-El plugin se distribuye bajo [AGPL-3.0-or-later](LICENSE). La biblioteca de `dsp/` se distribuye bajo [MIT](dsp/LICENSE).
+El plugin se distribuye bajo [AGPL-3.0-or-later](LICENSE). La biblioteca de `dsp/` se distribuye bajo [MIT](dsp/LICENSE). La interfaz incluye la tipografía [Inter](https://rsms.me/inter/), bajo [SIL Open Font License 1.1](ui/assets/fonts/OFL.txt).
