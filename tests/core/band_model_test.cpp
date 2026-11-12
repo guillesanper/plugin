@@ -123,3 +123,20 @@ TEST_CASE("Modelo: primera banda libre")
         values[bandParameter(band, BandParam::Enabled)] = 1.0f;
     CHECK_FALSE(firstFreeBand(values).has_value());
 }
+
+TEST_CASE("Modelo: traduce el canal de una banda")
+{
+    auto values = defaultValues();
+    CHECK(bandSettings(values, 2).channel == dsp::ChannelMode::Stereo);
+
+    values[channelParameter(2)] = 3.0f;
+    CHECK(bandSettings(values, 2).channel == dsp::ChannelMode::Mid);
+    CHECK(bandSettings(values, 1).channel == dsp::ChannelMode::Stereo);
+    CHECK(bandSettings(values, 3).channel == dsp::ChannelMode::Stereo);
+
+    CHECK(channelModeFromChoice(1.0f) == dsp::ChannelMode::Left);
+    CHECK(channelModeFromChoice(2.0f) == dsp::ChannelMode::Right);
+    CHECK(channelModeFromChoice(4.0f) == dsp::ChannelMode::Side);
+    CHECK(channelModeFromChoice(99.0f) == dsp::ChannelMode::Side);  // fuera de rango: se sanea
+    CHECK(channelModeFromChoice(-1.0f) == dsp::ChannelMode::Stereo);
+}

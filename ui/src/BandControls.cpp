@@ -73,8 +73,10 @@ BandControls::BandControls(PluginProcessor& processor)
     addAndMakeVisible(enabled_);
     fillChoices(type_, core::kFilterTypeChoices);
     fillChoices(slope_, core::kSlopeChoices);
+    fillChoices(channel_, core::kChannelChoices);
     addAndMakeVisible(type_);
     addAndMakeVisible(slope_);
+    addAndMakeVisible(channel_);
 
     setupKnob(frequency_, frequencyLabel_, "FREQ", *this);
     setupKnob(gain_, gainLabel_, "GAIN", *this);
@@ -109,6 +111,7 @@ void BandControls::setBand(int band)
     enabledAttachment_.reset();
     typeAttachment_.reset();
     slopeAttachment_.reset();
+    channelAttachment_.reset();
     frequencyAttachment_.reset();
     gainAttachment_.reset();
     qAttachment_.reset();
@@ -122,7 +125,7 @@ void BandControls::setBand(int band)
 
     const bool hasBand = band >= 0;
     for (juce::Component* c : std::initializer_list<juce::Component*>{
-             &enabled_, &type_, &slope_, &frequency_, &gain_, &q_, &frequencyLabel_, &gainLabel_, &qLabel_, &title_,
+             &enabled_, &type_, &slope_, &channel_, &frequency_, &gain_, &q_, &frequencyLabel_, &gainLabel_, &qLabel_, &title_,
              &dynamic_, &source_, &threshold_, &range_, &attack_, &release_, &knee_, &thresholdLabel_, &rangeLabel_,
              &attackLabel_, &releaseLabel_, &kneeLabel_})
         c->setVisible(hasBand);
@@ -137,6 +140,8 @@ void BandControls::setBand(int band)
         enabledAttachment_ = std::make_unique<Apvts::ButtonAttachment>(state, idOf(band, BandParam::Enabled), enabled_);
         typeAttachment_ = std::make_unique<Apvts::ComboBoxAttachment>(state, idOf(band, BandParam::Type), type_);
         slopeAttachment_ = std::make_unique<Apvts::ComboBoxAttachment>(state, idOf(band, BandParam::Slope), slope_);
+        channelAttachment_ = std::make_unique<Apvts::ComboBoxAttachment>(
+            state, toJuce(core::parameters()[core::channelParameter(band)].id), channel_);
         frequencyAttachment_ = std::make_unique<Apvts::SliderAttachment>(state, idOf(band, BandParam::Frequency), frequency_);
         gainAttachment_ = std::make_unique<Apvts::SliderAttachment>(state, idOf(band, BandParam::Gain), gain_);
         qAttachment_ = std::make_unique<Apvts::SliderAttachment>(state, idOf(band, BandParam::Q), q_);
@@ -212,12 +217,15 @@ void BandControls::resized()
     hint_.setBounds(area);
 
     auto left = area.removeFromLeft(kLeftColumnWidth);
-    title_.setBounds(left.removeFromTop(26));
-    enabled_.setBounds(left.removeFromTop(26));
-    left.removeFromTop(4);
+    auto top = left.removeFromTop(26);
+    enabled_.setBounds(top.removeFromRight(56));
+    title_.setBounds(top);
+    left.removeFromTop(6);
     type_.setBounds(left.removeFromTop(24));
     left.removeFromTop(6);
     slope_.setBounds(left.removeFromTop(24));
+    left.removeFromTop(6);
+    channel_.setBounds(left.removeFromTop(24));
 
     area.removeFromLeft(12);
     const int knobWidth = std::min(kMaxKnobWidth, (area.getWidth() - kDynamicColumnWidth - 24) / 8);

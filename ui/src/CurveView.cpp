@@ -378,6 +378,15 @@ void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const
         }
         g.setColour(palette::background);
         g.drawText(juce::String(band + 1), circle, juce::Justification::centred);
+
+        // Canal: una letra junto al nodo cuando la banda no es estéreo.
+        if (settings.channel != dsp::ChannelMode::Stereo)
+        {
+            static constexpr const char* kLetters[] = {"", "L", "R", "M", "S"};
+            g.setColour(colour);
+            g.drawText(kLetters[static_cast<int>(settings.channel)],
+                       juce::Rectangle<float>(p.x - r - 14.0f, p.y - 7.0f, 12.0f, 14.0f), juce::Justification::centredRight);
+        }
     }
 }
 
@@ -564,7 +573,18 @@ void CurveView::showBandMenu(int band)
         menu.addItem(static_cast<int>(i) + 1, juce::String::fromUTF8(name.data(), static_cast<int>(name.size())), true,
                      static_cast<int>(i) == current);
     }
+    juce::PopupMenu channels;
+    constexpr int kFirstChannelId = 200;
+    const auto channelIndex = core::channelParameter(band);
+    for (std::size_t i = 0; i < core::kChannelChoices.size(); ++i)
+    {
+        const auto& name = core::kChannelChoices[i];
+        channels.addItem(kFirstChannelId + static_cast<int>(i),
+                         juce::String::fromUTF8(name.data(), static_cast<int>(name.size())), true,
+                         static_cast<int>(values_[channelIndex]) == static_cast<int>(i));
+    }
     menu.addSeparator();
+    menu.addSubMenu("Channel", channels);
     constexpr int kDynamicId = 99;
     constexpr int kDeleteId = 100;
     const auto settings = core::bandSettings(values_, band);
@@ -579,6 +599,18 @@ void CurveView::showBandMenu(int band)
                            if (result == kDeleteId)
                            {
                                safe->removeBand(band);
+                               return;
+                           }
+                           if (result >= kFirstChannelId)
+                           {
+                               const auto index = core::channelParameter(band);
+                               const auto next = static_cast<float>(result - kFirstChannelId);
+                               auto& p = safe->processor_.parameter(index);
+                               p.beginChangeGesture();
+                               p.setValueNotifyingHost(p.convertTo0to1(next));
+                               p.endChangeGesture();
+                               safe->values_[index] = next;
+                               safe->repaint();
                                return;
                            }
                            if (result == kDynamicId)

@@ -56,7 +56,7 @@ bool isStructuralChange(const BandSettings& from, const BandSettings& to) noexce
         return true;
     if (!to.enabled)
         return false;
-    if (from.filter.type != to.filter.type)
+    if (from.filter.type != to.filter.type || from.channel != to.channel)
         return true;
     return isCut(to.filter.type) && from.filter.slopeDbPerOct != to.filter.slopeDbPerOct;
 }
@@ -115,7 +115,9 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept
         return; // frecuencia, ganancia, Q y dinámica: los suaviza smoothBand()
 
     const bool wasEnabled = band.current.enabled;
+    const bool channelChanged = band.current.channel != next.channel;
     band.previous = band.active; // conserva su memoria para el fundido
+    band.previousChannel = band.current.channel;
     band.fadeRemaining = fadeLength_;
     band.current = next;
 
@@ -128,8 +130,14 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept
         band.dynamicGain = 0.0;
         return;
     }
-    if (!wasEnabled)
+    // La memoria del filtro solo sirve si va a seguir oyendo la misma señal.
+    if (!wasEnabled || channelChanged)
         band.active.reset();
+    if (channelChanged)
+    {
+        band.detector.reset();
+        band.envelope.reset();
+    }
     updateKneeStart(band);
     if (!supportsDynamics(next.filter.type))
     {
@@ -375,11 +383,37 @@ void Equalizer::runDetector(Band& band, int numChannels, int length, const Sidec
     for (int ch = 0; ch < sourceChannels; ++ch)
         work[static_cast<std::size_t>(ch)] = detectorScratch_[static_cast<std::size_t>(ch)].data();
 
+    // El detector escucha la misma parte de la señal que procesa la banda.
+    // Una fuente mono (el sidechain, por ejemplo) se escucha tal cual.
+    if (sourceChannels == 2 && band.current.channel != ChannelMode::Stereo)
+    {
+        float* const left = work[0];
+        float* const right = work[1];
+        switch (band.current.channel)
+        {
+        case ChannelMode::Right:
+            work[0] = right;
+            break;
+        case ChannelMode::Mid:
+            for (int i = 0; i < length; ++i)
+                left[i] = 0.5f * (left[i] + right[i]);
+            break;
+        case ChannelMode::Side:
+            for (int i = 0; i < length; ++i)
+                left[i] = 0.5f * (left[i] - right[i]);
+            break;
+        case ChannelMode::Stereo:
+        case ChannelMode::Left:
+            break;
+        }
+        sourceChannels = 1;
+    }
+
     if (sourceChannels > 0)
         band.detector.process(work.data(), sourceChannels, length);
 
-    // Detección enlazada: el canal más fuerte manda, y todos los canales
-    // reciben la misma ganancia (la imagen estéreo no se mueve).
+    // En estéreo la detección es enlazada: el canal más fuerte manda, y los
+    // dos reciben la misma ganancia (la imagen estéreo no se mueve).
     for (int i = 0; i < length; ++i)
     {
         float level = 0.0f;
@@ -430,7 +464,7 @@ void Equalizer::processSegment(Band& band, float* const* io, int numChannels, in
 {
     if (band.fadeRemaining == 0)
     {
-        band.active.process(io, numChannels, length);
+        processRouted(band.active, band.current.channel, io, numChannels, length);
         return;
     }
 
@@ -442,8 +476,8 @@ void Equalizer::processSegment(Band& band, float* const* io, int numChannels, in
         old[static_cast<std::size_t>(ch)] = buffer.data();
     }
 
-    band.previous.process(old.data(), numChannels, length);
-    band.active.process(io, numChannels, length);
+    processRouted(band.previous, band.previousChannel, old.data(), numChannels, length);
+    processRouted(band.active, band.current.channel, io, numChannels, length);
 
     const float fadeLength = static_cast<float>(fadeLength_);
     for (int i = 0; i < length; ++i)
@@ -459,6 +493,57 @@ void Equalizer::processSegment(Band& band, float* const* io, int numChannels, in
             const float before = old[static_cast<std::size_t>(ch)][i];
             io[ch][i] = before + gain * (io[ch][i] - before);
         }
+    }
+}
+
+void Equalizer::processRouted(BandFilter& filter, ChannelMode mode, float* const* io, int numChannels,
+                              int length) noexcept
+{
+    if (numChannels < 2)
+    {
+        // Mono: el único canal es a la vez el izquierdo y la suma.
+        if (numChannels == 1 && mode != ChannelMode::Right && mode != ChannelMode::Side)
+            filter.process(io, 1, length);
+        return;
+    }
+
+    switch (mode)
+    {
+    case ChannelMode::Stereo:
+        filter.process(io, numChannels, length);
+        return;
+    case ChannelMode::Left:
+        filter.process(io, 1, length);
+        return;
+    case ChannelMode::Right:
+        filter.process(io + 1, 1, length);
+        return;
+    case ChannelMode::Mid:
+    case ChannelMode::Side:
+        break;
+    }
+
+    // Mid/Side: se filtra la suma (o la diferencia) y se reparte entre los
+    // canales solo lo que el filtro ha CAMBIADO. Así la otra componente pasa
+    // bit a bit, y también toda la señal si el filtro no hace nada.
+    const float sign = mode == ChannelMode::Mid ? 1.0f : -1.0f;
+    float* const left = io[0];
+    float* const right = io[1];
+    for (int i = 0; i < length; ++i)
+    {
+        const float value = 0.5f * (left[i] + sign * right[i]);
+        routeBuffer_[static_cast<std::size_t>(i)] = value;
+        routeDry_[static_cast<std::size_t>(i)] = value;
+    }
+
+    float* work = routeBuffer_.data();
+    filter.process(&work, 1, length);
+
+    for (int i = 0; i < length; ++i)
+    {
+        const float delta = routeBuffer_[static_cast<std::size_t>(i)] - routeDry_[static_cast<std::size_t>(i)];
+        left[i] += delta;
+        right[i] += sign * delta;
     }
 }
 

@@ -24,7 +24,15 @@ señal de la banda ────────────────────�
    | Resto | La dinámica no actúa |
 
    La ganancia de la banda no influye en el detector.
-3. **Nivel:** valor absoluto de la señal filtrada, el máximo de los canales (detección enlazada: la imagen estéreo no se mueve).
+3. **Nivel:** valor absoluto de la señal filtrada. El detector escucha la misma parte de la señal que procesa la banda ([ADR 0007](../decisiones/0007-canal-por-banda.md)):
+
+   | Canal de la banda | Qué escucha el detector |
+   |---|---|
+   | Stereo | El máximo de los dos canales (detección enlazada: la imagen estéreo no se mueve) |
+   | Left / Right | Ese canal de la fuente |
+   | Mid / Side | La suma `(L+R)/2` o la diferencia `(L−R)/2` de la fuente |
+
+   Vale igual para la detección interna y para el sidechain externo. Una fuente mono se escucha tal cual.
 4. **Envolvente** (`EnvelopeFollower`): detector de pico con ataque y relajación separados (Giannoulis, Massberg y Reiss, 2012):
 
    ```
@@ -73,6 +81,7 @@ Al arrancar la dinámica (activarla, salir del bypass, `reset()`), el detector y
 - Un de-esser sobre un tono grave con ráfagas a 7 kHz: las ráfagas bajan más de 10 dB; el grave, menos de 0,1 dB.
 - Sidechain externo: controla la banda; sin sidechain conectado no actúa; con detección interna se ignora.
 - Mismo resultado bit a bit con bloques de 1, 7, 32, 100 y 4096 muestras.
+- La detección sigue al canal de la banda (`tests/dsp/equalizer_channel_test.cpp`): un tono solo en el canal derecho no mueve una banda Left, ni uno centrado una banda Side.
 - **Sin chasquidos:**
   - Con modulación rápida (24 dB arriba y abajo 100 veces por segundo, con el ataque mínimo), el paso máximo entre muestras no supera 1,25 veces el de la entrada.
   - Al desactivar la dinámica o mover el umbral de golpe, los agudos espurios quedan por debajo de −60 dB (medido: −77 y −82 dB). Se comprobó que los tests detectan el fallo: sin el fundido o sin el suavizado del umbral suben a −36 dB, y con la ganancia en escalones gruesos falla también el test de modulación.
@@ -80,7 +89,6 @@ Al arrancar la dinámica (activarla, salir del bypass, `reset()`), el detector y
 ## Limitaciones conocidas
 
 - Sin ratio: la reducción sigue al exceso 1:1 hasta el rango. Ver la ADR 0006.
-- Detección enlazada, sin L/R ni M/S por separado (fase 4).
 - Sin anticipación (lookahead): con ataques muy cortos se recorta algo de transitorio.
 - Sin umbral automático.
 - Coste: un 5 % de un núcleo con 24 bandas dinámicas en estéreo a 48 kHz.

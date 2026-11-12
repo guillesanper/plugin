@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-**Estado: fase 3 completada (dinámica).** Ecualizador de 24 bandas con curva interactiva, analizador de espectro y dinámica por banda con sidechain externo. Todavía no tiene procesado Mid/Side ni L/R por banda (fase 4). Aún no hay versión publicada. La hoja de ruta está en [PLAN.md](PLAN.md).
+**Estado: fase 4 en curso (primera versión pública).** Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo y procesado por banda en estéreo, L, R, Mid o Side. Aún no hay versión publicada. La hoja de ruta está en [PLAN.md](PLAN.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -16,10 +16,13 @@ Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL S
 | Cambiar el tipo de filtro | Clic derecho en el nodo, o el panel inferior |
 | Eliminar una banda | Doble clic en el nodo |
 | Hacer dinámica una banda | Botón "Dynamic" del panel inferior, o clic derecho en el nodo |
+| Elegir el canal de una banda | Desplegable del panel inferior, o clic derecho en el nodo |
 
 Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host.
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
+
+**Canal:** cada banda actúa en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid (lo que está en el centro) o Side (lo que está a los lados). Lo que la banda no toca pasa intacto. Una banda dinámica escucha ese mismo canal. El nodo de una banda que no es estéreo lleva su letra (L, R, M, S).
 
 **Sidechain en FL Studio** (pasos aún sin verificar en FL Studio): en el mezclador, haz clic derecho en la flecha de envío de la pista que debe controlar el EQ y elige "Sidechain to this track" en la pista donde está esceQ. Luego, en los ajustes del envoltorio del plugin (rueda dentada, pestaña *Processing*), asigna esa entrada al puerto de sidechain. Si eliges "External" sin nada conectado, el panel lo avisa con "No sidechain".
 

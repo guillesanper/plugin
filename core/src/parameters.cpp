@@ -91,6 +91,17 @@ struct Table
             set(at(DynParam::Source), id + "sc", name + "Sidechain",
                 {.kind = Choice, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f, .choices = kSidechainChoices});
         }
+
+        // Canal por banda (fase 4): al final, por la misma regla. El valor por
+        // defecto, Stereo, es el comportamiento de los estados anteriores.
+        const auto lastChannel = static_cast<float>(kChannelChoices.size() - 1);
+        for (int band = 0; band < kNumBands; ++band)
+        {
+            char prefix[8];
+            std::snprintf(prefix, sizeof prefix, "b%02d_", band + 1);
+            set(channelParameter(band), std::string(prefix) + "chan", "Band " + std::to_string(band + 1) + " Channel",
+                {.kind = Choice, .min = 0.0f, .max = lastChannel, .defaultValue = 0.0f, .choices = kChannelChoices});
+        }
     }
 };
 

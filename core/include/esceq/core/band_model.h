@@ -14,6 +14,9 @@ namespace esceq::core {
 /// Tipo de filtro a partir del valor del parámetro "type".
 dsp::FilterType filterTypeFromChoice(float choice) noexcept;
 
+/// Canal de la banda a partir del valor del parámetro "chan".
+dsp::ChannelMode channelModeFromChoice(float choice) noexcept;
+
 /// Pendiente en dB/oct a partir del valor del parámetro "slope".
 int slopeFromChoice(float choice) noexcept;
 

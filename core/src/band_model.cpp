@@ -20,10 +20,24 @@ static_assert(static_cast<int>(dsp::FilterType::BandPass) == 6);
 static_assert(static_cast<int>(dsp::FilterType::AllPass) == 7);
 static_assert(static_cast<int>(dsp::FilterType::Tilt) == 8);
 
+// Lo mismo con el índice del parámetro "chan".
+static_assert(kChannelChoices.size() == 5);
+static_assert(static_cast<int>(dsp::ChannelMode::Stereo) == 0);
+static_assert(static_cast<int>(dsp::ChannelMode::Left) == 1);
+static_assert(static_cast<int>(dsp::ChannelMode::Right) == 2);
+static_assert(static_cast<int>(dsp::ChannelMode::Mid) == 3);
+static_assert(static_cast<int>(dsp::ChannelMode::Side) == 4);
+
 dsp::FilterType filterTypeFromChoice(float choice) noexcept
 {
     const auto& spec = parameters()[bandParameter(0, BandParam::Type)];
     return static_cast<dsp::FilterType>(static_cast<int>(sanitize(spec, choice)));
+}
+
+dsp::ChannelMode channelModeFromChoice(float choice) noexcept
+{
+    const auto& spec = parameters()[channelParameter(0)];
+    return static_cast<dsp::ChannelMode>(static_cast<int>(sanitize(spec, choice)));
 }
 
 int slopeFromChoice(float choice) noexcept
@@ -92,6 +106,8 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept
     settings.dynamics.releaseMs = dyn(DynParam::Release);
     settings.dynamics.kneeDb = dyn(DynParam::Knee);
     settings.dynamics.external = dyn(DynParam::Source) >= 0.5f;
+
+    settings.channel = channelModeFromChoice(values[channelParameter(band)]);
     return settings;
 }
 

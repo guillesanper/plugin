@@ -78,7 +78,9 @@ enum ParameterIndex : std::size_t
     kBypass,
     kFirstBandParameter,
     kFirstDynamicParameter = kFirstBandParameter + static_cast<std::size_t>(kNumBands) * kParamsPerBand,
-    kNumParameters = kFirstDynamicParameter + static_cast<std::size_t>(kNumBands) * kDynParamsPerBand,
+    /// Canal de cada banda (fase 4): un parámetro por banda, tras la dinámica.
+    kFirstChannelParameter = kFirstDynamicParameter + static_cast<std::size_t>(kNumBands) * kDynParamsPerBand,
+    kNumParameters = kFirstChannelParameter + static_cast<std::size_t>(kNumBands),
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
@@ -94,6 +96,12 @@ constexpr std::size_t dynamicParameter(int band, DynParam param) noexcept
            static_cast<std::size_t>(param);
 }
 
+/// Índice en parameters() del parámetro de canal (`bNN_chan`) de la banda `band`.
+constexpr std::size_t channelParameter(int band) noexcept
+{
+    return kFirstChannelParameter + static_cast<std::size_t>(band);
+}
+
 /// Tipos de filtro. El índice coincide con dsp::FilterType (lo comprueba band_model.cpp).
 inline constexpr std::array<std::string_view, 9> kFilterTypeChoices{
     "Bell", "Low Shelf", "High Shelf", "Low Cut", "High Cut", "Notch", "Band Pass", "All Pass", "Tilt",
@@ -107,6 +115,10 @@ inline constexpr std::array<std::string_view, 16> kSlopeChoices{
 
 /// Señal que escucha el detector de una banda dinámica.
 inline constexpr std::array<std::string_view, 2> kSidechainChoices{"Internal", "External"};
+
+/// Parte de la señal que procesa una banda. El índice coincide con
+/// dsp::ChannelMode (lo comprueba band_model.cpp).
+inline constexpr std::array<std::string_view, 5> kChannelChoices{"Stereo", "Left", "Right", "Mid", "Side"};
 
 /// Única fuente de verdad de los parámetros del plugin. El procesador, la
 /// interfaz y el estado guardado se construyen a partir de esta tabla.

@@ -118,7 +118,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -132,7 +132,17 @@ TEST_CASE("Parametros: indices de dinamica, despues de todas las bandas")
     CHECK(parameters()[dynamicParameter(0, DynParam::Source)].id == "b01_sc");
     CHECK(parameters()[dynamicParameter(11, DynParam::Threshold)].id == "b12_thr");
     CHECK(parameters()[dynamicParameter(23, DynParam::Knee)].id == "b24_knee");
-    CHECK(dynamicParameter(23, DynParam::Source) == kNumParameters - 1);
+    CHECK(dynamicParameter(23, DynParam::Source) == channelParameter(0) - 1);
+}
+
+TEST_CASE("Parametros: indices de canal, despues de la dinamica")
+{
+    CHECK(parameters()[channelParameter(0)].id == "b01_chan");
+    CHECK(parameters()[channelParameter(23)].id == "b24_chan");
+    CHECK(channelParameter(23) == kNumParameters - 1);
+    CHECK(parameters()[channelParameter(0)].defaultValue == 0.0f); // Stereo: lo que hacian los estados anteriores
+    CHECK(formatValue(parameters()[channelParameter(3)], 3.0f) == "Mid");
+    CHECK(parseValue(parameters()[channelParameter(3)], "side") == 4.0f);
 }
 
 TEST_CASE("Parametros: findParameter")

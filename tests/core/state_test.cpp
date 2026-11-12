@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/state.h"
 
+#include "esceq/core/band_model.h"
+
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
@@ -164,4 +166,33 @@ TEST_CASE("Estado: un estado anterior a la dinamica la deja desactivada")
         CHECK((*values)[dynamicParameter(band, DynParam::Threshold)] ==
               parameters()[dynamicParameter(band, DynParam::Threshold)].defaultValue);
     }
+}
+
+TEST_CASE("Estado: un estado anterior al canal por banda carga en Stereo")
+{
+    // Estos fixtures se escribieron antes de que existiera bNN_chan: deben
+    // seguir sonando igual, es decir, con todas las bandas en Stereo.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v1_bands.txt", "v1_dynamics.txt"})
+    {
+        const auto values = deserializeState(readFixture(name));
+        REQUIRE(values.has_value());
+        for (int band = 0; band < kNumBands; ++band)
+        {
+            INFO(name << ", banda " << band + 1);
+            CHECK((*values)[channelParameter(band)] == 0.0f);
+            CHECK(bandSettings(*values, band).channel == esceq::dsp::ChannelMode::Stereo);
+        }
+    }
+}
+
+TEST_CASE("Estado: fixture v1 con canales")
+{
+    const auto values = deserializeState(readFixture("v1_channels.txt"));
+    REQUIRE(values.has_value());
+    CHECK(bandSettings(*values, 0).channel == esceq::dsp::ChannelMode::Mid);
+    CHECK(bandSettings(*values, 1).channel == esceq::dsp::ChannelMode::Side);
+    CHECK(bandSettings(*values, 2).channel == esceq::dsp::ChannelMode::Left);
+    CHECK(bandSettings(*values, 3).channel == esceq::dsp::ChannelMode::Right);
+    CHECK(bandSettings(*values, 4).channel == esceq::dsp::ChannelMode::Stereo);
+    CHECK((*values)[bandParameter(1, BandParam::Frequency)] == 8000.0f);
 }

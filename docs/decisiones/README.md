@@ -13,3 +13,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0004](0004-parametros-congelados.md) | Parámetros en una tabla única, con identificadores congelados | Aceptada |
 | [0005](0005-bandas-y-normalizacion.md) | 24 bandas declaradas desde ya, y normalización definida en core | Aceptada |
 | [0006](0006-dinamica-por-banda.md) | Dinámica por banda: detección en la entrada, curva 1:1 con rango y ganancia evaluada en cada muestra | Aceptada |
+| [0007](0007-canal-por-banda.md) | Canal por banda: Mid/Side por diferencia, detección que sigue al canal | Aceptada |

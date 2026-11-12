@@ -78,6 +78,10 @@ int main(int argc, char** argv)
     addBand(*processor, 1, 0.0f, 240.0f, -4.0f, 1.4f);         // campana
     addBand(*processor, 2, 0.0f, 2800.0f, 3.5f, 0.9f);         // campana
     addBand(*processor, 3, 2.0f, 9000.0f, 2.5f, 0.7071f);      // shelf de agudos
+    {
+        auto& channel = processor->parameter(esceq::core::channelParameter(1)); // la campana de graves, solo en Mid
+        channel.setValueNotifyingHost(channel.convertTo0to1(3.0f));
+    }
     addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);         // notch
     addBand(*processor, 5, 0.0f, 7000.0f, 0.0f, 1.5f);         // de-esser: campana dinámica
     setDynamic(*processor, 5, DynParam::Threshold, -48.0f);

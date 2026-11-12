@@ -8,6 +8,26 @@ Cómo convierte `dsp::Equalizer` los cambios de parámetros en audio sin chasqui
 
 El procesador llama a `setBand()` para las 24 bandas en cada bloque. Si los ajustes no han cambiado, la llamada no hace nada.
 
+## Canal por banda
+
+Cada banda tiene un `ChannelMode`: qué parte de la señal estéreo procesa. Decisiones y motivos en la [ADR 0007](../decisiones/0007-canal-por-banda.md).
+
+| Modo | Qué procesa | Qué pasa intacto |
+|---|---|---|
+| Stereo | Los dos canales, con el mismo filtro | Nada |
+| Left / Right | Solo ese canal | El otro canal, bit a bit |
+| Mid | La suma `m = (L+R)/2` | La diferencia |
+| Side | La diferencia `s = (L−R)/2` | La suma |
+
+Mid y Side no decodifican con `L = M+S`: filtran la suma (o la diferencia) y suman a los canales solo lo que el filtro ha cambiado.
+
+```
+d = filtro(m) − m        L += d        R += d      (Mid)
+d = filtro(s) − s        L += d        R −= d      (Side)
+```
+
+Así la componente que no se procesa no sufre redondeos, y una banda que no hace nada deja pasar toda la señal bit a bit. Con audio mono, Stereo, Left y Mid procesan el único canal, y Right y Side no hacen nada.
+
 ## Dos clases de cambio
 
 No todos los parámetros pueden cambiar de forma continua.
@@ -15,7 +35,7 @@ No todos los parámetros pueden cambiar de forma continua.
 | Cambio | Tratamiento | Duración |
 |---|---|---|
 | Frecuencia, ganancia, Q | **Suavizado**: el valor que suena se acerca al objetivo y los coeficientes se recalculan | Constante de tiempo de 15 ms |
-| Activar o desactivar la banda, cambiar el tipo, cambiar la pendiente de un corte | **Fundido**: el filtro anterior y el nuevo suenan a la vez y se pasa de uno a otro | 10 ms, lineal |
+| Activar o desactivar la banda, cambiar el tipo, cambiar la pendiente de un corte, cambiar el canal | **Fundido**: el filtro anterior y el nuevo suenan a la vez y se pasa de uno a otro | 10 ms, lineal |
 | Bypass | **Fundido** entre la señal seca y la procesada | 10 ms, lineal |
 
 ### Suavizado
@@ -30,6 +50,7 @@ No todos los parámetros pueden cambiar de forma continua.
 - Al empezar, el filtro activo se copia, **con su memoria**, como "anterior", y el activo pasa a la configuración nueva.
 - Si la banda estaba desactivada, el filtro nuevo empieza con la memoria a cero. Si cambia de tipo, conserva la memoria del anterior: está más cerca del régimen permanente que una memoria a cero.
 - Una banda desactivada se representa como un diseño sin secciones (identidad), así que activar y desactivar son fundidos entre la señal sin tocar y la filtrada.
+- Si cambia el canal, el fundido es entre la banda en el canal antiguo y en el nuevo, y el filtro nuevo empieza con la memoria a cero: va a oír otra señal.
 - Si llega otro cambio estructural durante un fundido, el fundido se reinicia desde el filtro activo en ese momento.
 
 ### Bypass
@@ -49,6 +70,14 @@ FL Studio entrega bloques de tamaño variable, a veces de muy pocas muestras. El
 - Varias bandas en serie suman sus respuestas en dB (±0,01 dB).
 - **Ausencia de chasquidos:** con un seno, saltos bruscos de frecuencia y ganancia cada 128 muestras, y una secuencia de activar, cambiar de tipo, cambiar de pendiente y desactivar. El test mide el mayor salto entre muestras consecutivas. Se ha comprobado que el test detecta el problema: desactivando el suavizado y los fundidos, los saltos pasan de estar por debajo del límite a ser de 1,0 (frente a límites de 0,52 y 0,12).
 
+`tests/dsp/equalizer_channel_test.cpp` comprueba el canal por banda:
+
+- Left y Right procesan un canal y el otro sale bit a bit; Mid y Side filtran su componente y dejan la otra intacta.
+- Nulos: Left + Right con los mismos ajustes es idéntico a Stereo; Mid + Side equivale a Stereo (diferencia < 5·10⁻⁶).
+- Una banda que no hace nada pasa bit a bit en los cinco modos.
+- La detección dinámica sigue al canal, también con sidechain externo (ver [dinamica.md](dinamica.md)).
+- Cambiar de canal no produce saltos, y el resultado no depende del tamaño de bloque. Se comprobó que los tests detectan el fallo: sin el fundido, con el signo de Side cambiado o con el detector sin seguir al canal, fallan.
+
 ## Analizador
 
 El analizador no está en el hilo de audio:
@@ -64,6 +93,6 @@ Calibración: un seno de amplitud 1 se lee a 0 dB (exacto si cae en un bin; con 
 
 ## Limitaciones conocidas
 
-- El analizador muestra la media de los canales, no L/R ni M/S por separado.
+- El analizador muestra la media de los canales, no L/R ni M/S por separado. La curva total de la interfaz suma todas las bandas sin distinguir su canal.
 - Resolución fija de 4096 puntos: unos 12 Hz por bin a 48 kHz, poca definición por debajo de 100 Hz.
 - Los fundidos de 10 ms son lineales en amplitud; entre señales poco correladas pueden notarse como una pequeña bajada de nivel.

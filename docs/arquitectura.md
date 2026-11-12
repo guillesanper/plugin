@@ -35,13 +35,14 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 
 | Contrato | Dónde vive | Qué lo protege |
 |---|---|---|
-| Identificadores, tipos, escalas, rangos, número de opciones y orden de los parámetros | `core/src/parameters.cpp` | `tests/fixtures/parameters/v1.txt` y `tests/core/parameters_test.cpp` · [ADR 0004](decisiones/0004-parametros-congelados.md), [ADR 0005](decisiones/0005-bandas-y-normalizacion.md), [ADR 0006](decisiones/0006-dinamica-por-banda.md) |
+| Identificadores, tipos, escalas, rangos, número de opciones y orden de los parámetros | `core/src/parameters.cpp` | `tests/fixtures/parameters/v1.txt` y `tests/core/parameters_test.cpp` · [ADR 0004](decisiones/0004-parametros-congelados.md), [ADR 0005](decisiones/0005-bandas-y-normalizacion.md), [ADR 0006](decisiones/0006-dinamica-por-banda.md), [ADR 0007](decisiones/0007-canal-por-banda.md) |
 | Correspondencia valor ↔ posición 0..1 del host (automatización) | `core::toNormalized` / `fromNormalized` | `tests/core/parameters_test.cpp` · [ADR 0005](decisiones/0005-bandas-y-normalizacion.md) |
 | Orden de los tipos de filtro (índice guardado en el estado) | `core::kFilterTypeChoices` y `dsp::FilterType` | `static_assert` en `core/src/band_model.cpp` |
+| Orden de los canales de banda (índice guardado en el estado) | `core::kChannelChoices` y `dsp::ChannelMode` | `static_assert` en `core/src/band_model.cpp` · [ADR 0007](decisiones/0007-canal-por-banda.md) |
 | Formato del estado guardado | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md) |
 | Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
 | Buses: entrada y salida principales, y sidechain opcional como segundo bus de entrada | `plugin/src/PluginProcessor.cpp` | Revisión manual: reordenar los buses rompe el enrutado guardado en los proyectos |
-| Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` y `tests/dsp/filter_golden_test.cpp` · [docs/dsp/filtros.md](dsp/filtros.md). La dinámica: `tests/dsp/dynamics_test.cpp` y [docs/dsp/dinamica.md](dsp/dinamica.md) |
+| Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` y `tests/dsp/filter_golden_test.cpp` · [docs/dsp/filtros.md](dsp/filtros.md). La dinámica: `tests/dsp/dynamics_test.cpp` y [docs/dsp/dinamica.md](dsp/dinamica.md). El canal por banda: `tests/dsp/equalizer_channel_test.cpp` |
 
 ## Contenido de `dsp/`
 
@@ -52,7 +53,7 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | `filter_design.h` | De parámetros de banda a coeficientes, y respuesta en frecuencia exacta para dibujar la curva | Cualquiera |
 | `band_filter.h` | Procesado de audio de una banda (cascada de secciones SVF) | Audio |
 | `dynamics.h` | Curva de ganancia, seguidor de envolvente y filtro del detector de la dinámica | Audio (la curva y el detector, cualquiera) |
-| `equalizer.h` | Las 24 bandas en serie, con suavizado de parámetros, fundidos al cambiar de tipo o activar, bypass con fundido, y dinámica por banda con sidechain opcional | Audio |
+| `equalizer.h` | Las 24 bandas en serie, con suavizado de parámetros, fundidos al cambiar de tipo o activar, bypass con fundido, dinámica por banda con sidechain opcional, y canal por banda (Stereo, Left, Right, Mid, Side) | Audio |
 | `spsc_fifo.h` | Cola sin bloqueo de un productor y un consumidor | Audio escribe, interfaz lee |
 | `fft.h` | FFT radix-2 | Cualquiera |
 | `spectrum_analyzer.h` | Espectro calibrado para dibujar | Interfaz |
@@ -69,11 +70,12 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 
 ## Parámetros: una sola fuente de verdad
 
-`core::parameters()` es la única lista de parámetros, 314 en total, en este orden:
+`core::parameters()` es la única lista de parámetros, 338 en total, en este orden:
 
 1. 2 globales: `output_gain`, `bypass`.
 2. 6 por cada una de las 24 bandas (`bNN_on`, `bNN_type`, `bNN_freq`, `bNN_gain`, `bNN_q`, `bNN_slope`), con índice `core::bandParameter()`.
 3. 7 de dinámica por cada banda (`bNN_dyn`, `bNN_thr`, `bNN_range`, `bNN_att`, `bNN_rel`, `bNN_knee`, `bNN_sc`), con índice `core::dynamicParameter()`. Van detrás de todas las bandas porque se añadieron en la fase 3 ([ADR 0006](decisiones/0006-dinamica-por-banda.md)).
+4. 1 de canal por cada banda (`bNN_chan`), con índice `core::channelParameter()`. Añadido en la fase 4 ([ADR 0007](decisiones/0007-canal-por-banda.md)).
 
  `plugin/` genera los parámetros del host recorriéndola (incluidos el texto que muestran y la escala logarítmica de frecuencia y Q), y el estado se serializa recorriéndola. Para añadir un parámetro:
 
@@ -110,7 +112,7 @@ Comunicación:
 
 Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y si es segura entre hilos.
 
-## Flujo de audio actual (fase 3)
+## Flujo de audio actual (fase 4)
 
 ```
 entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp::GainRamp (salida) ─► cola "post" ─► salida
@@ -118,7 +120,7 @@ entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp:
 sidechain (bus opcional) ─────┘
 ```
 
-Cada bloque, el procesador lee los 314 parámetros, los traduce con `core::bandSettings` y se los pasa al ecualizador, que decide qué suavizar y qué fundir. Las bandas desactivadas no consumen CPU. Los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain. Con bypass, el ecualizador hace un fundido a la señal seca y la ganancia de salida vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia cero.
+Cada bloque, el procesador lee los 338 parámetros, los traduce con `core::bandSettings` y se los pasa al ecualizador, que decide qué suavizar y qué fundir. Las bandas desactivadas no consumen CPU. Cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side). Los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. Con bypass, el ecualizador hace un fundido a la señal seca y la ganancia de salida vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia cero.
 
 El búfer que entrega el host contiene los canales de todos los buses: el procesador toma el bus principal con `getBusBuffer` y el sidechain como solo lectura.
 

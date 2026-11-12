@@ -46,6 +46,7 @@ private:
     juce::ToggleButton enabled_{"On"};
     juce::ComboBox type_;
     juce::ComboBox slope_;
+    juce::ComboBox channel_;
     juce::Slider frequency_;
     juce::Slider gain_;
     juce::Slider q_;
@@ -70,6 +71,7 @@ private:
     std::unique_ptr<Apvts::ButtonAttachment> enabledAttachment_;
     std::unique_ptr<Apvts::ComboBoxAttachment> typeAttachment_;
     std::unique_ptr<Apvts::ComboBoxAttachment> slopeAttachment_;
+    std::unique_ptr<Apvts::ComboBoxAttachment> channelAttachment_;
     std::unique_ptr<Apvts::SliderAttachment> frequencyAttachment_;
     std::unique_ptr<Apvts::SliderAttachment> gainAttachment_;
     std::unique_ptr<Apvts::SliderAttachment> qAttachment_;

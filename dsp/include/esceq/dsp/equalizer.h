@@ -11,12 +11,26 @@ namespace esceq::dsp {
 
 inline constexpr int kMaxBands = 24;
 
+/// Parte de la señal estéreo que procesa una banda.
+///
+/// CONTRATO: los valores numéricos se guardan en el estado. Los modos
+/// nuevos se añaden al final.
+enum class ChannelMode
+{
+    Stereo, ///< Los dos canales, con el mismo filtro.
+    Left,   ///< Solo el canal izquierdo.
+    Right,  ///< Solo el canal derecho.
+    Mid,    ///< Solo la suma (L+R)/2; la diferencia no se toca.
+    Side,   ///< Solo la diferencia (L−R)/2; la suma no se toca.
+};
+
 /// Ajustes de una banda del ecualizador.
 struct BandSettings
 {
     bool enabled = false;
     FilterParams filter{};
     DynamicSettings dynamics{};
+    ChannelMode channel = ChannelMode::Stereo;
 
     friend bool operator==(const BandSettings&, const BandSettings&) = default;
 };
@@ -29,6 +43,7 @@ struct BandSettings
 ///    y los coeficientes se recalculan cada kChunkSize muestras.
 ///  - Activar o desactivar una banda, o cambiar su tipo o su pendiente, hace
 ///    un fundido de kCrossfadeSeconds entre el filtro anterior y el nuevo.
+///  - Cambiar el canal de una banda (ChannelMode) hace el mismo fundido.
 ///  - El bypass hace un fundido entre la señal seca y la procesada.
 ///  - Umbral, rango y rodilla de la dinámica se suavizan con la misma
 ///    constante de tiempo, pero muestra a muestra; activar o desactivar la
@@ -40,6 +55,12 @@ struct BandSettings
 /// dinámica resultante se suma a la ganancia estática. Se evalúa en cada
 /// muestra; los coeficientes se recalculan cuando cambia al menos
 /// kDynamicGainResolutionDb.
+///
+/// Canal (ver docs/dsp/ecualizador.md): cada banda procesa los dos canales,
+/// solo el izquierdo, solo el derecho, solo la suma (Mid) o solo la
+/// diferencia (Side). La parte que la banda no procesa pasa bit a bit, y el
+/// detector de la dinámica escucha esa misma parte de la señal. Con audio
+/// mono, Stereo, Left y Mid procesan el único canal; Right y Side no hacen nada.
 ///
 /// Garantías:
 ///  - process() y setBand() son seguras en tiempo real.
@@ -96,6 +117,7 @@ private:
         BandSettings current{}; ///< Valores que suenan ahora mismo.
         BandFilter active;
         BandFilter previous;    ///< Configuración anterior durante un fundido.
+        ChannelMode previousChannel = ChannelMode::Stereo; ///< Canal de `previous`.
         int fadeRemaining = 0;
 
         // Dinámica
@@ -121,6 +143,9 @@ private:
     void processBand(Band& band, float* const* channels, int numChannels, int length,
                      const Sidechain& sidechain) noexcept;
     void processSegment(Band& band, float* const* channels, int numChannels, int length) noexcept;
+    /// Aplica `filter` a la parte de la señal que indica `mode`.
+    void processRouted(BandFilter& filter, ChannelMode mode, float* const* channels, int numChannels,
+                       int length) noexcept;
     void runDetector(Band& band, int numChannels, int length, const Sidechain& sidechain) noexcept;
     /// Avanza la ganancia dinámica una muestra. true si hay que recalcular el diseño.
     bool updateDynamicGain(Band& band, double envelope) noexcept;
@@ -145,6 +170,8 @@ private:
     std::array<std::array<float, kChunkSize>, kMaxChannels> detectorInput_{}; ///< Entrada del ecualizador.
     std::array<std::array<float, kChunkSize>, kMaxChannels> detectorScratch_{};
     std::array<double, kChunkSize> envelopeBuffer_{};
+    std::array<float, kChunkSize> routeBuffer_{}; ///< Suma o diferencia de canales (Mid/Side).
+    std::array<float, kChunkSize> routeDry_{};
 };
 
 } // namespace esceq::dsp
