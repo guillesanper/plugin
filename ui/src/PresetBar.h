@@ -33,10 +33,16 @@ private:
     void askForName();
     void save(const juce::String& name);
 
+    /// Diálogo con el aspecto de esceQ. Es una ventana aparte y no hereda el
+    /// tema del editor: hay que dárselo, y cerrarla si el editor desaparece.
+    juce::AlertWindow* makeDialog(const juce::String& title, const juce::String& message);
+    void showMessage(const juce::String& message);
+
     PluginProcessor& processor_;
     IconButton previous_{draw::Icon::Previous, "Previous preset", draw::Corners::Left};
     IconButton next_{draw::Icon::Next, "Next preset", draw::Corners::Right};
     std::unique_ptr<NameButton> name_;
+    juce::Component::SafePointer<juce::AlertWindow> dialog_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PresetBar)
 };

@@ -830,6 +830,7 @@ void CurveView::showBandMenu(int band)
     const auto current = static_cast<int>(values_[core::bandParameter(band, core::BandParam::Type)]);
 
     juce::PopupMenu menu;
+    menu.setLookAndFeel(&getLookAndFeel());
     menu.addSectionHeader("Band " + juce::String(band + 1));
     for (std::size_t i = 0; i < core::kFilterTypeChoices.size(); ++i)
     {
@@ -838,6 +839,7 @@ void CurveView::showBandMenu(int band)
                      static_cast<int>(i) == current);
     }
     juce::PopupMenu channels;
+    channels.setLookAndFeel(&getLookAndFeel());
     constexpr int kFirstChannelId = 200;
     const auto channelIndex = core::channelParameter(band);
     for (std::size_t i = 0; i < core::kChannelChoices.size(); ++i)

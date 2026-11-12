@@ -63,6 +63,8 @@ $S docs/img/ui/fuera-de-rango.png 960 580 --overflow --hover 3 --select 3
 $S docs/img/ui/sin-seleccion.png 960 580 --select 0
 ```
 
+Los menús y los diálogos son ventanas aparte y no salen en esas capturas. Para verlos, `--desktop presets|edit|save SEGUNDOS` deja el editor en pantalla con eso abierto mientras otra herramienta captura la pantalla (el ejemplo está en la cabecera de `tools/snapshot/main.cpp`).
+
 ## Reglas de la interfaz
 
 Ver [docs/ui.md](docs/ui.md). En corto:

@@ -204,13 +204,44 @@ void EsceqLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& but
 void EsceqLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button, bool highlighted, bool)
 {
     g.setFont(getTextButtonFont(button, button.getHeight()));
-    g.setColour((highlighted ? colour::text : colour::textMuted).withMultipliedAlpha(button.isEnabled() ? 1.0f : 0.4f));
+    g.setColour(colour::text.withMultipliedAlpha(!button.isEnabled() ? 0.4f : highlighted ? 1.0f : 0.85f));
     g.drawText(button.getButtonText(), button.getLocalBounds().reduced(4, 0), juce::Justification::centred, true);
 }
 
 juce::Font EsceqLookAndFeel::getTextButtonFont(juce::TextButton&, int)
 {
     return font(type::body, Weight::Medium);
+}
+
+void EsceqLookAndFeel::drawAlertBox(juce::Graphics& g, juce::AlertWindow& alert, const juce::Rectangle<int>& textArea,
+                                    juce::TextLayout& textLayout)
+{
+    const auto bounds = alert.getLocalBounds().toFloat();
+    g.setColour(colour::card);
+    g.fillRect(bounds);
+    g.setColour(colour::lineStrong);
+    g.drawRect(bounds, 1.0f);
+    // Una franja del color de acento arriba: el diálogo es de esceQ.
+    g.setColour(colour::accent);
+    g.fillRect(bounds.withHeight(2.0f));
+
+    g.setColour(colour::text);
+    textLayout.draw(g, textArea.toFloat());
+}
+
+juce::Font EsceqLookAndFeel::getAlertWindowTitleFont()
+{
+    return font(type::title + 1.0f, Weight::SemiBold);
+}
+
+juce::Font EsceqLookAndFeel::getAlertWindowMessageFont()
+{
+    return font(type::body);
+}
+
+juce::Font EsceqLookAndFeel::getAlertWindowFont()
+{
+    return font(type::body);
 }
 
 juce::Font EsceqLookAndFeel::getLabelFont(juce::Label& label)

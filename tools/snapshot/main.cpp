@@ -7,6 +7,15 @@
 //   --overflow    sube una banda por encima del rango visible.
 //   --bypass      con el bypass activado.
 //   --gallery     en vez del editor, la galería de estados de los controles.
+//   --desktop QUE SEGUNDOS
+//                 muestra el editor en el escritorio durante SEGUNDOS con algo
+//                 abierto, para capturar la pantalla con otra herramienta (los
+//                 menús y diálogos son ventanas aparte y no salen en la captura
+//                 normal). QUE: presets (menú de presets), edit (campo de
+//                 edición de un valor), save (diálogo de guardar preset).
+//                 Ejemplo, en una sola línea:
+//                   xvfb-run -a -s "-screen 0 1280x800x24" sh -c
+//                     'esceq_snapshot x.png --desktop presets 6 & sleep 4; import -window root menu.png; wait'
 // En Linux sin pantalla: xvfb-run -a ./esceq_snapshot salida.png
 #include "CurveView.h"
 #include "Draw.h"
@@ -21,6 +30,7 @@
 
 #include <cstdint>
 #include <iostream>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -74,7 +84,7 @@ struct PinkNoise
 class Gallery final : public juce::Component
 {
 public:
-    Gallery() { setSize(760, 372); }
+    Gallery() { setSize(980, 372); }
 
     void paint(juce::Graphics& g) override
     {
@@ -107,7 +117,42 @@ public:
         columns[5].state.enabled = false;
 
         const float left = 112.0f;
-        const float columnWidth = (static_cast<float>(getWidth()) - left - 16.0f) / static_cast<float>(columns.size());
+        constexpr float kMenuWidth = 204.0f;
+        const float columnWidth = (static_cast<float>(getWidth()) - left - 32.0f - kMenuWidth) / static_cast<float>(columns.size());
+
+        // A la derecha, un menú pintado con las funciones del LookAndFeel
+        // (los menús de verdad son ventanas aparte y no salen en una captura).
+        {
+            auto& lf = getLookAndFeel();
+            const juce::Rectangle<int> menu(getWidth() - static_cast<int>(kMenuWidth) - 16, 38, static_cast<int>(kMenuWidth), 26 * 9 + 9 + 10);
+            draw::caption(g, "Menu", juce::Rectangle<float>(static_cast<float>(menu.getX()), 12.0f, kMenuWidth, 14.0f),
+                          juce::Justification::centred, colour::textMuted);
+            {
+                juce::Graphics::ScopedSaveState state(g);
+                g.setOrigin(menu.getPosition());
+                lf.drawPopupMenuBackground(g, menu.getWidth(), menu.getHeight());
+            }
+            int rowY = menu.getY() + 5;
+            auto row = [&](int height) {
+                const juce::Rectangle<int> r(menu.getX() + 1, rowY, menu.getWidth() - 2, height);
+                rowY += height;
+                return r;
+            };
+            auto item = [&](const char* text, bool ticked = false, bool highlighted = false, bool active = true,
+                            bool subMenu = false) {
+                lf.drawPopupMenuItem(g, row(26), false, active, highlighted, ticked, subMenu, text, {}, nullptr, nullptr);
+            };
+            lf.drawPopupMenuSectionHeader(g, row(26), "Factory");
+            item("De-esser");
+            item("Resonance Control", false, true);
+            item("Vocal", true);
+            lf.drawPopupMenuSectionHeader(g, row(26), "User");
+            item("My vocal chain");
+            lf.drawPopupMenuItem(g, row(9), true, true, false, false, false, {}, {}, nullptr, nullptr);
+            item("Save as...");
+            item("Delete", false, false, false);
+            item("Channel", false, false, true, true);
+        }
         auto rowLabel = [&](const char* text, float y, float h) {
             draw::caption(g, text, {16.0f, y, left - 24.0f, h}, juce::Justification::centredLeft);
         };
@@ -202,7 +247,8 @@ int main(int argc, char** argv)
         return 2;
     }
 
-    int width = 0, height = 0, select = 6, hover = 0;
+    int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0;
+    std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, gallery = false;
     std::vector<std::string> positional;
@@ -222,6 +268,11 @@ int main(int argc, char** argv)
             bypass = true;
         else if (arg == "--gallery")
             gallery = true;
+        else if (arg == "--desktop")
+        {
+            desktop = next();
+            desktopSeconds = std::atoi(next());
+        }
         else
             positional.push_back(arg);
     }
@@ -302,6 +353,63 @@ int main(int argc, char** argv)
         juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
     }
     curve.setHoveredBand(hover - 1);
+
+    if (!desktop.empty())
+    {
+        editor->setOpaque(true);
+        editor->addToDesktop(0);
+        editor->setTopLeftPosition(20, 20);
+        editor->setVisible(true);
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(300);
+
+        // Busca un componente por su nombre accesible.
+        std::function<juce::Component*(juce::Component&, const juce::String&)> find =
+            [&find](juce::Component& parent, const juce::String& title) -> juce::Component* {
+            for (auto* child : parent.getChildren())
+            {
+                if (child->getTitle() == title)
+                    return child;
+                if (auto* found = find(*child, title))
+                    return found;
+            }
+            return nullptr;
+        };
+
+        if (desktop == "presets" || desktop == "save")
+        {
+            if (auto* bar = find(*editor, "Presets"))
+                if (auto* button = dynamic_cast<juce::Button*>(find(*bar, "Presets")))
+                    button->triggerClick();
+            if (desktop == "save")
+            {
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(400);
+                juce::PopupMenu::dismissAllActiveMenus();
+                processor->presets().load({"Vocal", true});
+                // El diálogo de guardar se abre desde el menú; aquí, con el mismo aspecto.
+                auto* window = new juce::AlertWindow("Save preset", "Name of the preset:", juce::MessageBoxIconType::NoIcon,
+                                                     editor.get());
+                window->setLookAndFeel(&editor->getLookAndFeel());
+                window->addTextEditor("name", "My vocal chain");
+                window->addButton("Save", 1);
+                window->addButton("Cancel", 0);
+                window->enterModalState(true, nullptr, false);
+                juce::MessageManager::getInstance()->runDispatchLoopUntil(std::max(1, desktopSeconds) * 1000);
+                delete window;
+                editor.reset();
+                processor->releaseResources();
+                return 0;
+            }
+        }
+        else if (desktop == "edit")
+        {
+            if (auto* knob = find(*editor, "Band 6 Freq"))
+                knob->keyPressed(juce::KeyPress(juce::KeyPress::returnKey));
+        }
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(std::max(1, desktopSeconds) * 1000);
+        editor.reset();
+        processor->releaseResources();
+        return 0;
+    }
 
     const bool ok = writePng(editor->createComponentSnapshot(editor->getLocalBounds(), true, scale), argv[1]);
 

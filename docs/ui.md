@@ -62,6 +62,10 @@ Los valores numéricos usan cifras tabulares (`tnum`): todas las cifras miden lo
 
 ![Estados de los controles](img/ui/controles.png)
 
+A la derecha de la imagen, un menú: los menús, los diálogos y los campos de texto son de JUCE, pintados por `EsceqLookAndFeel` con los mismos colores y la misma letra. Como los menús y los diálogos son ventanas aparte y no heredan el aspecto del editor, quien los abre se lo da (`setLookAndFeel`) y los cierra si el editor desaparece.
+
+![Diálogo de guardar preset](img/ui/guardar-preset.png)
+
 Cada control tiene seis estados: reposo, ratón encima, arrastre, foco de teclado, sin efecto (editable, pero el parámetro no influye ahora: por ejemplo, la dinámica apagada) y desactivado (el parámetro no existe para ese tipo de filtro).
 
 ### Potenciómetro y barra (`ParamControl`)

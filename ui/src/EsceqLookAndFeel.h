@@ -40,6 +40,12 @@ public:
     void drawButtonText(juce::Graphics&, juce::TextButton&, bool highlighted, bool down) override;
     juce::Font getTextButtonFont(juce::TextButton&, int buttonHeight) override;
 
+    void drawAlertBox(juce::Graphics&, juce::AlertWindow&, const juce::Rectangle<int>& textArea, juce::TextLayout&) override;
+    juce::Font getAlertWindowTitleFont() override;
+    juce::Font getAlertWindowMessageFont() override;
+    juce::Font getAlertWindowFont() override;
+    int getAlertWindowButtonHeight() override { return 28; }
+
     juce::Font getLabelFont(juce::Label&) override;
     void drawCornerResizer(juce::Graphics&, int w, int h, bool isMouseOver, bool isMouseDragging) override;
     void drawTooltip(juce::Graphics&, const juce::String& text, int width, int height) override;

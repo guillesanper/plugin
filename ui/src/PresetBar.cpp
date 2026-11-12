@@ -101,7 +101,29 @@ PresetBar::PresetBar(PluginProcessor& processor)
     refresh();
 }
 
-PresetBar::~PresetBar() = default;
+PresetBar::~PresetBar()
+{
+    // El diálogo usa el aspecto del editor, que está a punto de desaparecer.
+    if (dialog_ != nullptr)
+        delete dialog_.getComponent();
+}
+
+juce::AlertWindow* PresetBar::makeDialog(const juce::String& title, const juce::String& message)
+{
+    if (dialog_ != nullptr)
+        delete dialog_.getComponent();
+    auto* window = new juce::AlertWindow(title, message, juce::MessageBoxIconType::NoIcon, getTopLevelComponent());
+    window->setLookAndFeel(&getLookAndFeel());
+    dialog_ = window;
+    return window;
+}
+
+void PresetBar::showMessage(const juce::String& message)
+{
+    auto* window = makeDialog("Save preset", message);
+    window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey), juce::KeyPress(juce::KeyPress::escapeKey));
+    window->enterModalState(true, nullptr, true);
+}
 
 void PresetBar::refresh()
 {
@@ -131,6 +153,7 @@ void PresetBar::showMenu()
     const auto current = presets.current();
 
     juce::PopupMenu menu;
+    menu.setLookAndFeel(&getLookAndFeel());
     bool inUser = false;
     menu.addSectionHeader("Factory");
     for (std::size_t i = 0; i < entries.size(); ++i)
@@ -179,7 +202,7 @@ void PresetBar::showMenu()
 void PresetBar::askForName()
 {
     const auto current = processor_.presets().current();
-    auto* window = new juce::AlertWindow("Save preset", "Name of the preset:", juce::MessageBoxIconType::NoIcon, this);
+    auto* window = makeDialog("Save preset", "Name of the preset:");
     window->addTextEditor("name", current && !current->factory ? current->name : juce::String());
     window->addButton("Save", 1, juce::KeyPress(juce::KeyPress::returnKey));
     window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
@@ -188,7 +211,12 @@ void PresetBar::askForName()
     window->enterModalState(true, juce::ModalCallbackFunction::create([safe, window](int result) {
                                 if (safe == nullptr || result != 1)
                                     return;
-                                safe->save(window->getTextEditorContents("name"));
+                                // El diálogo se destruye al salir de aquí: se copia el texto antes.
+                                const auto name = window->getTextEditorContents("name");
+                                juce::MessageManager::callAsync([safe, name] {
+                                    if (safe != nullptr)
+                                        safe->save(name);
+                                });
                             }),
                             true);
 }
@@ -200,30 +228,14 @@ void PresetBar::save(const juce::String& name)
 
     if (clean.isEmpty())
     {
-        juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                         .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                         .withTitle("Save preset")
-                                         .withMessage("That name cannot be used. Please choose another one.")
-                                         .withButton("OK", 1)
-                                         .withAssociatedComponent(this),
-                                     std::function<void(int)>{});
+        showMessage("That name cannot be used. Please choose another one.");
         return;
     }
 
-    juce::Component::SafePointer<PresetBar> safe(this);
-    auto write = [safe, clean] {
-        if (safe == nullptr)
-            return;
-        if (!safe->processor_.presets().saveUser(clean))
-            juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                             .withIconType(juce::MessageBoxIconType::WarningIcon)
-                                             .withTitle("Save preset")
-                                             .withMessage("The preset could not be written to\n" +
-                                                          PresetManager::userDirectory().getFullPathName())
-                                             .withButton("OK", 1)
-                                             .withAssociatedComponent(safe.getComponent()),
-                                         std::function<void(int)>{});
-        safe->refresh();
+    auto write = [this, clean] {
+        if (!processor_.presets().saveUser(clean))
+            showMessage("The preset could not be written to\n" + PresetManager::userDirectory().getFullPathName());
+        refresh();
     };
 
     // No se pisa un preset existente sin preguntar.
@@ -231,17 +243,19 @@ void PresetBar::save(const juce::String& name)
     const bool isCurrent = current && !current->factory && current->name == clean;
     if (presets.userPresetExists(clean) && !isCurrent)
     {
-        juce::AlertWindow::showAsync(juce::MessageBoxOptions()
-                                         .withIconType(juce::MessageBoxIconType::QuestionIcon)
-                                         .withTitle("Save preset")
-                                         .withMessage("A preset named \"" + clean + "\" already exists. Replace it?")
-                                         .withButton("Replace", 1)
-                                         .withButton("Cancel", 0)
-                                         .withAssociatedComponent(this),
-                                     [write](int result) {
-                                         if (result == 1)
-                                             write();
-                                     });
+        auto* window = makeDialog("Save preset", "A preset named \"" + clean + "\" already exists. Replace it?");
+        window->addButton("Replace", 1, juce::KeyPress(juce::KeyPress::returnKey));
+        window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+        juce::Component::SafePointer<PresetBar> safe(this);
+        window->enterModalState(true, juce::ModalCallbackFunction::create([safe, write](int result) {
+                                    if (safe == nullptr || result != 1)
+                                        return;
+                                    juce::MessageManager::callAsync([safe, write] {
+                                        if (safe != nullptr)
+                                            write();
+                                    });
+                                }),
+                                true);
         return;
     }
     write();
