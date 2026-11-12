@@ -56,7 +56,17 @@ float CurveMapping::yForAnalyzerDb(double db) const noexcept
 Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept
 {
     const double gain = core::usesGain(band.filter.type) ? band.filter.gainDb : 0.0;
-    return {mapping.xForFrequency(band.filter.frequencyHz), mapping.yForGain(gain)};
+    const Rect area = mapping.area();
+    return {std::clamp(mapping.xForFrequency(band.filter.frequencyHz), area.x, area.x + area.width),
+            std::clamp(mapping.yForGain(gain), area.y, area.y + area.height)};
+}
+
+double draggedGain(const CurveMapping& mapping, double currentDb, float deltaY) noexcept
+{
+    const double dbPerPixel = 2.0 * mapping.rangeDb() / mapping.area().height;
+    const double next = currentDb - static_cast<double>(deltaY) * dbPerPixel;
+    const double range = mapping.rangeDb();
+    return std::clamp(next, std::min(-range, currentDb), std::max(range, currentDb));
 }
 
 std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bool> visible, Point p,

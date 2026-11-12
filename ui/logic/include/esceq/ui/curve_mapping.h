@@ -56,7 +56,17 @@ private:
 
 /// Posición del nodo de una banda: su frecuencia y, si el tipo usa ganancia,
 /// su ganancia; si no (cortes, notch...), la línea de 0 dB.
+///
+/// El nodo nunca queda fuera de la vista: si la ganancia supera el rango que
+/// se muestra (por ejemplo, -30 dB con la vista en ±18 dB, puesta desde el
+/// panel o por automatización), se dibuja pegado al borde, donde se puede
+/// seguir seleccionando y arrastrando.
 Point nodePosition(const CurveMapping& mapping, const dsp::BandSettings& band) noexcept;
+
+/// Nueva ganancia al arrastrar verticalmente `deltaY` píxeles un nodo con
+/// ganancia `currentDb`. El arrastre no puede sacar el nodo de la vista
+/// (±rangeDb); si ya estaba fuera, solo puede acercarlo, sin saltos.
+double draggedGain(const CurveMapping& mapping, double currentDb, float deltaY) noexcept;
 
 /// Índice del nodo visible más cercano a `p` dentro de `radius` píxeles.
 /// `visible[i]` indica si el nodo i se dibuja.

@@ -51,6 +51,38 @@ TEST_CASE("Vista: posicion de los nodos")
     CHECK_THAT(nodePosition(m, cut).y, WithinAbs(100.0, 1e-3));
 }
 
+TEST_CASE("Vista: un nodo con mas ganancia que el rango visible queda en el borde")
+{
+    // Error encontrado en FL Studio: arrastrando hacia abajo, la ganancia
+    // llegaba a -30 dB con la vista en ±18 dB y el nodo desaparecía.
+    const CurveMapping m({0.0f, 10.0f, 300.0f, 200.0f}, 18.0);
+
+    const dsp::BandSettings low{true, {dsp::FilterType::Bell, 1000.0, -30.0, 1.0}};
+    CHECK_THAT(nodePosition(m, low).y, WithinAbs(210.0, 1e-4));
+    const dsp::BandSettings high{true, {dsp::FilterType::Bell, 1000.0, 30.0, 1.0}};
+    CHECK_THAT(nodePosition(m, high).y, WithinAbs(10.0, 1e-4));
+
+    // Y en el borde se puede seguir seleccionando.
+    const std::array<Point, 1> nodes{nodePosition(m, low)};
+    const std::array<bool, 1> visible{true};
+    CHECK(hitTestNodes(nodes, visible, {nodes[0].x, 205.0f}, 12.0f) == 0);
+}
+
+TEST_CASE("Vista: arrastrar no saca un nodo de la vista")
+{
+    const CurveMapping m({0.0f, 0.0f, 300.0f, 360.0f}, 18.0); // 0,1 dB por píxel
+
+    CHECK_THAT(draggedGain(m, 0.0, 30.0f), WithinAbs(-3.0, 1e-9));
+    CHECK_THAT(draggedGain(m, 0.0, -30.0f), WithinAbs(3.0, 1e-9));
+    CHECK(draggedGain(m, -17.0, 500.0f) == -18.0); // se para en el borde
+    CHECK(draggedGain(m, 17.0, -500.0f) == 18.0);
+
+    // Si ya estaba fuera (panel, automatización o vista más estrecha), puede
+    // volver sin saltos, pero no alejarse más.
+    CHECK_THAT(draggedGain(m, -30.0, -10.0f), WithinAbs(-29.0, 1e-9));
+    CHECK(draggedGain(m, -30.0, 10.0f) == -30.0);
+}
+
 TEST_CASE("Vista: seleccion del nodo mas cercano")
 {
     const std::array<Point, 3> nodes{{{10.0f, 10.0f}, {20.0f, 10.0f}, {20.0f, 10.0f}}};

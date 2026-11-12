@@ -470,11 +470,11 @@ void CurveView::mouseDrag(const juce::MouseEvent& e)
     dragLast_ = e.position;
 
     const float x = m.xForFrequency(settings.filter.frequencyHz) + delta.x;
-    const float y = m.yForGain(settings.filter.gainDb) + delta.y;
 
     setParameter(dragging_, core::BandParam::Frequency, static_cast<float>(m.frequencyForX(x)));
     if (draggingGain_)
-        setParameter(dragging_, core::BandParam::Gain, static_cast<float>(m.gainForY(y)));
+        setParameter(dragging_, core::BandParam::Gain,
+                     static_cast<float>(draggedGain(m, settings.filter.gainDb, delta.y)));
     repaint();
 }
 

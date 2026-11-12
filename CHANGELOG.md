@@ -4,6 +4,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## Sin publicar
 
+### Corregido
+
+- Un nodo arrastrado por debajo (o por encima) del rango visible desaparecía de la curva y no se podía volver a seleccionar. Ahora el arrastre se detiene en el borde de la vista, y un nodo con más ganancia de la que se muestra se dibuja pegado al borde, donde se puede seguir arrastrando.
+
 ### Añadido
 
 - Estructura del proyecto: módulos `dsp`, `core` y `plugin`, tests y CI.
