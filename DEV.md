@@ -46,10 +46,10 @@ git clone https://github.com/guillesanper/plugin.git esceQ
 ### 4. Abrir y compilar en Visual Studio
 
 1. Abre Visual Studio y elige **"Abrir una carpeta local"**. Selecciona `C:\dev\esceQ`.
-2. Visual Studio detecta `CMakePresets.json` y muestra arriba un desplegable de configuración. Elige:
-   - **Plugin completo**: para compilar y probar el plugin.
-   - **Plugin completo (depuración)**: para depurar con puntos de interrupción.
-   - **Solo dsp + core**: para trabajar en algoritmos y tests. Configura en segundos porque no descarga JUCE.
+2. Visual Studio detecta `CMakePresets.json` y muestra arriba un desplegable de configuración (según la versión, con el nombre corto o el descriptivo). Elige:
+   - `plugin` (**Plugin completo**): para compilar y probar el plugin.
+   - `plugin-debug` (**Plugin completo (depuración)**): para depurar con puntos de interrupción.
+   - `core` (**Solo dsp + core**): para trabajar en algoritmos y tests. Configura en segundos porque no descarga JUCE.
 3. Espera a que termine la configuración (ventana *Salida*). La primera vez descarga JUCE y tarda unos minutos.
 4. **Compilar → Compilar todo** (`Ctrl+Mayús+B`). La primera compilación tarda varios minutos; las siguientes, segundos.
 
@@ -75,7 +75,7 @@ ctest --preset plugin
 
 ### 5. Ejecutar los tests
 
-- En Visual Studio: **Prueba → Explorador de pruebas → Ejecutar todas**.
+- En Visual Studio: **Prueba → Explorador de pruebas → Ejecutar todas**. Los tests aparecen solo **después de compilar**: CMake los descubre ejecutando el programa de tests al terminar la compilación. Si la lista sigue vacía, mira la ventana *Salida* con "Mostrar salida de: CMake".
 - En línea de comandos: `ctest --preset plugin` (o `ctest --preset core`).
 
 Si un test de contrato falla (parámetros o estado), el cambio rompería proyectos guardados: no se arregla editando el test. Ver [CONTRIBUTING.md](CONTRIBUTING.md).

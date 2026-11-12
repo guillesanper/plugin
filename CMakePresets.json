@@ -30,6 +30,7 @@
   ],
   "testPresets": [
     { "name": "plugin", "configurePreset": "plugin", "configuration": "Release", "output": { "outputOnFailure": true } },
+    { "name": "plugin-debug", "configurePreset": "plugin-debug", "configuration": "Debug", "output": { "outputOnFailure": true } },
     { "name": "core", "configurePreset": "core", "configuration": "Debug", "output": { "outputOnFailure": true } }
   ]
 }
