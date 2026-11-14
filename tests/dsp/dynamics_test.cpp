@@ -503,3 +503,133 @@ TEST_CASE("Dinamica: un NaN o un infinito en el sidechain no deja la banda muert
         CHECK_THAT(peakDb(out, 36000) - peakDb(quiet, 0), WithinAbs(-10.0, 0.1));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Modo solo dinámica (fase lineal) y entrada del detector
+
+namespace {
+
+/// La fase lineal en pequeño: la parte estática en un Equalizer sin
+/// dinámica y el cambio dinámico, H(g+d)·H(-g), en otro en modo solo
+/// dinámica, con los detectores escuchando la entrada original.
+std::vector<float> runSplit(const BandSettings& band, const std::vector<float>& input, int blockSize,
+                            const std::vector<float>* sidechain = nullptr)
+{
+    BandSettings staticOnly = band;
+    staticOnly.dynamics.enabled = false;
+    Equalizer staticPart, dynamicPart;
+    staticPart.setBand(0, staticOnly);
+    dynamicPart.setDynamicsOnly(true);
+    dynamicPart.setBand(0, band);
+    staticPart.prepare(kFs);
+    dynamicPart.prepare(kFs);
+
+    auto out = run(staticPart, input, blockSize);
+    const int total = static_cast<int>(input.size());
+    for (int pos = 0; pos < total; pos += blockSize)
+    {
+        const int length = std::min(blockSize, total - pos);
+        float* channel = out.data() + pos;
+        const float* detector = input.data() + pos;
+        const float* sc = sidechain != nullptr ? sidechain->data() + pos : nullptr;
+        dynamicPart.process(&channel, 1, length, sidechain != nullptr ? &sc : nullptr, sidechain != nullptr ? 1 : 0,
+                            &detector);
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("Dinamica: en modo solo dinamica, parte estatica aparte + dinamica = la banda entera")
+{
+    // H(g)·H(-g)·H(g+d) = H(g+d), y como H(-g) va antes que la sección que
+    // cambia, esta oye la misma señal que en el modo normal: el resultado es
+    // el mismo también mientras la ganancia se mueve, salvo el redondeo.
+    for (const auto type : {FilterType::Bell, FilterType::LowShelf, FilterType::HighShelf, FilterType::Tilt})
+        for (const double staticGain : {5.0, -7.0})
+        {
+            INFO(typeName(type) << ", ganancia estatica " << staticGain);
+            BandSettings band = dynamicBell(2000.0, 1.5, -30.0, -9.0, 6.0, 1.0, 80.0);
+            band.filter.type = type;
+            band.filter.gainDb = staticGain;
+            Equalizer whole;
+            whole.setBand(0, band);
+            whole.prepare(kFs);
+
+            auto input = sine(20000, 1500.0, 0.5);
+            for (std::size_t i = 10000; i < input.size(); ++i)
+                input[i] *= 0.02f; // la dinámica entra y sale
+            const auto expected = run(whole, input, 80);
+            const auto split = runSplit(band, input, 80);
+
+            double worst = 0.0;
+            for (std::size_t i = 0; i < expected.size(); ++i)
+                worst = std::max(worst, static_cast<double>(std::abs(split[i] - expected[i])));
+            CHECK(worst < 1e-5);
+        }
+}
+
+TEST_CASE("Dinamica: en modo solo dinamica, la modulacion rapida tampoco produce chasquidos")
+{
+    // El mismo caso extremo que "modulacion rapida sin chasquidos", con la
+    // parte dinámica separada de la estática: debe sonar como la banda entera.
+    const auto input = sine(48000, 3000.0, 0.25);
+    std::vector<float> sc(input.size(), 0.0f);
+    const auto burst = sine(48000, 3000.0, 1.0);
+    for (std::size_t i = 0; i < sc.size(); ++i)
+        if ((i / 240) % 2 == 0)
+            sc[i] = burst[i];
+
+    for (const double staticGain : {0.0, 6.0, -6.0})
+    {
+        INFO("ganancia estatica " << staticGain);
+        BandSettings band = dynamicBell(3000.0, 1.0, -30.0, -24.0, 0.0, kMinAttackMs, 2.0, true);
+        band.filter.gainDb = staticGain;
+        const auto out = runSplit(band, input, 128, &sc);
+        Equalizer whole;
+        whole.setBand(0, band);
+        whole.prepare(kFs);
+        const auto reference = run(whole, input, 128, &sc);
+
+        CHECK(maxStep(out) < maxStep(reference) * 1.01f);
+        CHECK(clickDb(out, 1000) < clickDb(reference, 1000) + 0.5);
+        CHECK(peakDb(out, 0) < peakDb(reference, 0) + 0.1);
+        CHECK(std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); }));
+    }
+}
+
+TEST_CASE("Dinamica: en modo solo dinamica, una banda sin dinamica no hace nada")
+{
+    Equalizer eq;
+    eq.setDynamicsOnly(true);
+    eq.setBand(0, {true, {FilterType::Bell, 1000.0, 12.0, 1.0}});
+    eq.setBand(1, {true, {FilterType::LowCut, 200.0, 0.0, kButterworthQ, 48}});
+    eq.prepare(kFs);
+    CHECK(!eq.target(0).enabled);
+    const auto input = sine(4000, 1000.0, 0.5);
+    CHECK(run(eq, input, 100) == input);
+
+    // Volver al modo normal recupera las bandas tal y como se pidieron.
+    eq.setDynamicsOnly(false);
+    CHECK(eq.target(0).enabled);
+    CHECK(run(eq, input, 100) != input);
+}
+
+TEST_CASE("Dinamica: los detectores internos escuchan la entrada del detector si se da")
+{
+    Equalizer eq;
+    eq.setBand(0, dynamicBell(1000.0, 1.0, -30.0, -12.0));
+    eq.prepare(kFs);
+    const auto loud = sine(8000, 1000.0, 0.5);
+    const std::vector<float> silence(loud.size(), 0.0f);
+    auto signal = loud;
+    for (int pos = 0; pos < 8000; pos += 100)
+    {
+        float* channel = signal.data() + pos;
+        const float* detector = silence.data() + pos;
+        eq.process(&channel, 1, 100, nullptr, 0, &detector);
+    }
+    // El detector no oye nada: la banda (0 dB) no actúa.
+    CHECK(eq.dynamicGainDb(0) == 0.0);
+    CHECK(signal == loud);
+}

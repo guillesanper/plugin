@@ -3,6 +3,7 @@
 
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/equalizer.h"
+#include "esceq/dsp/linear_phase.h"
 
 #include <optional>
 
@@ -16,6 +17,9 @@ dsp::FilterType filterTypeFromChoice(float choice) noexcept;
 
 /// Canal de la banda a partir del valor del parámetro "chan".
 dsp::ChannelMode channelModeFromChoice(float choice) noexcept;
+
+/// Modo de fase a partir del valor del parámetro "phase_mode".
+dsp::PhaseMode phaseModeFromChoice(float choice) noexcept;
 
 /// Pendiente en dB/oct a partir del valor del parámetro "slope".
 int slopeFromChoice(float choice) noexcept;

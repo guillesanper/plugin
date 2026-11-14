@@ -208,3 +208,27 @@ TEST_CASE("Presets: un nombre de preset con ruta en el estado no lee archivos de
     CHECK(outside.existsAsFile());
     outside.deleteFile();
 }
+
+TEST_CASE("Presets: cargar uno no cambia el modo de fase; cambiarlo no lo marca como modificado")
+{
+    // El modo de fase es de la sesión: cambiarlo cambia la latencia de la pista.
+    cleanUserPresets();
+    auto p = makeProcessor();
+    drag(*p, core::kPhaseMode, {3.0f});
+    REQUIRE(p->presets().load({"Gentle Master", true}));
+    CHECK(valueOf(*p, core::kPhaseMode) == 3.0f);
+    CHECK_FALSE(p->presets().isModified());
+
+    drag(*p, core::kPhaseMode, {1.0f});
+    CHECK_FALSE(p->presets().isModified());
+
+    p->presets().loadDefault();
+    CHECK(valueOf(*p, core::kPhaseMode) == 1.0f);
+
+    // Un preset de usuario no lo guarda.
+    REQUIRE(p->presets().saveUser("Con modo"));
+    drag(*p, core::kPhaseMode, {2.0f});
+    REQUIRE(p->presets().load({"Con modo", false}));
+    CHECK(valueOf(*p, core::kPhaseMode) == 2.0f);
+    cleanUserPresets();
+}

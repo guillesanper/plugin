@@ -17,10 +17,14 @@ add_executable(esceq_tests
     dsp/filter_design_test.cpp
     dsp/filter_golden_test.cpp
     dsp/gain_ramp_test.cpp
+    dsp/handoff_test.cpp
+    dsp/linear_phase_test.cpp
+    dsp/phase_equalizer_test.cpp
     dsp/spectrum_collision_test.cpp
     core/band_model_test.cpp
     core/history_test.cpp
     core/parameters_test.cpp
+    core/phase_design_thread_test.cpp
     core/presets_test.cpp
     core/release_contract_test.cpp
     core/spectrum_session_test.cpp

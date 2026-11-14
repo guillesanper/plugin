@@ -15,7 +15,7 @@ Estado: **fases 0 a 3 completadas; fase 4 lista para publicar.** Todo lo de la 0
 - Analizador de espectro en tiempo real (pre, post y sidechain).
 - Procesado por banda en estéreo, L, R, Mid o Side.
 - Sidechain externo.
-- Modos de fase: latencia cero (fase mínima) primero; fase lineal más adelante.
+- Modos de fase: Natural (latencia cero) y fase lineal en tres resoluciones, Low, Medium y High (hechos en la fase 5, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)).
 
 ### Qué no es
 
@@ -123,7 +123,7 @@ plugin/
 └── docs/           arquitectura.md, decisiones/ (ADR), dsp/, ui.md
 ```
 
-Así está el repositorio desde la fase 4; el detalle de cada módulo está en [docs/arquitectura.md](docs/arquitectura.md). La fase lineal (prevista en `dsp/`) y las medidas de rendimiento (un `bench/`) aún no existen.
+Así está el repositorio desde la fase 4; el detalle de cada módulo está en [docs/arquitectura.md](docs/arquitectura.md). Desde la fase 5 está también la fase lineal (`dsp/`, con su hilo de diseño en `core/`). Las medidas de rendimiento (un `bench/`) aún no existen.
 
 ### Hilos y comunicación
 
@@ -174,6 +174,8 @@ FFT de 4096 a 8192 puntos, ventana de Hann, solapamiento del 75 %, inclinación 
 
 FIR generado a partir de la respuesta en magnitud y aplicado por convolución particionada con FFT. Latencia según resolución (baja, media, alta). Combinarlo con bandas dinámicas es el punto difícil: una vía es aplicar la parte dinámica como diferencia sobre el FIR estático. Hay que investigarlo antes de comprometerse.
 
+**Hecho.** Cuatro modos: Natural Phase (el IIR) y Linear Low, Medium y High (FIR de 2048, 8192 y 32768 coeficientes a 48 kHz, con 26,7, 96 y 362,7 ms de latencia). La dinámica se aplica como `H(−g)·H(g+d)` sobre el FIR con la parte estática, que da exactamente la magnitud del modo Natural y es de fase lineal mientras la dinámica no actúa. Decisiones en la [ADR 0012](docs/decisiones/0012-modos-de-fase.md); funcionamiento, medidas y límites en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md).
+
 ### 4.5 Reglas de tiempo real
 
 Sin `new`/`malloc`, sin mutex, sin llamadas al sistema en el hilo de audio; denormales desactivados; suavizado en todos los parámetros audibles; SIMD solo después de medir.
@@ -210,7 +212,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos, fase lineal, auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
+| **5. Calidad** | Corrección en agudos, fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
 | **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), surround | Versión 1.0 | Abierto |
 
 ---
@@ -221,7 +223,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 |---|---|
 | La interfaz consume más tiempo que el DSP | Empezar con una interfaz funcional y fea; pulir al final de cada fase, no antes |
 | Artefactos al modular filtros | SVF desde el principio y tests específicos de modulación en la fase 1 |
-| Fase lineal + dinámica resulta inviable con buena calidad | Está en la fase 5, fuera del camino crítico; se puede publicar sin ello |
+| Fase lineal + dinámica resulta inviable con buena calidad | Resuelto en la fase 5: la dinámica se aplica como diferencia exacta sobre el FIR estático ([ADR 0012](docs/decisiones/0012-modos-de-fase.md)) |
 | Duplicar un proyecto que ya existe | Elegir un diferenciador antes de la fase 2: núcleo DSP reutilizable, flujo de trabajo en FL Studio, o funciones poco cubiertas (fase lineal con dinámica, dinámica espectral) |
 | Un cambio rompe proyectos guardados o altera el sonido | Contratos y tests de la sección 2.1, verificados en CI |
 | Romper proyectos de usuarios al cambiar parámetros | Congelar identificadores y versionar el estado guardado desde la 0.1 |

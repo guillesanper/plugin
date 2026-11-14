@@ -18,9 +18,11 @@ double finiteOr(double value, double fallback) noexcept
     return std::isfinite(value) ? value : fallback;
 }
 
+} // namespace
+
 /// Lleva los valores a los mismos rangos que designBand(), para que el
 /// suavizado trabaje siempre con valores positivos y comparables.
-BandSettings sanitized(BandSettings s) noexcept
+BandSettings sanitizeBand(BandSettings s) noexcept ESCEQ_NONBLOCKING
 {
     // Los no finitos pasan a su valor por defecto antes de ajustar el rango: un
     // infinito ajustado seguiría rompiendo el suavizado logarítmico.
@@ -38,6 +40,8 @@ BandSettings sanitized(BandSettings s) noexcept
     d.releaseMs = std::clamp(finiteOr(d.releaseMs, defaults.releaseMs), kMinReleaseMs, 60000.0);
     return s;
 }
+
+namespace {
 
 /// Cambios que no se pueden suavizar y requieren un fundido.
 bool isStructuralChange(const BandSettings& from, const BandSettings& to) noexcept
@@ -99,7 +103,8 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept ESCEQ_
         return;
 
     Band& band = bands_[static_cast<std::size_t>(index)];
-    const BandSettings next = sanitized(settings);
+    band.requested = sanitizeBand(settings);
+    const BandSettings next = targetFor(band.requested);
     if (next == band.target)
         return;
 
@@ -164,6 +169,24 @@ void Equalizer::beginStructuralChange(Band& band) noexcept
         band.dynamicGain = 0.0;
     }
     applyDesign(band, true);
+}
+
+BandSettings Equalizer::targetFor(const BandSettings& requested) const noexcept
+{
+    BandSettings target = requested;
+    if (dynamicsOnly_)
+        target.enabled = wantsDynamics(requested);
+    return target;
+}
+
+void Equalizer::setDynamicsOnly(bool dynamicsOnly) noexcept ESCEQ_NONBLOCKING
+{
+    if (dynamicsOnly == dynamicsOnly_)
+        return;
+    dynamicsOnly_ = dynamicsOnly;
+    for (auto& band : bands_)
+        band.target = targetFor(band.requested);
+    reset();
 }
 
 void Equalizer::setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING
@@ -251,9 +274,11 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
 {
     FilterParams effective = band.current.filter;
     effective.gainDb += band.dynamicGain;
-    if (!force && effective == band.designed)
+    const double staticGain = band.current.filter.gainDb;
+    if (!force && effective == band.designed && (!dynamicsOnly_ || staticGain == band.designedStaticGain))
         return;
     band.designed = effective;
+    band.designedStaticGain = staticGain;
     // La dinámica rediseña la banda hasta una vez por muestra cambiando solo la
     // ganancia: la tangente de la frecuencia se guarda y no se recalcula.
     if (effective.frequencyHz != band.prewarpedFor)
@@ -261,14 +286,32 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
         band.prewarpedFor = effective.frequencyHz;
         band.prewarped = prewarpedG(effective.frequencyHz, sampleRate_);
     }
-    band.active.setDesign(designBandPrewarped(effective, band.prewarped));
+    const BandDesign full = designBandPrewarped(effective, band.prewarped);
+    if (!dynamicsOnly_)
+    {
+        band.active.setDesign(full);
+        return;
+    }
+
+    // Solo el cambio dinámico: primero H(−g) = 1/H(g), que deshace la parte
+    // estática, y después la banda entera, H(g + d). En ese orden, la sección
+    // que cambia con la dinámica oye la misma señal que en el modo normal, y
+    // sus transitorios son los mismos. Los tipos con ganancia usan una
+    // sección, así que caben las dos.
+    FilterParams inverse = band.current.filter;
+    inverse.gainDb = -staticGain;
+    BandDesign design = designBandPrewarped(inverse, band.prewarped);
+    for (int i = 0; i < full.numSections && design.numSections < kMaxSections; ++i)
+        design.sections[static_cast<std::size_t>(design.numSections++)] = full.sections[static_cast<std::size_t>(i)];
+    band.active.setDesign(design);
 }
 
 void Equalizer::process(float* const* channels, int numChannels, int numSamples, const float* const* sidechain,
-                        int numSidechainChannels) noexcept ESCEQ_NONBLOCKING
+                        int numSidechainChannels, const float* const* detectorInput) noexcept ESCEQ_NONBLOCKING
 {
     const int usedChannels = std::min(numChannels, kMaxChannels);
-    Sidechain sc{sidechain, sidechain != nullptr ? std::clamp(numSidechainChannels, 0, kMaxChannels) : 0, 0};
+    Sources sc{sidechain, sidechain != nullptr ? std::clamp(numSidechainChannels, 0, kMaxChannels) : 0,
+               detectorInput, 0};
     int position = 0;
 
     // Trozos alineados con un contador global: así el suavizado ocurre en
@@ -298,7 +341,7 @@ void Equalizer::process(float* const* channels, int numChannels, int numSamples,
 }
 
 void Equalizer::processChunk(float* const* channels, int numChannels, int offset, int length,
-                             const Sidechain& sidechain) noexcept
+                             const Sources& sources) noexcept
 {
     if (chunkPhase_ == 0)
         for (auto& band : bands_)
@@ -321,7 +364,11 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
     const bool anyDynamic = std::any_of(bands_.begin(), bands_.end(), isDynamic);
     if (anyDynamic)
         for (int ch = 0; ch < numChannels; ++ch)
-            std::copy_n(io[static_cast<std::size_t>(ch)], length, detectorInput_[static_cast<std::size_t>(ch)].begin());
+        {
+            const float* source = sources.detector != nullptr ? sources.detector[ch] + sources.offset
+                                                              : io[static_cast<std::size_t>(ch)];
+            std::copy_n(source, length, detectorInput_[static_cast<std::size_t>(ch)].begin());
+        }
 
     const bool mixing = wet_ != wetTarget || wet_ < 1.0f;
     if (mixing)
@@ -330,7 +377,7 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
 
     for (auto& band : bands_)
         if (band.current.enabled || band.fadeRemaining > 0)
-            processBand(band, io.data(), numChannels, length, sidechain);
+            processBand(band, io.data(), numChannels, length, sources);
 
     if (!mixing)
         return;
@@ -349,7 +396,7 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
 }
 
 void Equalizer::processBand(Band& band, float* const* io, int numChannels, int length,
-                            const Sidechain& sidechain) noexcept
+                            const Sources& sources) noexcept
 {
     if (!isDynamic(band))
     {
@@ -373,7 +420,7 @@ void Equalizer::processBand(Band& band, float* const* io, int numChannels, int l
         band.envelope.reset();
     }
 
-    runDetector(band, numChannels, length, sidechain);
+    runDetector(band, numChannels, length, sources);
 
     // La ganancia dinámica se evalúa en cada muestra. Los coeficientes solo
     // se recalculan cuando cambia de verdad: el audio se procesa por tramos
@@ -399,7 +446,7 @@ void Equalizer::processBand(Band& band, float* const* io, int numChannels, int l
     flush(start, length);
 }
 
-void Equalizer::runDetector(Band& band, int numChannels, int length, const Sidechain& sidechain) noexcept
+void Equalizer::runDetector(Band& band, int numChannels, int length, const Sources& sources) noexcept
 {
     const FilterParams key = detectorKey(band.current.filter);
     if (!(key == band.detectorFor))
@@ -412,9 +459,9 @@ void Equalizer::runDetector(Band& band, int numChannels, int length, const Sidec
     std::array<float*, kMaxChannels> work{};
     if (band.current.dynamics.external)
     {
-        sourceChannels = sidechain.numChannels;
+        sourceChannels = sources.numSidechainChannels;
         for (int ch = 0; ch < sourceChannels; ++ch)
-            std::copy_n(sidechain.channels[ch] + sidechain.offset, length,
+            std::copy_n(sources.sidechain[ch] + sources.offset, length,
                         detectorScratch_[static_cast<std::size_t>(ch)].begin());
     }
     else

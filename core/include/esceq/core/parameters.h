@@ -80,7 +80,9 @@ enum ParameterIndex : std::size_t
     kFirstDynamicParameter = kFirstBandParameter + static_cast<std::size_t>(kNumBands) * kParamsPerBand,
     /// Canal de cada banda (fase 4): un parámetro por banda, tras la dinámica.
     kFirstChannelParameter = kFirstDynamicParameter + static_cast<std::size_t>(kNumBands) * kDynParamsPerBand,
-    kNumParameters = kFirstChannelParameter + static_cast<std::size_t>(kNumBands),
+    /// Modo de fase (fase 5), global: tras los canales.
+    kPhaseMode = kFirstChannelParameter + static_cast<std::size_t>(kNumBands),
+    kNumParameters,
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
@@ -119,6 +121,10 @@ inline constexpr std::array<std::string_view, 2> kSidechainChoices{"Internal", "
 /// Parte de la señal que procesa una banda. El índice coincide con
 /// dsp::ChannelMode (lo comprueba band_model.cpp).
 inline constexpr std::array<std::string_view, 5> kChannelChoices{"Stereo", "Left", "Right", "Mid", "Side"};
+
+/// Modos de fase. El índice coincide con dsp::PhaseMode (lo comprueba band_model.cpp).
+inline constexpr std::array<std::string_view, 4> kPhaseModeChoices{"Natural Phase", "Linear Low", "Linear Medium",
+                                                                    "Linear High"};
 
 /// Única fuente de verdad de los parámetros del plugin. El procesador, la
 /// interfaz y el estado guardado se construyen a partir de esta tabla.

@@ -94,6 +94,14 @@ std::optional<ParameterValues> loadFactoryPreset(std::string_view name)
     return std::nullopt;
 }
 
+ParameterValues applyPreset(const ParameterValues& preset, const ParameterValues& current) noexcept
+{
+    ParameterValues result = preset;
+    for (const auto index : kParametersOutsidePresets)
+        result[index] = current[index];
+    return result;
+}
+
 std::string serializePreset(const ParameterValues& values)
 {
     std::ostringstream out;
@@ -105,7 +113,9 @@ std::string serializePreset(const ParameterValues& values)
     {
         const auto& spec = parameters()[i];
         const float value = sanitize(spec, values[i]);
-        if (value != spec.defaultValue)
+        const bool outside = std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), i) !=
+                             kParametersOutsidePresets.end();
+        if (value != spec.defaultValue && !outside)
             out << spec.id << ' ' << value << '\n';
     }
     return out.str();

@@ -4,6 +4,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <limits>
+
 using namespace esceq;
 using namespace esceq::core;
 
@@ -139,4 +141,16 @@ TEST_CASE("Modelo: traduce el canal de una banda")
     CHECK(channelModeFromChoice(4.0f) == dsp::ChannelMode::Side);
     CHECK(channelModeFromChoice(99.0f) == dsp::ChannelMode::Side);  // fuera de rango: se sanea
     CHECK(channelModeFromChoice(-1.0f) == dsp::ChannelMode::Stereo);
+}
+
+TEST_CASE("Modelo: modo de fase")
+{
+    CHECK(phaseModeFromChoice(0.0f) == esceq::dsp::PhaseMode::Natural);
+    CHECK(phaseModeFromChoice(1.0f) == esceq::dsp::PhaseMode::LinearLow);
+    CHECK(phaseModeFromChoice(2.0f) == esceq::dsp::PhaseMode::LinearMedium);
+    CHECK(phaseModeFromChoice(3.0f) == esceq::dsp::PhaseMode::LinearHigh);
+    // Fuera de rango o no finito: el más cercano, o el valor por defecto.
+    CHECK(phaseModeFromChoice(7.0f) == esceq::dsp::PhaseMode::LinearHigh);
+    CHECK(phaseModeFromChoice(-1.0f) == esceq::dsp::PhaseMode::Natural);
+    CHECK(phaseModeFromChoice(std::numeric_limits<float>::quiet_NaN()) == esceq::dsp::PhaseMode::Natural);
 }

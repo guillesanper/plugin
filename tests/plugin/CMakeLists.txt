@@ -11,6 +11,7 @@ target_sources(esceq_plugin_tests PRIVATE
     main.cpp
     history_test.cpp
     presets_test.cpp
+    phase_test.cpp
     process_test.cpp
     session_test.cpp
     state_test.cpp

@@ -86,7 +86,8 @@ bool PresetManager::load(const Entry& entry)
     if (!values)
         return false;
 
-    processor_.applyValues(*values);
+    // El modo de fase no es parte del preset (core::kParametersOutsidePresets).
+    processor_.applyValues(core::applyPreset(*values, processor_.currentValues()));
     cachedName_ = entry.name;
     cachedValues_ = processor_.currentValues();
     setCurrent(entry.name);
@@ -111,7 +112,7 @@ void PresetManager::step(int direction)
 
 void PresetManager::loadDefault()
 {
-    processor_.applyValues(core::defaultValues());
+    processor_.applyValues(core::applyPreset(core::defaultValues(), processor_.currentValues()));
     cachedName_.clear();
     cachedValues_.reset();
     setCurrent({});
@@ -190,10 +191,13 @@ bool PresetManager::isModified() const
         return false; // no se puede comparar: el archivo ya no existe
 
     // El bypass y la ganancia de salida no forman parte del "sonido" del
-    // preset a estos efectos: tocarlos no lo marca como modificado.
+    // preset a estos efectos, ni el modo de fase, que ni siquiera se guarda en
+    // él: tocarlos no lo marca como modificado.
     auto a = processor_.currentValues();
     auto b = *cachedValues_;
     for (const auto index : {core::kBypass, core::kOutputGain})
+        a[index] = b[index];
+    for (const auto index : core::kParametersOutsidePresets)
         a[index] = b[index];
     return a != b;
 }
