@@ -44,12 +44,6 @@ double butterworthQ(int order, int pair) noexcept
     return 1.0 / (2.0 * std::sin((2.0 * pair - 1.0) * kPi / (2.0 * order)));
 }
 
-int sanitizeSlope(int slope) noexcept
-{
-    const int clamped = std::clamp(slope, kMinSlopeDbPerOct, kMaxSlopeDbPerOct);
-    return ((clamped + 3) / 6) * 6;
-}
-
 void designCut(BandDesign& design, bool lowCut, double g, double q, int slope) noexcept
 {
     const int order = sanitizeSlope(slope) / 6;

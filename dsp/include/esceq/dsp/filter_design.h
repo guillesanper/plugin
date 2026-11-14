@@ -36,6 +36,22 @@ inline constexpr double kMaxGainDb = 60.0;
 inline constexpr int kMinSlopeDbPerOct = 6;
 inline constexpr int kMaxSlopeDbPerOct = 96;
 
+/// Pendiente válida más cercana: entre 6 y 96 dB/oct, en múltiplos de 6.
+constexpr int sanitizeSlope(int slopeDbPerOct) noexcept
+{
+    const int clamped = slopeDbPerOct < kMinSlopeDbPerOct   ? kMinSlopeDbPerOct
+                        : slopeDbPerOct > kMaxSlopeDbPerOct ? kMaxSlopeDbPerOct
+                                                            : slopeDbPerOct;
+    return ((clamped + 3) / 6) * 6;
+}
+
+/// true si `gainDb` influye en el sonido para ese tipo: campana, shelves y tilt.
+constexpr bool filterUsesGain(FilterType type) noexcept
+{
+    return type == FilterType::Bell || type == FilterType::LowShelf || type == FilterType::HighShelf ||
+           type == FilterType::Tilt;
+}
+
 /// Parámetros de una banda tal y como los entiende el usuario.
 /// Los valores fuera de rango se ajustan al diseñar; nunca producen
 /// coeficientes inestables.

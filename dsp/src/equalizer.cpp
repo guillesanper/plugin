@@ -13,12 +13,6 @@ bool isCut(FilterType type) noexcept
     return type == FilterType::LowCut || type == FilterType::HighCut;
 }
 
-int normalizedSlope(int slope) noexcept
-{
-    const int clamped = std::clamp(slope, kMinSlopeDbPerOct, kMaxSlopeDbPerOct);
-    return ((clamped + 3) / 6) * 6;
-}
-
 double finiteOr(double value, double fallback) noexcept
 {
     return std::isfinite(value) ? value : fallback;
@@ -33,7 +27,7 @@ BandSettings sanitized(BandSettings s) noexcept
     s.filter.frequencyHz = std::max(finiteOr(s.filter.frequencyHz, 1000.0), kMinFrequencyHz);
     s.filter.q = std::clamp(finiteOr(s.filter.q, kButterworthQ), kMinQ, kMaxQ);
     s.filter.gainDb = std::clamp(finiteOr(s.filter.gainDb, 0.0), -kMaxGainDb, kMaxGainDb);
-    s.filter.slopeDbPerOct = normalizedSlope(s.filter.slopeDbPerOct);
+    s.filter.slopeDbPerOct = sanitizeSlope(s.filter.slopeDbPerOct);
 
     const DynamicSettings defaults{};
     DynamicSettings& d = s.dynamics;

@@ -8,16 +8,7 @@ namespace esceq::dsp {
 
 bool supportsDynamics(FilterType type) noexcept
 {
-    switch (type)
-    {
-    case FilterType::Bell:
-    case FilterType::LowShelf:
-    case FilterType::HighShelf:
-    case FilterType::Tilt:
-        return true;
-    default:
-        return false;
-    }
+    return filterUsesGain(type);
 }
 
 double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double kneeDb) noexcept ESCEQ_NONBLOCKING

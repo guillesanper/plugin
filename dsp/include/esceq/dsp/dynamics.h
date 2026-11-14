@@ -31,7 +31,7 @@ struct DynamicSettings
 };
 
 /// true si la dinámica tiene efecto con ese tipo de filtro: solo los tipos
-/// que tienen ganancia (campana, shelves y tilt).
+/// que tienen ganancia, filterUsesGain() (campana, shelves y tilt; ADR 0006).
 bool supportsDynamics(FilterType type) noexcept;
 
 /// Curva de ganancia: ganancia dinámica en dB para un nivel de detector.

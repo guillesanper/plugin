@@ -48,16 +48,7 @@ int slopeFromChoice(float choice) noexcept
 
 bool usesGain(dsp::FilterType type) noexcept
 {
-    switch (type)
-    {
-    case dsp::FilterType::Bell:
-    case dsp::FilterType::LowShelf:
-    case dsp::FilterType::HighShelf:
-    case dsp::FilterType::Tilt:
-        return true;
-    default:
-        return false;
-    }
+    return dsp::filterUsesGain(type);
 }
 
 bool usesDynamics(dsp::FilterType type) noexcept
