@@ -105,7 +105,7 @@ struct Table
                 {.kind = Choice, .min = 0.0f, .max = lastChannel, .defaultValue = 0.0f, .choices = kChannelChoices});
         }
 
-        // Modo de fase (fase 5): al final. Natural es el comportamiento de
+        // Modo de fase (fase 5): al final. IIR es el comportamiento de
         // los estados anteriores (latencia cero).
         set(kPhaseMode, "phase_mode", "Phase Mode",
             {.kind = Choice, .min = 0.0f, .max = static_cast<float>(kPhaseModeChoices.size() - 1),

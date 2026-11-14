@@ -43,7 +43,7 @@ public:
     const juce::String getName() const override { return "esceQ"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    /// En fase lineal, la latencia más la mitad del FIR; en Natural, 0.
+    /// En fase lineal, la latencia más la mitad del FIR; en IIR, 0.
     double getTailLengthSeconds() const override;
     juce::AudioProcessorParameter* getBypassParameter() const override;
 

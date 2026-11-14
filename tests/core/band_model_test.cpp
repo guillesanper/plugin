@@ -145,12 +145,12 @@ TEST_CASE("Modelo: traduce el canal de una banda")
 
 TEST_CASE("Modelo: modo de fase")
 {
-    CHECK(phaseModeFromChoice(0.0f) == esceq::dsp::PhaseMode::Natural);
+    CHECK(phaseModeFromChoice(0.0f) == esceq::dsp::PhaseMode::Iir);
     CHECK(phaseModeFromChoice(1.0f) == esceq::dsp::PhaseMode::LinearLow);
     CHECK(phaseModeFromChoice(2.0f) == esceq::dsp::PhaseMode::LinearMedium);
     CHECK(phaseModeFromChoice(3.0f) == esceq::dsp::PhaseMode::LinearHigh);
     // Fuera de rango o no finito: el más cercano, o el valor por defecto.
     CHECK(phaseModeFromChoice(7.0f) == esceq::dsp::PhaseMode::LinearHigh);
-    CHECK(phaseModeFromChoice(-1.0f) == esceq::dsp::PhaseMode::Natural);
-    CHECK(phaseModeFromChoice(std::numeric_limits<float>::quiet_NaN()) == esceq::dsp::PhaseMode::Natural);
+    CHECK(phaseModeFromChoice(-1.0f) == esceq::dsp::PhaseMode::Iir);
+    CHECK(phaseModeFromChoice(std::numeric_limits<float>::quiet_NaN()) == esceq::dsp::PhaseMode::Iir);
 }

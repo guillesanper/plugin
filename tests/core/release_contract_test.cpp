@@ -145,7 +145,7 @@ TEST_CASE("Contrato 0.1: un proyecto guardado con la 0.1 carga con todos sus val
     CHECK(state->ui.windowWidth == 960);
     CHECK(state->ui.windowHeight == 580);
     CHECK(state->ui.presetName == "Vocal");
-    // La 0.1 no tenia modo de fase: el proyecto abre en Natural, sin latencia.
+    // La 0.1 no tenia modo de fase: el proyecto abre en IIR, sin latencia.
     CHECK(state->parameters[kPhaseMode] == 0.0f);
 
     // Mientras el formato siga en la version 2, se vuelve a escribir identico

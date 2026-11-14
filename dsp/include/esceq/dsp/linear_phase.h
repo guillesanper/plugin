@@ -20,7 +20,7 @@ namespace esceq::dsp
 /// se añaden al final.
 enum class PhaseMode
 {
-    Natural,      ///< Filtros IIR: desfase según la frecuencia, como un EQ analógico. Latencia 0.
+    Iir,          ///< Filtros IIR: desfase según la frecuencia, como un EQ analógico. Latencia 0.
     LinearLow,    ///< FIR de fase lineal corto: poca latencia, poca resolución en graves.
     LinearMedium, ///< FIR más largo: más precisión y más latencia. Para buses y mastering.
     LinearHigh,   ///< FIR más largo aún: máxima resolución en graves. Para mastering y render.
@@ -30,7 +30,7 @@ inline constexpr int kNumPhaseModes = 4;
 
 constexpr bool isLinearPhase(PhaseMode mode) noexcept
 {
-    return mode != PhaseMode::Natural;
+    return mode != PhaseMode::Iir;
 }
 
 /// Tamaños del FIR y de la convolución de un modo.
@@ -46,7 +46,7 @@ struct LinearPhaseSize
     friend bool operator==(const LinearPhaseSize&, const LinearPhaseSize&) = default;
 };
 
-/// Tamaños del modo a esa frecuencia de muestreo. Natural: {0, 0}.
+/// Tamaños del modo a esa frecuencia de muestreo. IIR: {0, 0}.
 ///
 /// Hasta 50 kHz: Low 2048 coeficientes y bloques de 256, Medium 8192 y 512,
 /// High 32768 y 1024. Cada duplicación de la frecuencia de muestreo duplica
@@ -54,7 +54,7 @@ struct LinearPhaseSize
 /// no cambien (hasta ×8, a partir de 400 kHz).
 LinearPhaseSize linearPhaseSize(PhaseMode mode, double sampleRate) noexcept;
 
-/// Latencia del modo en muestras (0 en Natural).
+/// Latencia del modo en muestras (0 en IIR).
 inline int latencySamples(PhaseMode mode, double sampleRate) noexcept
 {
     return linearPhaseSize(mode, sampleRate).latency();
@@ -116,7 +116,7 @@ public:
     LinearPhaseDesigner& operator=(const LinearPhaseDesigner&) = delete;
 
     /// FIR para `bands` (como mucho kMaxBands; el orden es el de las bandas
-    /// en serie). `numChannels`: 1 o 2. Para Natural devuelve un FIR vacío.
+    /// en serie). `numChannels`: 1 o 2. Para IIR devuelve un FIR vacío.
     LinearPhaseFir design(std::span<const BandSettings> bands, PhaseMode mode, double sampleRate, int numChannels);
 
     /// Respuesta que el diseño intenta reproducir, en `frequencyHz`: la

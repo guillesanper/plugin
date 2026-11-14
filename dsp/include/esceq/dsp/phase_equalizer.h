@@ -16,7 +16,7 @@ namespace esceq::dsp
 
 /// El ecualizador completo con sus cuatro modos de fase (ver docs/dsp/fase-lineal.md).
 ///
-///  - Natural: el Equalizer IIR tal cual. Latencia 0; suena bit a bit igual
+///  - IIR: el Equalizer tal cual. Latencia 0; suena bit a bit igual
 ///    que un Equalizer con los mismos ajustes.
 ///  - LinearLow, LinearMedium y LinearHigh: la parte estática de las bandas
 ///    va en un FIR de fase lineal (convolución particionada) y la dinámica,
@@ -44,7 +44,7 @@ namespace esceq::dsp
 ///  - Bypass en fase lineal: fundido con la señal seca retrasada, para que
 ///    la latencia no cambie.
 ///
-/// Garantías (además de las de Equalizer en Natural):
+/// Garantías (además de las de Equalizer en IIR):
 ///  - Con parámetros constantes, el resultado no depende de cómo se trocee el
 ///    audio en bloques.
 ///  - En fase lineal, con todas las bandas desactivadas (o sin efecto) y con
@@ -67,7 +67,7 @@ public:
     /// Fija la frecuencia de muestreo y los canales (1 o 2) y salta sin
     /// transición a los ajustes actuales. No es de tiempo real (libera lo que
     /// usaba el modo anterior). En fase lineal, hasta que llegue lo que diseña
-    /// serviceDesigns() suena Natural: para empezar ya en el modo pedido,
+    /// serviceDesigns() suena IIR: para empezar ya en el modo pedido,
     /// llamar a serviceDesigns() y después a update().
     void prepare(double sampleRate, int numChannels = 2);
 
@@ -124,7 +124,7 @@ private:
     {
         std::uint64_t generation = 0; ///< Cambia con todo lo que afecta al FIR.
         std::uint64_t epoch = 0;      ///< Cambia con el modo y la frecuencia de muestreo.
-        PhaseMode mode = PhaseMode::Natural;
+        PhaseMode mode = PhaseMode::Iir;
         double sampleRate = 48000.0;
         int numChannels = 2;
         std::array<BandSettings, kMaxBands> bands{};
@@ -157,15 +157,15 @@ private:
     // --- Estado del hilo de audio ---
     Equalizer iir_;
     std::array<BandSettings, kMaxBands> bands_{};
-    PhaseMode requestedMode_ = PhaseMode::Natural;
-    PhaseMode activeMode_ = PhaseMode::Natural;
+    PhaseMode requestedMode_ = PhaseMode::Iir;
+    PhaseMode activeMode_ = PhaseMode::Iir;
     double sampleRate_ = 48000.0;
     int numChannels_ = 2;
     bool bypassed_ = false;
     bool fresh_ = true; ///< No ha pasado audio desde prepare() o reset().
     std::uint64_t generation_ = 1;
     std::uint64_t epoch_ = 1;
-    std::unique_ptr<LinearPath> path_;     ///< El de activeMode_ (nullptr en Natural).
+    std::unique_ptr<LinearPath> path_;     ///< El de activeMode_ (nullptr en IIR).
     std::unique_ptr<LinearPath> incoming_; ///< El del modo pedido, esperando a sonar.
     Stage stage_ = Stage::Steady;
     int stageRemaining_ = 0;

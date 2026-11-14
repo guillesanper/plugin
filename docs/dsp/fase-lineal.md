@@ -1,17 +1,17 @@
 # Modos de fase
 
-Cómo funcionan los cuatro modos de fase de `dsp::PhaseEqualizer`: Natural (los filtros IIR de siempre) y tres de fase lineal (Low, Medium y High). Las decisiones y sus alternativas están en la [ADR 0012](../decisiones/0012-modos-de-fase.md); los filtros de cada banda, en [filtros.md](filtros.md).
+Cómo funcionan los cuatro modos de fase de `dsp::PhaseEqualizer`: IIR (los filtros de siempre, sin latencia) y tres de fase lineal (Low, Medium y High). Las decisiones y sus alternativas están en la [ADR 0012](../decisiones/0012-modos-de-fase.md); los filtros de cada banda, en [filtros.md](filtros.md).
 
 ## Los cuatro modos
 
 | Modo | Filtro | Coeficientes (≤ 50 kHz) | Bloque | Latencia a 48 kHz | Para qué |
 |---|---|---|---|---|---|
-| **Natural Phase** | IIR (secciones SVF), el `Equalizer` de siempre | — | — | 0 | Mezcla, grabación, tiempo real |
+| **IIR** | IIR (secciones SVF), el `Equalizer` de siempre | — | — | 0 | Mezcla, grabación, tiempo real |
 | **Linear Low** | FIR simétrico | 2048 | 256 | 1280 muestras (26,7 ms) | Fase lineal con poca latencia |
 | **Linear Medium** | FIR simétrico | 8192 | 512 | 4608 muestras (96 ms) | Buses y mastering |
 | **Linear High** | FIR simétrico | 32768 | 1024 | 17408 muestras (362,7 ms) | Mastering y render |
 
-- **Natural** suena exactamente igual que el ecualizador de la 0.1: mismo código, bit a bit (lo comprueba `tests/dsp/phase_equalizer_test.cpp`). Como cualquier IIR, desplaza la fase de forma distinta en cada frecuencia, como un ecualizador analógico.
+- **IIR** suena exactamente igual que el ecualizador de la 0.1: mismo código, bit a bit (lo comprueba `tests/dsp/phase_equalizer_test.cpp`). Como cualquier IIR, desplaza la fase de forma distinta en cada frecuencia, como un ecualizador analógico.
 - **Fase lineal**: todas las frecuencias se retrasan lo mismo (la latencia), así que la forma de onda no se deforma: un transitorio sale entero, solo más tarde. A cambio, hay latencia y un preeco (el FIR es simétrico: lo que suena después del centro también suena antes).
 - **Frecuencias de muestreo altas.** Cada duplicación de la frecuencia de muestreo duplica coeficientes y bloque (hasta ×8 a partir de 400 kHz). Así la resolución en hercios y la latencia en milisegundos no cambian: a 96 kHz, High tiene 65536 coeficientes y 34816 muestras de latencia, los mismos 362,7 ms. Hasta 50 kHz los tamaños son los mismos: a 44,1 kHz la latencia es un 9 % mayor en milisegundos (29 ms en Low) y la resolución en hercios, un 9 % mejor.
 
@@ -96,11 +96,11 @@ La ganancia de una banda dinámica cambia muestra a muestra; un FIR no se puede 
   En los cuatro tipos con ganancia (campana, shelves y tilt) `H(−g) = 1/H(g)` exactamente, también en digital (medido: error < 4·10⁻¹⁴), así que:
 
   - con la dinámica en reposo (`d = 0`), la sección es la unidad: **la banda sigue siendo de fase lineal**;
-  - la magnitud total es `|H(g)| · |H(g+d)| / |H(g)| = |H(g+d)|`: **exactamente la del modo Natural**;
-  - `H(−g)` va antes que `H(g+d)`: la sección que cambia oye la misma señal que en Natural, y sus transitorios son los mismos. Con el orden contrario, al moverse la ganancia aparecían hasta 5 dB más de energía por encima de 8 kHz (medido en el test de modulación rápida); con este, el resultado es el del modo Natural.
+  - la magnitud total es `|H(g)| · |H(g+d)| / |H(g)| = |H(g+d)|`: **exactamente la del modo IIR**;
+  - `H(−g)` va antes que `H(g+d)`: la sección que cambia oye la misma señal que en IIR, y sus transitorios son los mismos. Con el orden contrario, al moverse la ganancia aparecían hasta 5 dB más de energía por encima de 8 kHz (medido en el test de modulación rápida); con este, el resultado es el del modo IIR.
 
   Mientras la dinámica actúa, esa banda añade el desfase de un IIR solo en la medida en que la ganancia se separa de la estática. Las bandas sin dinámica no pasan por el IIR.
-- **Los detectores** escuchan la entrada del ecualizador retrasada la latencia, y el **sidechain** se retrasa igual. La ganancia dinámica es la misma que en Natural, muestra a muestra, solo que llega con la latencia (lo comprueba un test bit a bit).
+- **Los detectores** escuchan la entrada del ecualizador retrasada la latencia, y el **sidechain** se retrasa igual. La ganancia dinámica es la misma que en IIR, muestra a muestra, solo que llega con la latencia (lo comprueba un test bit a bit).
 
 ## Cambios con el audio en marcha
 
@@ -127,7 +127,7 @@ process(): recoge ◄──────── Handoff ◄───────�
 - **El hilo de diseño** mira cada 10 ms si hay algo nuevo (una lectura atómica). En la 0.x hay uno por instancia.
 - **Render sin tiempo real.** El procesador llama a `PhaseDesignThread::flush()` en cada bloque: el FIR de los ajustes de ese bloque se diseña en el momento. El resultado no depende de lo rápido que vaya el render (lo comprueba un test que renderiza dos veces con automatización).
 - **Al preparar el audio** (`prepareToPlay`) también se diseña en el momento: el primer bloque ya suena en el modo pedido y el host conoce la latencia antes de empezar.
-- Los cambios rápidos de modo (de Medium a Natural y vuelta a Medium antes de que el hilo de diseño lo vea, por ejemplo) se resuelven con dos contadores: uno de "época" (modo y frecuencia de muestreo) y otro de "generación" (cualquier cosa que cambie el FIR). Lo que llega para una época o generación antigua se devuelve sin usar.
+- Los cambios rápidos de modo (de Medium a IIR y vuelta a Medium antes de que el hilo de diseño lo vea, por ejemplo) se resuelven con dos contadores: uno de "época" (modo y frecuencia de muestreo) y otro de "generación" (cualquier cosa que cambie el FIR). Lo que llega para una época o generación antigua se devuelve sin usar.
 
 ## Coste
 
@@ -135,17 +135,17 @@ Medido a 48 kHz con bloques de 256 muestras, compilado con optimización, en el 
 
 | Modo | CPU, 1 banda | CPU, 8 bandas (una Mid) | Diseño inicial | Diseño al mover una banda |
 |---|---|---|---|---|
-| Natural | 0,03 % | 0,20 % | — | — |
+| IIR | 0,03 % | 0,20 % | — | — |
 | Linear Low | 0,22 % | 0,30 % | 0,6 ms | 0,3 ms |
 | Linear Medium | 0,30 % | 0,45 % | 2,9 ms | 1,3 ms |
 | Linear High | 0,72 % | 1,0 % | 13 ms | 5,9 ms |
 
-En fase lineal el coste apenas depende del número de bandas: es el de la convolución. El cálculo se concentra en las llamadas en que se completa un bloque de convolución (cada 256, 512 o 1024 muestras). Memoria en High a 48 kHz: el camino de audio ocupa de 1,3 MB (todas las bandas en Stereo) a 2,3 MB (con Mid, Side, Left o Right), y el diseñador de 2,5 a 3 MB más 0,26 MB por banda activa (unos 9 MB con las 24). Medium ocupa la cuarta parte, y Low la dieciseisava. En Natural no se reserva nada de esto.
+En fase lineal el coste apenas depende del número de bandas: es el de la convolución. El cálculo se concentra en las llamadas en que se completa un bloque de convolución (cada 256, 512 o 1024 muestras). Memoria en High a 48 kHz: el camino de audio ocupa de 1,3 MB (todas las bandas en Stereo) a 2,3 MB (con Mid, Side, Left o Right), y el diseñador de 2,5 a 3 MB más 0,26 MB por banda activa (unos 9 MB con las 24). Medium ocupa la cuarta parte, y Low la dieciseisava. En IIR no se reserva nada de esto.
 
 ## Verificación
 
 - `tests/dsp/linear_phase_test.cpp`: tamaños y latencias; matrices de canal frente al IIR; simetría exacta y fase lineal; precisión de la magnitud por tipo y por modo; resolución en graves creciente con el modo; rechazo de los cortes; Mid, Side, Left y mono; caché del diseñador; convolución frente a la convolución directa (con canales mezclados), independencia del tamaño de llamada, fundido entre núcleos, núcleo que no encaja y latencia exacta.
-- `tests/dsp/phase_equalizer_test.cpp`: Natural bit a bit igual que el `Equalizer`; retardo bit a bit sin bandas; respuesta simétrica con la magnitud de las bandas; independencia del tamaño de bloque; bypass; sin chasquidos al mover bandas y al cambiar de modo; lo diseñado para un modo que ya no se pide se descarta; canales; dinámica y sidechain retrasados con la misma ganancia que en Natural; NaN en la entrada; cambio de frecuencia de muestreo; mono.
+- `tests/dsp/phase_equalizer_test.cpp`: IIR bit a bit igual que el `Equalizer`; retardo bit a bit sin bandas; respuesta simétrica con la magnitud de las bandas; independencia del tamaño de bloque; bypass; sin chasquidos al mover bandas y al cambiar de modo; lo diseñado para un modo que ya no se pide se descarta; canales; dinámica y sidechain retrasados con la misma ganancia que en IIR; NaN en la entrada; cambio de frecuencia de muestreo; mono.
 - `tests/dsp/dynamics_test.cpp`: el modo solo dinámica con la parte estática aparte suena como la banda entera, también con modulación rápida.
 - `tests/dsp/handoff_test.cpp` y `tests/core/phase_design_thread_test.cpp`: el intercambio entre hilos, también con dos hilos a la vez (para ejecutarlos con ThreadSanitizer, ver [DEV.md](../../DEV.md)).
 - `tests/plugin/phase_test.cpp`: latencia comunicada al host, cola, render sin tiempo real, bypass y estado guardado.
@@ -158,4 +158,4 @@ Se comprobó que los tests detectan los fallos: quitando el fundido entre núcle
 - **Resolución en graves** según el modo (ver la tabla de precisión). Un notch estrecho no llega a la profundidad del IIR: un notch de Q 10 en 1 kHz baja unos 11 dB en Low, 22 en Medium y 34 en High.
 - **Pasa todo.** En fase lineal un pasa todo no hace nada: solo cambia la fase, y la fase lineal la iguala en todas las frecuencias.
 - **El analizador "pre"** muestra la entrada sin retrasar, y el "post" la salida, que llega con la latencia: en High, el "post" va unos 360 ms por detrás.
-- **Un hilo de diseño por instancia**, aunque esté en Natural (mira cada 10 ms si hay algo que hacer).
+- **Un hilo de diseño por instancia**, aunque esté en IIR (mira cada 10 ms si hay algo que hacer).

@@ -153,8 +153,8 @@ TEST_CASE("Parametros: modo de fase, el ultimo y global")
     CHECK(spec.id == "phase_mode");
     CHECK(spec.kind == ParameterKind::Choice);
     CHECK(spec.choices.size() == 4);
-    CHECK(spec.defaultValue == 0.0f); // Natural: latencia cero, lo que hacian los estados anteriores
-    CHECK(formatValue(spec, 0.0f) == "Natural Phase");
+    CHECK(spec.defaultValue == 0.0f); // IIR: latencia cero, lo que hacian los estados anteriores
+    CHECK(formatValue(spec, 0.0f) == "IIR");
     CHECK(formatValue(spec, 1.0f) == "Linear Low");
     CHECK(formatValue(spec, 2.0f) == "Linear Medium");
     CHECK(formatValue(spec, 3.0f) == "Linear High");

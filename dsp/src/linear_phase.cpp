@@ -61,7 +61,7 @@ LinearPhaseSize linearPhaseSize(PhaseMode mode, double sampleRate) noexcept
     const int factor = factorFor(sampleRate);
     switch (mode)
     {
-    case PhaseMode::Natural:
+    case PhaseMode::Iir:
         return {};
     case PhaseMode::LinearLow:
         return {2048 * factor, 256 * factor};

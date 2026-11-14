@@ -123,7 +123,7 @@ inline constexpr std::array<std::string_view, 2> kSidechainChoices{"Internal", "
 inline constexpr std::array<std::string_view, 5> kChannelChoices{"Stereo", "Left", "Right", "Mid", "Side"};
 
 /// Modos de fase. El índice coincide con dsp::PhaseMode (lo comprueba band_model.cpp).
-inline constexpr std::array<std::string_view, 4> kPhaseModeChoices{"Natural Phase", "Linear Low", "Linear Medium",
+inline constexpr std::array<std::string_view, 4> kPhaseModeChoices{"IIR", "Linear Low", "Linear Medium",
                                                                     "Linear High"};
 
 /// Única fuente de verdad de los parámetros del plugin. El procesador, la

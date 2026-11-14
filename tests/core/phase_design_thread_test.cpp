@@ -64,7 +64,7 @@ TEST_CASE("Hilo de diseno: en manual, solo flush disena")
     std::uint32_t seed = 1u;
     for (int i = 0; i < 20; ++i)
         processBlock(eq, seed);
-    CHECK(eq.activePhaseMode() == dsp::PhaseMode::Natural);
+    CHECK(eq.activePhaseMode() == dsp::PhaseMode::Iir);
 
     designer.flush();
     CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
@@ -101,7 +101,7 @@ TEST_CASE("Hilo de diseno: el hilo propio entrega los cambios de modo y de ajust
     CHECK(!eq.isSettled());
     CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
 
-    eq.setPhaseMode(dsp::PhaseMode::Natural);
+    eq.setPhaseMode(dsp::PhaseMode::Iir);
     CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
     CHECK(eq.latencySamples() == 0);
 }
@@ -116,7 +116,7 @@ TEST_CASE("Hilo de diseno: audio y disenos a la vez, con ajustes cambiando en ca
     core::PhaseDesignThread designer(eq);
 
     std::uint32_t seed = 7u;
-    const dsp::PhaseMode modes[] = {dsp::PhaseMode::LinearLow, dsp::PhaseMode::LinearMedium, dsp::PhaseMode::Natural,
+    const dsp::PhaseMode modes[] = {dsp::PhaseMode::LinearLow, dsp::PhaseMode::LinearMedium, dsp::PhaseMode::Iir,
                                     dsp::PhaseMode::LinearHigh};
     for (int block = 0; block < 1500; ++block)
     {

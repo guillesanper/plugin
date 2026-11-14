@@ -134,7 +134,7 @@ void PhaseEqualizer::prepare(double sampleRate, int numChannels)
     // se puede destruir aquí.
     path_.reset();
     incoming_.reset();
-    activeMode_ = PhaseMode::Natural;
+    activeMode_ = PhaseMode::Iir;
     latency_.store(0, std::memory_order_relaxed);
     configureIir();
     stage_ = Stage::Steady;
@@ -226,7 +226,7 @@ bool PhaseEqualizer::targetReady() const noexcept
 {
     if (isLinearPhase(requestedMode_))
         return incoming_ != nullptr;
-    // A Natural: hay que poder devolver el camino lineal.
+    // A IIR: hay que poder devolver el camino lineal.
     return path_ == nullptr || paths_.freeRetireSlots() >= 1;
 }
 
@@ -234,7 +234,7 @@ void PhaseEqualizer::switchMode() noexcept
 {
     paths_.retire(std::move(path_));
     path_ = std::move(incoming_);
-    activeMode_ = path_ != nullptr ? path_->mode : PhaseMode::Natural;
+    activeMode_ = path_ != nullptr ? path_->mode : PhaseMode::Iir;
     latency_.store(path_ != nullptr ? path_->size.latency() : 0, std::memory_order_relaxed);
     configureIir();
     if (path_ != nullptr)
@@ -323,7 +323,7 @@ void PhaseEqualizer::update() noexcept ESCEQ_NONBLOCKING
 void PhaseEqualizer::beginTransitionIfNeeded() noexcept
 {
     // Avanza de etapa mientras la actual haya terminado: una etapa de
-    // duración 0 (esperar la latencia de Natural, por ejemplo) no ocupa ningún tramo.
+    // duración 0 (esperar la latencia de IIR, por ejemplo) no ocupa ningún tramo.
     for (;;)
     {
         switch (stage_)
@@ -425,7 +425,7 @@ void PhaseEqualizer::process(float* const* channels, int numChannels, int numSam
     fresh_ = false;
     beginTransitionIfNeeded();
 
-    // Lo normal en Natural: el IIR, sin nada más.
+    // Lo normal en IIR: el IIR, sin nada más.
     if (stage_ == Stage::Steady && path_ == nullptr)
     {
         iir_.process(channels, usedChannels, numSamples, sidechain, numSidechainChannels);

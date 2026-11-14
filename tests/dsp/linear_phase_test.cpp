@@ -116,8 +116,8 @@ void convolve(PartitionedConvolver& convolver, const FirKernel& kernel, std::vec
 
 TEST_CASE("Fase lineal: tamanos y latencia de cada modo")
 {
-    CHECK(linearPhaseSize(PhaseMode::Natural, kFs) == LinearPhaseSize{});
-    CHECK(latencySamples(PhaseMode::Natural, kFs) == 0);
+    CHECK(linearPhaseSize(PhaseMode::Iir, kFs) == LinearPhaseSize{});
+    CHECK(latencySamples(PhaseMode::Iir, kFs) == 0);
 
     CHECK(linearPhaseSize(PhaseMode::LinearLow, kFs) == LinearPhaseSize{2048, 256});
     CHECK(linearPhaseSize(PhaseMode::LinearMedium, kFs) == LinearPhaseSize{8192, 512});
@@ -219,11 +219,11 @@ TEST_CASE("Fase lineal: sin bandas que hagan algo el FIR es un retardo puro")
     CHECK(!designer.design(bell, PhaseMode::LinearLow, kFs, 2).identity);
 }
 
-TEST_CASE("Fase lineal: Natural no tiene FIR")
+TEST_CASE("Fase lineal: IIR no tiene FIR")
 {
     LinearPhaseDesigner designer;
     const BandSettings bell[] = {{true, {FilterType::Bell, 1000.0, 3.0, 1.0}}};
-    const auto fir = designer.design(bell, PhaseMode::Natural, kFs, 2);
+    const auto fir = designer.design(bell, PhaseMode::Iir, kFs, 2);
     CHECK(fir.size.firLength == 0);
     CHECK(fir.ll.empty());
 }

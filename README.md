@@ -43,7 +43,7 @@ Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96
 
 | Modo | Qué es | Latencia a 48, 96 o 192 kHz (a 44,1 kHz, un 9 % más) | Para qué |
 |---|---|---|---|
-| **Natural Phase** | Filtros IIR: la fase cambia con la frecuencia, como en un ecualizador analógico | 0 | Mezcla, grabación, tiempo real |
+| **IIR** | Filtros IIR: la fase cambia con la frecuencia, como en un ecualizador analógico | 0 | Mezcla, grabación, tiempo real |
 | **Linear Low** | Fase lineal (FIR de 2048 coeficientes a 48 kHz) | 26,7 ms | Fase lineal con poca latencia; poca resolución en graves |
 | **Linear Medium** | FIR de 8192 coeficientes | 96 ms | Buses y mastering |
 | **Linear High** | FIR de 32768 coeficientes | 362,7 ms | Mastering y render: máxima resolución en graves |

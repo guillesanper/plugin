@@ -119,7 +119,7 @@ float maxStep(const std::vector<float>& signal, std::size_t from = 1)
 
 } // namespace
 
-TEST_CASE("PhaseEqualizer: Natural suena bit a bit como el Equalizer")
+TEST_CASE("PhaseEqualizer: IIR suena bit a bit como el Equalizer")
 {
     const BandSettings bands[] = {
         bell(300.0, 4.0),
@@ -308,12 +308,12 @@ TEST_CASE("PhaseEqualizer: mover una banda en fase lineal cambia el FIR sin chas
 TEST_CASE("PhaseEqualizer: cambiar de modo baja a silencio, cambia la latencia y vuelve sin saltos")
 {
     PhaseEqualizer eq;
-    prepareIn(eq, PhaseMode::Natural, {bell(2000.0, 6.0)});
+    prepareIn(eq, PhaseMode::Iir, {bell(2000.0, 6.0)});
     settle(eq);
     CHECK(eq.latencySamples() == 0);
 
-    const PhaseMode sequence[] = {PhaseMode::LinearLow, PhaseMode::LinearHigh, PhaseMode::Natural,
-                                  PhaseMode::LinearMedium, PhaseMode::Natural};
+    const PhaseMode sequence[] = {PhaseMode::LinearLow, PhaseMode::LinearHigh, PhaseMode::Iir,
+                                  PhaseMode::LinearMedium, PhaseMode::Iir};
     Stereo signal{sine(48000 * 5, 440.0, 0.4), sine(48000 * 5, 440.0, 0.4)};
     const int total = static_cast<int>(signal[0].size());
     int next = 0;
@@ -328,7 +328,7 @@ TEST_CASE("PhaseEqualizer: cambiar de modo baja a silencio, cambia la latencia y
         if (latencies.empty() || latencies.back() != eq.latencySamples())
             latencies.push_back(eq.latencySamples());
     }
-    CHECK(eq.activePhaseMode() == PhaseMode::Natural);
+    CHECK(eq.activePhaseMode() == PhaseMode::Iir);
     CHECK(latencies == std::vector<int>{0, 1280, 17408, 0, 4608, 0});
     // Un seno de 440 Hz a 0,4 con +6 dB en 2 kHz cambia ~0,02 por muestra; un
     // corte sin fundido saltaría hasta 0,4.
@@ -338,11 +338,11 @@ TEST_CASE("PhaseEqualizer: cambiar de modo baja a silencio, cambia la latencia y
 TEST_CASE("PhaseEqualizer: hasta que el modo nuevo esta listo suena el anterior")
 {
     PhaseEqualizer eq;
-    prepareIn(eq, PhaseMode::Natural, {bell(2000.0, 6.0)});
+    prepareIn(eq, PhaseMode::Iir, {bell(2000.0, 6.0)});
     eq.setPhaseMode(PhaseMode::LinearHigh);
     Stereo signal{noise(4096), noise(4096)};
     run(eq, signal, 512); // sin serviceDesigns(): no hay nada diseñado
-    CHECK(eq.activePhaseMode() == PhaseMode::Natural);
+    CHECK(eq.activePhaseMode() == PhaseMode::Iir);
     CHECK(eq.latencySamples() == 0);
     CHECK(!eq.isSettled());
 
@@ -354,7 +354,7 @@ TEST_CASE("PhaseEqualizer: hasta que el modo nuevo esta listo suena el anterior"
 TEST_CASE("PhaseEqualizer: lo disenado para un modo que ya no se pide se descarta")
 {
     PhaseEqualizer eq;
-    prepareIn(eq, PhaseMode::Natural, {bell(2000.0, 6.0)});
+    prepareIn(eq, PhaseMode::Iir, {bell(2000.0, 6.0)});
     eq.setPhaseMode(PhaseMode::LinearLow);
     eq.serviceDesigns(); // diseña Low
     eq.setPhaseMode(PhaseMode::LinearMedium);
@@ -363,7 +363,7 @@ TEST_CASE("PhaseEqualizer: lo disenado para un modo que ya no se pide se descart
     CHECK(eq.latencySamples() == latencySamples(PhaseMode::LinearMedium, kFs));
 
     // Ida y vuelta antes de que el hilo de diseño lo vea: se queda en Medium.
-    eq.setPhaseMode(PhaseMode::Natural);
+    eq.setPhaseMode(PhaseMode::Iir);
     eq.setPhaseMode(PhaseMode::LinearMedium);
     settle(eq);
     CHECK(eq.activePhaseMode() == PhaseMode::LinearMedium);
@@ -428,7 +428,7 @@ TEST_CASE("PhaseEqualizer: el canal de cada banda tambien en fase lineal")
     }
 }
 
-TEST_CASE("PhaseEqualizer: la dinamica en fase lineal actua igual que en Natural, retrasada")
+TEST_CASE("PhaseEqualizer: la dinamica en fase lineal actua igual que en IIR, retrasada")
 {
     // De-esser: la banda dinámica escucha su propia banda. En fase lineal, el
     // detector escucha la entrada retrasada: la ganancia dinámica es la
@@ -437,7 +437,7 @@ TEST_CASE("PhaseEqualizer: la dinamica en fase lineal actua igual que en Natural
     const BandSettings bands[] = {bell(300.0, 3.0), deEsser};
 
     PhaseEqualizer natural, linear;
-    prepareIn(natural, PhaseMode::Natural, {bands[0], bands[1]});
+    prepareIn(natural, PhaseMode::Iir, {bands[0], bands[1]});
     prepareIn(linear, PhaseMode::LinearLow, {bands[0], bands[1]});
     settle(linear);
     const int latency = linear.latencySamples();
@@ -465,7 +465,7 @@ TEST_CASE("PhaseEqualizer: la dinamica en fase lineal actua igual que en Natural
         same = same && gainLinear[i] == gainNatural[i - static_cast<std::size_t>(latency)];
     CHECK(same);
 
-    // Y la magnitud es la de Natural: el cambio dinámico H(g+d)·H(−g) sobre el
+    // Y la magnitud es la de IIR: el cambio dinámico H(g+d)·H(−g) sobre el
     // FIR con la parte estática. Se compara el nivel de las ráfagas.
     auto level = [](const std::vector<float>& x, std::size_t from, std::size_t to)
     {
@@ -502,7 +502,7 @@ TEST_CASE("PhaseEqualizer: el sidechain externo tambien llega retrasado")
 {
     const BandSettings ducker{true, {FilterType::Bell, 1000.0, 0.0, 1.0}, {true, -30.0, -12.0, 0.0, 1.0, 50.0, true}};
     PhaseEqualizer natural, linear;
-    prepareIn(natural, PhaseMode::Natural, {ducker});
+    prepareIn(natural, PhaseMode::Iir, {ducker});
     prepareIn(linear, PhaseMode::LinearMedium, {ducker});
     settle(linear);
     const int latency = linear.latencySamples();
@@ -523,7 +523,7 @@ TEST_CASE("PhaseEqualizer: el sidechain externo tambien llega retrasado")
         gainNatural.push_back(natural.dynamicGainDb(0));
         gainLinear.push_back(linear.dynamicGainDb(0));
     }
-    // Natural reacciona en cuanto llega el sidechain; la fase lineal, `latency` después.
+    // IIR reacciona en cuanto llega el sidechain; la fase lineal, `latency` después.
     CHECK(gainNatural[61] < -6.0);
     CHECK(gainLinear[61] == 0.0);
     const auto shifted = static_cast<std::size_t>(61 + latency / 100 + 1);
@@ -549,7 +549,7 @@ TEST_CASE("PhaseEqualizer: preparar a otra frecuencia de muestreo redisena el mo
     prepareIn(eq, PhaseMode::LinearHigh, {bell(1000.0, 6.0)});
     CHECK(eq.latencySamples() == 17408);
     eq.prepare(96000.0);
-    CHECK(eq.activePhaseMode() == PhaseMode::Natural); // hasta que llegue el diseño nuevo
+    CHECK(eq.activePhaseMode() == PhaseMode::Iir); // hasta que llegue el diseño nuevo
     eq.serviceDesigns();
     eq.update();
     CHECK(eq.activePhaseMode() == PhaseMode::LinearHigh);

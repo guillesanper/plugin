@@ -325,7 +325,7 @@ TEST_CASE("Estado v2: preferencias absurdas toman el valor por defecto")
     CHECK(restored->parameters == defaultValues());
 }
 
-TEST_CASE("Estado: los estados anteriores al modo de fase abren en Natural")
+TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
 {
     for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt"})
     {

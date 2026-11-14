@@ -15,7 +15,7 @@ Estado: **fases 0 a 3 completadas; fase 4 lista para publicar.** Todo lo de la 0
 - Analizador de espectro en tiempo real (pre, post y sidechain).
 - Procesado por banda en estéreo, L, R, Mid o Side.
 - Sidechain externo.
-- Modos de fase: Natural (latencia cero) y fase lineal en tres resoluciones, Low, Medium y High (hechos en la fase 5, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)).
+- Modos de fase: IIR (latencia cero) y fase lineal en tres resoluciones, Low, Medium y High (hechos en la fase 5, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)).
 
 ### Qué no es
 
@@ -174,7 +174,7 @@ FFT de 4096 a 8192 puntos, ventana de Hann, solapamiento del 75 %, inclinación 
 
 FIR generado a partir de la respuesta en magnitud y aplicado por convolución particionada con FFT. Latencia según resolución (baja, media, alta). Combinarlo con bandas dinámicas es el punto difícil: una vía es aplicar la parte dinámica como diferencia sobre el FIR estático. Hay que investigarlo antes de comprometerse.
 
-**Hecho.** Cuatro modos: Natural Phase (el IIR) y Linear Low, Medium y High (FIR de 2048, 8192 y 32768 coeficientes a 48 kHz, con 26,7, 96 y 362,7 ms de latencia). La dinámica se aplica como `H(−g)·H(g+d)` sobre el FIR con la parte estática, que da exactamente la magnitud del modo Natural y es de fase lineal mientras la dinámica no actúa. Decisiones en la [ADR 0012](docs/decisiones/0012-modos-de-fase.md); funcionamiento, medidas y límites en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md).
+**Hecho.** Cuatro modos: IIR (latencia cero) y Linear Low, Medium y High (FIR de 2048, 8192 y 32768 coeficientes a 48 kHz, con 26,7, 96 y 362,7 ms de latencia). La dinámica se aplica como `H(−g)·H(g+d)` sobre el FIR con la parte estática, que da exactamente la magnitud del modo IIR y es de fase lineal mientras la dinámica no actúa. Decisiones en la [ADR 0012](docs/decisiones/0012-modos-de-fase.md); funcionamiento, medidas y límites en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md).
 
 ### 4.5 Reglas de tiempo real
 

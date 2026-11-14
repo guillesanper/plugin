@@ -99,7 +99,7 @@ void bellAt1k(PluginProcessor& p, float gainDb)
 
 } // namespace
 
-TEST_CASE("Fase: por defecto Natural, sin latencia ni cola")
+TEST_CASE("Fase: por defecto IIR, sin latencia ni cola")
 {
     auto p = makeProcessor();
     prepare(*p);
@@ -151,7 +151,7 @@ TEST_CASE("Fase: cambiar de modo con el audio en marcha avisa al host desde el h
     REQUIRE(p->getLatencySamples() == 0);
 
     drag(*p, core::kPhaseMode, {1.0f});
-    // El hilo de diseño prepara el modo; el audio sigue en Natural mientras.
+    // El hilo de diseño prepara el modo; el audio sigue en IIR mientras.
     const auto input = noise(kBlock * 4);
     for (int i = 0; i < 400 && p->engineLatencySamples() == 0; ++i)
     {

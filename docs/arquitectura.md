@@ -64,7 +64,7 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | `equalizer.h` | Las 24 bandas en serie (IIR), con suavizado de parámetros, fundidos al cambiar de tipo o activar, bypass con fundido, dinámica por banda con sidechain opcional, y canal por banda (Stereo, Left, Right, Mid, Side). En modo "solo dinámica", solo el cambio que añade la dinámica (para la fase lineal) | Audio |
 | `linear_phase.h` | Modos de fase (`PhaseMode`), tamaños y latencias, y diseño de FIR de fase lineal a partir de las bandas (`LinearPhaseDesigner`). Ver [docs/dsp/fase-lineal.md](dsp/fase-lineal.md) | Diseño: no tiempo real |
 | `partitioned_convolver.h` | Convolución estéreo particionada por FFT (`FirKernel`, `PartitionedConvolver`), con fundido entre núcleos | Audio (el núcleo se construye fuera) |
-| `phase_equalizer.h` | El ecualizador completo con sus cuatro modos de fase: Natural (el `Equalizer`) o FIR de fase lineal más la dinámica en IIR; bypass con latencia constante y cambio de modo con fundido. `serviceDesigns()` es la parte del hilo de diseño | Audio, y un hilo de diseño |
+| `phase_equalizer.h` | El ecualizador completo con sus cuatro modos de fase: IIR (el `Equalizer`) o FIR de fase lineal más la dinámica en IIR; bypass con latencia constante y cambio de modo con fundido. `serviceDesigns()` es la parte del hilo de diseño | Audio, y un hilo de diseño |
 | `handoff.h` | `TripleBuffer` (el último valor, sin bloqueos) y `Handoff` (entregar objetos al hilo de audio y recogerlos para destruirlos fuera de él) | Uno de audio y uno que no es de tiempo real |
 | `spsc_fifo.h` | Cola sin bloqueo de un productor y un consumidor | Audio escribe, interfaz lee |
 | `fft.h` | FFT radix-2 en `float` y `double`, directa e inversa | Cualquiera |
@@ -178,14 +178,14 @@ Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y s
 ## Flujo de audio actual (fase 5)
 
 ```
-                         ┌─ Natural: dsp::Equalizer (24 bandas IIR en serie) ──────────────┐
+                         ┌─ IIR: dsp::Equalizer (24 bandas IIR en serie) ──────────────┐
 entrada ─► cola "pre" ─► ┤                                                                 ├─► dsp::GainRamp (salida) ─► cola "post" + cola de la sesión + picos ─► salida
                          └─ Linear: FIR (partes estáticas) ─► dsp::Equalizer (solo dinámica) ┘
                                                                    ▲ detectores (en Linear, retrasados como el audio)
 sidechain (bus opcional) ──────────────────────────────────────────┘
 ```
 
-Cada bloque, el procesador lee los 339 parámetros, los traduce con `core::bandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de diseño. En Natural, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en Natural; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
+Cada bloque, el procesador lee los 339 parámetros, los traduce con `core::bandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de diseño. En IIR, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en IIR; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
 
 El búfer que entrega el host contiene los canales de todos los buses: el procesador toma el bus principal con `getBusBuffer` y el sidechain como solo lectura.
 
