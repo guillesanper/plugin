@@ -224,6 +224,17 @@ cmake --build build-asan --parallel --target esceq_tests esceq_plugin_tests
 ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-asan --output-on-failure
 ```
 
+### ThreadSanitizer
+
+Detecta carreras de datos entre hilos. El CI no lo ejecuta; conviene pasarlo si se toca algo que comparten el hilo de audio, el de mensajes o un hilo del host (estado, historial, colas):
+
+```
+cmake -S . -B build-tsan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DESCEQ_BUILD_CLAP=OFF \
+  "-DCMAKE_CXX_FLAGS=-fsanitize=thread -fno-omit-frame-pointer" "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=thread"
+cmake --build build-tsan --parallel --target esceq_plugin_tests
+./build-tsan/tests/plugin/esceq_plugin_tests_artefacts/RelWithDebInfo/esceq_plugin_tests
+```
+
 ## Problemas frecuentes
 
 | Síntoma | Causa y solución |

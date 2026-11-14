@@ -5,7 +5,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <atomic>
 #include <string>
+#include <thread>
 
 using namespace esceq;
 using namespace esceq::test;
@@ -126,4 +128,70 @@ TEST_CASE("Estado del plugin: preferencias absurdas se sanean al guardarlas")
     ui.windowHeight = 700;
     p->setUiSettings(ui);
     CHECK(p->uiSettings() == core::UiSettings{});
+}
+
+// VST3 y CLAP exigen que el host cargue el estado desde el hilo de mensajes,
+// pero AU no dice nada y un host puede saltárselo. Este test lo hace a
+// propósito: un hilo "host" carga y guarda estados sin parar mientras el hilo
+// de mensajes hace gestos, deshacer y rehacer, y un hilo de audio procesa.
+// Con ThreadSanitizer no aparece ninguna carrera de datos; sin él, comprueba
+// que nada se bloquea ni se rompe y que el historial queda bien después.
+TEST_CASE("Estado del plugin: cargar estados desde otro hilo no se cruza con deshacer ni con el audio")
+{
+    auto p = makeProcessor();
+    const auto gain = core::bandParameter(0, core::BandParam::Gain);
+    drag(*p, gain, {3.0f});
+    settle();
+    const std::string first = save(*p);
+    drag(*p, gain, {-6.0f});
+    settle();
+    const std::string second = save(*p);
+
+    p->setPlayConfigDetails(2, 2, 48000.0, 256);
+    p->prepareToPlay(48000.0, 256);
+
+    std::atomic<bool> stop{false};
+    std::thread audio([&] {
+        juce::AudioBuffer<float> buffer(4, 256); // principal y sidechain
+        juce::MidiBuffer midi;
+        juce::Random random(1);
+        while (!stop.load())
+        {
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                for (int i = 0; i < buffer.getNumSamples(); ++i)
+                    buffer.setSample(ch, i, random.nextFloat() - 0.5f);
+            p->processBlock(buffer, midi);
+        }
+    });
+    std::thread host([&] {
+        for (int i = 0; !stop.load(); ++i)
+        {
+            load(*p, (i % 2 == 0) ? first : second);
+            (void) save(*p);
+        }
+    });
+
+    const auto end = juce::Time::getMillisecondCounter() + 1000;
+    for (int n = 0; juce::Time::getMillisecondCounter() < end; ++n)
+    {
+        drag(*p, core::bandParameter(1 + n % 5, core::BandParam::Gain), {static_cast<float>(n % 7)});
+        pump(5);
+        if (n % 3 == 0)
+            p->history().undo();
+        if (n % 5 == 0)
+            p->history().redo();
+        if (n % 13 == 0)
+            settle(); // deja que el historial registre alguna acción
+    }
+    stop.store(true);
+    host.join();
+    audio.join();
+
+    // Después, una carga normal deja el estado y el historial como siempre.
+    load(*p, first);
+    settle();
+    CHECK(valueOf(*p, gain) == 3.0f);
+    CHECK_FALSE(p->history().canUndo());
+    CHECK_FALSE(p->history().canRedo());
+    p->releaseResources();
 }

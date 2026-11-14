@@ -33,7 +33,10 @@ class PluginProcessor;
 /// descuadra nada. Si la interfaz desaparece con un gesto abierto, llama a
 /// abandonOpenGestures() para que el historial no se quede esperándolo.
 ///
-/// Las funciones públicas se llaman desde el hilo de mensajes.
+/// Las funciones públicas se llaman desde el hilo de mensajes. La excepción
+/// es reset(): llega desde setStateInformation, y si el host carga el estado
+/// desde otro hilo (VST3 y CLAP no lo permiten; AU no lo prohíbe) no hay
+/// carreras de datos, pero un deshacer simultáneo puede quedar a medias.
 class EditHistory final : private juce::AudioProcessorParameter::Listener,
                           private juce::AsyncUpdater,
                           private juce::Timer

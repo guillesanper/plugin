@@ -145,6 +145,8 @@ Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignor
 | Audio | `processBlock` | No asigna memoria, no bloquea, no hace E/S |
 | Mensajes / interfaz | Editor (refresco a 30 Hz), analizador, carga y guardado de estado, historial de deshacer, presets (lectura y escritura de archivos) | Ninguna especial |
 
+**Carga y guardado del estado.** VST3 (`IComponent::setState`) y CLAP (`state.load`) exigen que el host llame a `setStateInformation` desde el hilo de mensajes, y el envoltorio VST3 de JUCE lo comprueba con una aserción en depuración; AU no dice nada. Si algún host lo hiciera desde otro hilo, no hay carreras de datos: los parámetros son atómicos, las preferencias tienen su cerrojo, el historial (`EditHistory`) protege lo suyo con otro, y en JUCE 9 `Timer::stopTimer` se puede llamar desde cualquier hilo (lo dice su documentación) y `AsyncUpdater::cancelPendingUpdate` solo pone a cero un atómico. Un test de `tests/plugin/state_test.cpp` carga estados desde un hilo mientras el de mensajes deshace y el de audio procesa; ejecutado con ThreadSanitizer no da ningún aviso (el CI no lo ejecuta así; cómo hacerlo, en [DEV.md](../DEV.md)). Lo único que no se garantiza en ese caso es el orden: una carga simultánea a un deshacer puede dejar parámetros de los dos. `getStateInformation` solo lee, y se puede llamar desde cualquier hilo.
+
 Comunicación:
 
 - **Interfaz → audio:** solo mediante parámetros del host. El hilo de audio lee sus valores atómicos una vez por bloque. Los gestos de la curva (arrastrar, rueda, doble clic) van envueltos en `beginChangeGesture`/`endChangeGesture` para que el host los registre como una sola acción de deshacer y de automatización.
@@ -172,7 +174,7 @@ El búfer que entrega el host contiene los canales de todos los buses: el proces
 | Formato | Plataformas | Lo genera | Lo valida el CI |
 |---|---|---|---|
 | VST3 | Windows, macOS, Linux | JUCE | pluginval, nivel 10 |
-| AU | macOS | JUCE | — |
+| AU | macOS | JUCE | auval |
 | CLAP | Windows, macOS, Linux | clap-juce-extensions | clap-validator |
 | Standalone | Todas | JUCE | — (para depurar; no se distribuye) |
 
