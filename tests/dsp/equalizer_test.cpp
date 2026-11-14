@@ -331,3 +331,37 @@ TEST_CASE("Ecualizador: ajustes no finitos se sanean")
         CHECK(std::any_of(signal.begin(), signal.end(), [](float x) { return x != 0.0f; }));
     }
 }
+
+TEST_CASE("Ecualizador: dos cambios estructurales seguidos no producen saltos")
+{
+    // Se activa un corte de graves y, antes de que acabe su fundido de 10 ms,
+    // cambia a corte de agudos. Antes, el segundo cambio descartaba de golpe
+    // el filtro que se estaba desvaneciendo.
+    for (const int gap : {1, 48, 240, 470})
+    {
+        Equalizer eq;
+        eq.prepare(kFs);
+        BandSettings lowCut;
+        lowCut.enabled = true;
+        lowCut.filter = {FilterType::LowCut, 2000.0, 0.0, kButterworthQ, 48};
+        BandSettings highCut = lowCut;
+        highCut.filter.type = FilterType::HighCut;
+
+        const auto signal = sine(4800, 300.0);
+        std::vector<float> out(signal.size());
+        for (std::size_t i = 0; i < signal.size(); ++i)
+        {
+            if (i == 1000)
+                eq.setBand(0, lowCut);
+            if (i == 1000 + static_cast<std::size_t>(gap))
+                eq.setBand(0, highCut);
+            float sample = signal[i];
+            float* channel = &sample;
+            eq.process(&channel, 1, 1);
+            out[i] = sample;
+        }
+        const float cleanStep = maxStep(signal);
+        INFO("segundo cambio " << gap << " muestras despues");
+        CHECK(maxStep(out) <= 1.05f * cleanStep);
+    }
+}

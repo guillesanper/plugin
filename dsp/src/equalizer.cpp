@@ -113,6 +113,23 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept ESCEQ_
     if (!isStructuralChange(band.current, next))
         return; // frecuencia, ganancia, Q y dinámica: los suaviza smoothBand()
 
+    // Con un fundido en curso, empezar otro descartaría de golpe el filtro
+    // que se está desvaneciendo: se oiría un salto. El cambio espera.
+    if (band.fadeRemaining > 0)
+    {
+        band.structuralPending = true;
+        return;
+    }
+    beginStructuralChange(band);
+}
+
+void Equalizer::beginStructuralChange(Band& band) noexcept
+{
+    band.structuralPending = false;
+    const BandSettings& next = band.target;
+    if (!isStructuralChange(band.current, next))
+        return; // lo que esperaba se ha deshecho: lo que quede, lo suaviza smoothBand()
+
     const bool wasEnabled = band.current.enabled;
     const bool channelChanged = band.current.channel != next.channel;
     band.previous = band.active; // conserva su memoria para el fundido
@@ -173,6 +190,7 @@ void Equalizer::snapBand(Band& band) noexcept
 {
     band.current = band.target;
     band.fadeRemaining = 0;
+    band.structuralPending = false;
     band.active.reset();
     band.previous.reset();
     band.detector.reset();
@@ -283,7 +301,11 @@ void Equalizer::processChunk(float* const* channels, int numChannels, int offset
 {
     if (chunkPhase_ == 0)
         for (auto& band : bands_)
+        {
+            if (band.structuralPending && band.fadeRemaining == 0)
+                beginStructuralChange(band);
             smoothBand(band);
+        }
 
     const float wetTarget = bypassed_ ? 0.0f : 1.0f;
     if (wet_ <= 0.0f && wetTarget <= 0.0f)
@@ -580,7 +602,8 @@ void Equalizer::processRouted(BandFilter& filter, ChannelMode mode, float* const
 
 void Equalizer::smoothBand(Band& band) noexcept
 {
-    if (!band.current.enabled || !band.target.enabled)
+    // Con un cambio estructural esperando, la banda sigue sonando como está.
+    if (band.structuralPending || !band.current.enabled || !band.target.enabled)
         return;
 
     FilterParams& now = band.current.filter;

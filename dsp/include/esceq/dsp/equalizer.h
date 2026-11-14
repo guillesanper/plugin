@@ -45,6 +45,7 @@ struct BandSettings
 ///  - Activar o desactivar una banda, o cambiar su tipo o su pendiente, hace
 ///    un fundido de kCrossfadeSeconds entre el filtro anterior y el nuevo.
 ///  - Cambiar el canal de una banda (ChannelMode) hace el mismo fundido.
+///  - Un cambio de esos que llega durante un fundido espera a que termine.
 ///  - El bypass hace un fundido entre la señal seca y la procesada.
 ///  - Umbral, rango y rodilla de la dinámica se suavizan con la misma
 ///    constante de tiempo, pero muestra a muestra; activar o desactivar la
@@ -127,6 +128,9 @@ private:
         BandFilter previous;    ///< Configuración anterior durante un fundido.
         ChannelMode previousChannel = ChannelMode::Stereo; ///< Canal de `previous`.
         int fadeRemaining = 0;
+        /// Hay un cambio estructural en `target` esperando a que acabe el
+        /// fundido en curso: empezar otro a medias haría un salto.
+        bool structuralPending = false;
 
         // Dinámica
         FilterParams designed{};  ///< Parámetros efectivos (con la ganancia dinámica) del diseño activo.
@@ -162,6 +166,8 @@ private:
     static void updateKneeStart(Band& band) noexcept;
     void applyDesign(Band& band, bool force = false) noexcept;
     void smoothBand(Band& band) noexcept;
+    /// Empieza el fundido hacia los ajustes de `target` (activar, tipo, pendiente, canal).
+    void beginStructuralChange(Band& band) noexcept;
     void snapBand(Band& band) noexcept;
     static bool isDynamic(const Band& band) noexcept;
 

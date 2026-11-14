@@ -51,7 +51,7 @@ No todos los parámetros pueden cambiar de forma continua.
 - Si la banda estaba desactivada, el filtro nuevo empieza con la memoria a cero. Si cambia de tipo, conserva la memoria del anterior: está más cerca del régimen permanente que una memoria a cero.
 - Una banda desactivada se representa como un diseño sin secciones (identidad), así que activar y desactivar son fundidos entre la señal sin tocar y la filtrada.
 - Si cambia el canal, el fundido es entre la banda en el canal antiguo y en el nuevo, y el filtro nuevo empieza con la memoria a cero: va a oír otra señal.
-- Si llega otro cambio estructural durante un fundido, el fundido se reinicia desde el filtro activo en ese momento.
+- Si llega otro cambio estructural durante un fundido, espera a que este termine (como mucho 10 ms y un tramo de 32 muestras) y entonces empieza el suyo. Reiniciar el fundido a medias descartaría de golpe el filtro que se está desvaneciendo, y se oiría un salto. Mientras espera, la banda sigue sonando como está; si el cambio se deshace antes de empezar, no pasa nada.
 
 ### Bypass
 
