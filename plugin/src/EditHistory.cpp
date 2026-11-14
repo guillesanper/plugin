@@ -33,18 +33,38 @@ bool EditHistory::canRedo() const
     return history_.canRedo();
 }
 
-void EditHistory::parameterGestureChanged(int, bool gestureIsStarting)
+void EditHistory::parameterGestureChanged(int parameterIndex, bool gestureIsStarting)
 {
-    if (gestureIsStarting)
-    {
-        ++activeGestures_;
+    // Los gestos de deshacer y rehacer no son acciones del usuario.
+    if (applying_.load())
         return;
-    }
-    if (--activeGestures_ <= 0)
+    if (parameterIndex < 0 || parameterIndex >= static_cast<int>(core::kNumParameters))
+        return;
+
+    bool allClosed = false;
     {
-        activeGestures_ = 0;
-        triggerAsyncUpdate();
+        const juce::ScopedLock lock(lock_);
+        bool& open = openGestures_[static_cast<std::size_t>(parameterIndex)];
+        if (gestureIsStarting == open)
+            return; // un principio repetido o un final sin principio no cambian nada
+        open = gestureIsStarting;
+        numOpenGestures_ += gestureIsStarting ? 1 : -1;
+        allClosed = numOpenGestures_ == 0;
     }
+    if (allClosed)
+        triggerAsyncUpdate();
+}
+
+void EditHistory::abandonOpenGestures()
+{
+    {
+        const juce::ScopedLock lock(lock_);
+        if (numOpenGestures_ == 0)
+            return;
+        openGestures_.fill(false);
+        numOpenGestures_ = 0;
+    }
+    triggerAsyncUpdate();
 }
 
 void EditHistory::handleAsyncUpdate()
@@ -57,9 +77,9 @@ void EditHistory::handleAsyncUpdate()
 void EditHistory::timerCallback()
 {
     stopTimer();
-    if (activeGestures_.load() > 0)
-        return; // hay un gesto en curso: se registrará cuando termine
     const juce::ScopedLock lock(lock_);
+    if (numOpenGestures_ > 0)
+        return; // hay un gesto en curso: se registrará cuando termine
     history_.commit(processor_.currentValues());
 }
 
@@ -81,6 +101,13 @@ void EditHistory::commitNow()
     history_.commit(processor_.currentValues());
 }
 
+void EditHistory::apply(const core::ParameterValues& values)
+{
+    applying_.store(true);
+    processor_.applyValues(values);
+    applying_.store(false);
+}
+
 void EditHistory::undo()
 {
     flushPending();
@@ -89,11 +116,8 @@ void EditHistory::undo()
         const juce::ScopedLock lock(lock_);
         values = history_.undo();
     }
-    if (!values)
-        return;
-    // Los gestos que abre applyValues() no crean una acción nueva: cuando se
-    // registren, el estado será el mismo que ya tiene el historial.
-    processor_.applyValues(*values);
+    if (values)
+        apply(*values);
 }
 
 void EditHistory::redo()
@@ -104,19 +128,17 @@ void EditHistory::redo()
         const juce::ScopedLock lock(lock_);
         values = history_.redo();
     }
-    if (!values)
-        return;
-    // Los gestos que abre applyValues() no crean una acción nueva: cuando se
-    // registren, el estado será el mismo que ya tiene el historial.
-    processor_.applyValues(*values);
+    if (values)
+        apply(*values);
 }
 
 void EditHistory::reset()
 {
     cancelPendingUpdate();
     stopTimer();
-    activeGestures_ = 0;
     const juce::ScopedLock lock(lock_);
+    openGestures_.fill(false);
+    numOpenGestures_ = 0;
     history_.reset(processor_.currentValues());
 }
 

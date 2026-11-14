@@ -167,3 +167,72 @@ TEST_CASE("Deshacer: cargar un estado desde el host borra el historial")
     CHECK_FALSE(p->history().canRedo());
     CHECK(valueOf(*p, kGain) == 3.0f);
 }
+
+TEST_CASE("Deshacer: la automatizacion durante un deshacer no crea acciones ni borra el rehacer")
+{
+    auto p = makeProcessor();
+    drag(*p, core::bandParameter(1, core::BandParam::Gain), {6.0f});
+    settle();
+    drag(*p, core::bandParameter(2, core::BandParam::Gain), {-3.0f});
+    settle();
+    drag(*p, core::bandParameter(3, core::BandParam::Gain), {2.0f});
+    settle();
+
+    // Tres pulsaciones de deshacer mientras el host sigue moviendo la salida.
+    float automated = 0.0f;
+    for (int i = 0; i < 3; ++i)
+    {
+        p->history().undo();
+        auto& output = p->parameter(core::kOutputGain);
+        output.setValueNotifyingHost(output.convertTo0to1(automated += 0.5f));
+        settle();
+    }
+    CHECK(valueOf(*p, core::bandParameter(1, core::BandParam::Gain)) == 0.0f);
+    CHECK(valueOf(*p, core::bandParameter(2, core::BandParam::Gain)) == 0.0f);
+    CHECK(valueOf(*p, core::bandParameter(3, core::BandParam::Gain)) == 0.0f);
+    REQUIRE(p->history().canRedo());
+
+    p->history().redo();
+    CHECK(valueOf(*p, core::bandParameter(1, core::BandParam::Gain)) == 6.0f);
+}
+
+TEST_CASE("Deshacer: un gesto abandonado no bloquea el historial")
+{
+    auto p = makeProcessor();
+    // La interfaz se cierra en mitad de un arrastre: el gesto no se cierra.
+    auto& stuck = p->parameter(core::bandParameter(0, core::BandParam::Gain));
+    stuck.beginChangeGesture();
+    stuck.setValueNotifyingHost(stuck.convertTo0to1(4.0f));
+    p->history().abandonOpenGestures();
+    settle();
+    REQUIRE(p->history().canUndo());
+
+    drag(*p, core::bandParameter(1, core::BandParam::Gain), {6.0f});
+    settle();
+    p->history().undo();
+    CHECK(valueOf(*p, core::bandParameter(1, core::BandParam::Gain)) == 0.0f);
+    CHECK(valueOf(*p, core::bandParameter(0, core::BandParam::Gain)) == 4.0f);
+}
+
+TEST_CASE("Deshacer: un final de gesto sin principio no descuadra la agrupacion")
+{
+    auto p = makeProcessor();
+    p->parameter(core::bandParameter(5, core::BandParam::Q)).endChangeGesture(); // sin principio
+
+    // Un arrastre de dos parámetros sigue siendo una sola acción.
+    auto& freq = p->parameter(core::bandParameter(0, core::BandParam::Frequency));
+    auto& gain = p->parameter(core::bandParameter(0, core::BandParam::Gain));
+    freq.beginChangeGesture();
+    gain.beginChangeGesture();
+    freq.setValueNotifyingHost(freq.convertTo0to1(500.0f));
+    gain.setValueNotifyingHost(gain.convertTo0to1(3.0f));
+    freq.endChangeGesture();
+    settle(); // aún queda abierto el de la ganancia: no se registra nada
+    CHECK_FALSE(p->history().canUndo());
+    gain.setValueNotifyingHost(gain.convertTo0to1(5.0f));
+    gain.endChangeGesture();
+    settle();
+    REQUIRE(p->history().canUndo());
+    p->history().undo();
+    CHECK_FALSE(p->history().canUndo());
+}

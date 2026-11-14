@@ -156,6 +156,9 @@ bool EqEditor::keyPressed(const juce::KeyPress& key)
 EqEditor::~EqEditor()
 {
     stopTimer();
+    // Los controles cierran sus gestos al destruirse; esto es la red de
+    // seguridad para que el historial nunca se quede esperando uno.
+    processor_.history().abandonOpenGestures();
     setLookAndFeel(nullptr);
 }
 

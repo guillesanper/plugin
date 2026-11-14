@@ -69,7 +69,13 @@ ParamControl::ParamControl(Style style, const juce::String& label)
     setRepaintsOnMouseActivity(false);
 }
 
-ParamControl::~ParamControl() = default;
+ParamControl::~ParamControl()
+{
+    // Si la ventana se cierra en mitad de un arrastre, el host y el historial
+    // de deshacer deben saber que el gesto ha terminado.
+    if (dragging_ && moved_ && attachment_ != nullptr)
+        attachment_->endGesture();
+}
 
 void ParamControl::attach(juce::RangedAudioParameter& parameter, const core::ParameterSpec& spec)
 {

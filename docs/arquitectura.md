@@ -134,7 +134,7 @@ Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignor
 
 ## Deshacer, rehacer y presets
 
-- `core::UndoHistory` guarda instantáneas de todos los parámetros. `plugin/src/EditHistory` decide cuándo hay una acción nueva: al cerrarse el último gesto abierto de la interfaz, tras 300 ms sin más gestos. Un arrastre, una banda nueva o una ráfaga de rueda son una acción. La automatización del host no crea acciones.
+- `core::UndoHistory` guarda instantáneas de todos los parámetros. `plugin/src/EditHistory` decide cuándo hay una acción nueva: al cerrarse el último gesto abierto de la interfaz, tras 300 ms sin más gestos. Un arrastre, una banda nueva o una ráfaga de rueda son una acción. La automatización del host no crea acciones. Los gestos se cuentan por parámetro; los que abre el propio deshacer no cuentan, y si la ventana se cierra con un gesto abierto, los controles lo cierran y el editor avisa al historial (`abandonOpenGestures`).
 - Cargar un proyecto borra el historial; cargar un preset es una acción más.
 - `plugin/src/PresetManager` lista los presets de fábrica (`core::factoryPresets()`) y los de usuario (archivos `.esceq`), y los carga con `PluginProcessor::applyValues`, que avisa al host de cada parámetro que cambia.
 

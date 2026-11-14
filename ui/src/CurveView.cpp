@@ -68,7 +68,16 @@ CurveView::CurveView(PluginProcessor& processor)
                 "Ctrl or Cmd with left and right change its frequency, Delete removes it.");
 }
 
-CurveView::~CurveView() = default;
+CurveView::~CurveView()
+{
+    // Si la ventana se cierra en mitad de un arrastre, el gesto se cierra aquí.
+    if (dragging_ >= 0)
+    {
+        endGesture(dragging_, core::BandParam::Frequency);
+        if (draggingGain_)
+            endGesture(dragging_, core::BandParam::Gain);
+    }
+}
 
 void CurveView::setSelectedBand(int band)
 {
