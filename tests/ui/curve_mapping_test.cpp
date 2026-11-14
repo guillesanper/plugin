@@ -7,6 +7,7 @@
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
 #include <array>
+#include <cmath>
 
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
@@ -274,4 +275,33 @@ TEST_CASE("Vista: una banda nueva solo cambia lo que hace falta")
     const auto changes = newBandChanges(values, 0, 1000.0, 0.0); // todo ya está por defecto
     REQUIRE(changes.size() == 1);
     CHECK(changes[0] == ParameterChange{core::bandParameter(0, core::BandParam::Enabled), 1.0f});
+}
+
+TEST_CASE("Vista: las flechas eligen la banda activa siguiente o anterior, dando la vuelta")
+{
+    auto values = core::defaultValues();
+    CHECK_FALSE(stepSelectedBand(values, -1, 1).has_value()); // ninguna activa
+
+    for (const int band : {2, 7, 20})
+        values[core::bandParameter(band, core::BandParam::Enabled)] = 1.0f;
+
+    CHECK(stepSelectedBand(values, -1, 1) == 2);   // sin elegir: la primera
+    CHECK(stepSelectedBand(values, -1, -1) == 20); // sin elegir: la última
+    CHECK(stepSelectedBand(values, 2, 1) == 7);
+    CHECK(stepSelectedBand(values, 7, -1) == 2);
+    CHECK(stepSelectedBand(values, 20, 1) == 2);  // da la vuelta
+    CHECK(stepSelectedBand(values, 2, -1) == 20);
+    CHECK(stepSelectedBand(values, 5, 1) == 7);   // desde una apagada
+    CHECK(stepSelectedBand(values, 5, -1) == 2);
+
+    values[core::bandParameter(7, core::BandParam::Enabled)] = 0.0f;
+    values[core::bandParameter(20, core::BandParam::Enabled)] = 0.0f;
+    CHECK(stepSelectedBand(values, 2, 1) == 2); // la única activa
+}
+
+TEST_CASE("Vista: la rueda multiplica la Q por 2^1,5 por paso")
+{
+    CHECK_THAT(wheelQ(1.0, 1.0), WithinRel(std::pow(2.0, 1.5), 1e-12));
+    CHECK_THAT(wheelQ(2.0, -1.0), WithinRel(2.0 / std::pow(2.0, 1.5), 1e-12));
+    CHECK(wheelQ(0.7, 0.0) == 0.7);
 }

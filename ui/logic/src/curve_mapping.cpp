@@ -220,4 +220,24 @@ std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values,
     return changes;
 }
 
+std::optional<int> stepSelectedBand(const core::ParameterValues& values, int current, int step) noexcept
+{
+    const int direction = step >= 0 ? 1 : -1;
+    // Sin banda elegida se empieza desde fuera de la lista: -1 hacia la
+    // derecha, kNumBands hacia la izquierda.
+    int band = current >= 0 && current < core::kNumBands ? current : (direction > 0 ? -1 : core::kNumBands);
+    for (int i = 0; i < core::kNumBands; ++i)
+    {
+        band = (band + direction + core::kNumBands) % core::kNumBands;
+        if (values[core::bandParameter(band, core::BandParam::Enabled)] >= 0.5f)
+            return band;
+    }
+    return std::nullopt;
+}
+
+double wheelQ(double q, double delta) noexcept
+{
+    return q * std::pow(2.0, delta * 1.5);
+}
+
 } // namespace esceq::ui

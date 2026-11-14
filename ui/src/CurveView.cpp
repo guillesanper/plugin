@@ -730,7 +730,7 @@ void CurveView::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
         return;
 
     const float delta = wheel.deltaY * (wheel.isReversed ? -1.0f : 1.0f);
-    const auto q = static_cast<float>(settings.filter.q * std::pow(2.0, static_cast<double>(delta) * 1.5));
+    const auto q = static_cast<float>(wheelQ(settings.filter.q, static_cast<double>(delta)));
 
     beginGesture(band, core::BandParam::Q);
     setParameter(band, core::BandParam::Q, q);
@@ -759,17 +759,10 @@ bool CurveView::keyPressed(const juce::KeyPress& key)
     // Izquierda y derecha, sin modificadores: banda anterior o siguiente (en orden de número).
     if ((left || right) && !mods.isCommandDown())
     {
-        const int step = right ? 1 : -1;
-        int band = selected_;
-        for (int i = 0; i < core::kNumBands; ++i)
+        if (const auto band = stepSelectedBand(values_, selected_, right ? 1 : -1))
         {
-            band = (band + step + core::kNumBands + (band < 0 && step < 0 ? 1 : 0)) % core::kNumBands;
-            if (values_[core::bandParameter(band, core::BandParam::Enabled)] >= 0.5f)
-            {
-                keyboardFocus_ = true;
-                setSelectedBand(band);
-                return true;
-            }
+            keyboardFocus_ = true;
+            setSelectedBand(*band);
         }
         return true;
     }

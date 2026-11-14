@@ -99,6 +99,16 @@ std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bo
                                 float radius) noexcept;
 
 /// `count` frecuencias repartidas logarítmicamente entre los límites de la vista.
+/// Banda que se elige con las flechas izquierda (`step` = -1) y derecha (+1)
+/// en la curva: la siguiente activa en orden de número, dando la vuelta.
+/// Sin banda elegida (`current` < 0), la derecha va a la primera activa y la
+/// izquierda a la última. nullopt si no hay ninguna activa.
+std::optional<int> stepSelectedBand(const core::ParameterValues& values, int current, int step) noexcept;
+
+/// Q tras mover la rueda sobre un nodo: cada paso de rueda (`delta` = ±1 en
+/// las unidades de JUCE) la multiplica o divide por 2^1,5. Sin ajustar al rango.
+double wheelQ(double q, double delta) noexcept;
+
 /// Un parámetro y el valor que debe tomar.
 struct ParameterChange
 {
