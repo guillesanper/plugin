@@ -2,7 +2,8 @@
 #
 # Tests de la capa del plugin (plugin/src): los que necesitan JUCE. Comprueban
 # lo que une core con el host: el estado que entra y sale por
-# get/setStateInformation, el deshacer agrupado por gestos y los presets.
+# get/setStateInformation, el deshacer agrupado por gestos, los presets y
+# processBlock tal y como lo llama el host (buses, sidechain, mono, bypass).
 # No incluyen la interfaz: el editor se sustituye por uno vacío.
 juce_add_console_app(esceq_plugin_tests PRODUCT_NAME "esceq_plugin_tests")
 
@@ -10,6 +11,7 @@ target_sources(esceq_plugin_tests PRIVATE
     main.cpp
     history_test.cpp
     presets_test.cpp
+    process_test.cpp
     state_test.cpp
     ${PROJECT_SOURCE_DIR}/plugin/src/EditHistory.cpp
     ${PROJECT_SOURCE_DIR}/plugin/src/PluginProcessor.cpp

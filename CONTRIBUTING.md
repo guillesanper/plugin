@@ -20,7 +20,7 @@ cmake --build build --config Release --parallel
 
 El VST3 queda en `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3` y el CLAP en `.../Release/CLAP/esceQ.clap`. Para probarlo en FL Studio, copia el VST3 a `C:\Program Files\Common Files\VST3` y vuelve a escanear los plugins.
 
-La compilación completa incluye dos grupos de tests: `esceq_tests` (`dsp/`, `core/` y `ui/logic`, sin JUCE) y `esceq_plugin_tests` (la capa `plugin/`: estado, deshacer y presets, con JUCE). `ctest --test-dir build` ejecuta los dos.
+La compilación completa incluye dos grupos de tests: `esceq_tests` (`dsp/`, `core/` y `ui/logic`, sin JUCE) y `esceq_plugin_tests` (la capa `plugin/`: `processBlock` con buses y sidechain, estado, deshacer y presets, con JUCE). `ctest --test-dir build` ejecuta los dos.
 
 Solo `dsp/`, `core/` y `ui/logic` con sus tests (rápido, sin JUCE):
 

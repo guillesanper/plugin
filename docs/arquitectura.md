@@ -21,7 +21,7 @@ Las flechas indican "depende de". Nunca al revés.
 | `ui/src/` | Capa gráfica (JUCE): tema, dibujo, controles propios, curva, panel de banda, medidor y editor. Ver [ui.md](ui.md) | `plugin/`, `ui/logic/`, `core/`, JUCE | AGPLv3 |
 | `ui/assets/` | Fuentes embebidas (Inter) | — | SIL OFL 1.1 |
 | `tests/` | Tests de `dsp/`, `core/` y `ui/logic/` | Esos tres, Catch2 | La del código que prueban |
-| `tests/plugin/` | Tests de `plugin/` (estado, deshacer, presets). Usan JUCE, sin la interfaz | `plugin/`, Catch2, JUCE | AGPLv3 |
+| `tests/plugin/` | Tests de `plugin/` (`processBlock` con buses y sidechain, estado, deshacer, presets). Usan JUCE, sin la interfaz | `plugin/`, Catch2, JUCE | AGPLv3 |
 | `tools/` | Herramientas de desarrollo (captura del editor, con `-DESCEQ_BUILD_TOOLS=ON`; notas de la release) | `plugin/`, `ui/src/` | AGPLv3 |
 | `packaging/` | Instalador de Windows (Inno Setup) e instrucciones de los paquetes de macOS y Linux | — | AGPLv3 |
 

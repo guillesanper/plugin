@@ -212,14 +212,13 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const int numChannels = main.getNumChannels();
     const int numSamples = main.getNumSamples();
 
-    const float* const* sidechain = nullptr;
-    int sidechainChannels = 0;
+    // El búfer del sidechain debe vivir hasta que el ecualizador lo lea:
+    // sus punteros a los canales están dentro de él.
+    juce::AudioBuffer<float> side;
     if (const auto* bus = getBus(true, 1); bus != nullptr && bus->isEnabled())
-    {
-        const auto side = getBusBuffer(buffer, true, 1);
-        sidechain = side.getArrayOfReadPointers();
-        sidechainChannels = side.getNumChannels();
-    }
+        side = getBusBuffer(buffer, true, 1);
+    const float* const* sidechain = side.getNumChannels() > 0 ? side.getArrayOfReadPointers() : nullptr;
+    const int sidechainChannels = side.getNumChannels();
     sidechainConnected_.store(sidechainChannels > 0, std::memory_order_relaxed);
 
     preFifo_.writeMix(channels, numChannels, numSamples);
