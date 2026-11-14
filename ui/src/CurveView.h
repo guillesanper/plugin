@@ -92,6 +92,8 @@ private:
     std::optional<int> bandAt(juce::Point<float> position) const;
 
     void setParameter(int band, core::BandParam param, float value);
+    /// Cambia un parámetro en un gesto propio (una acción de deshacer) y repinta.
+    void setParameterAsGesture(std::size_t index, float value);
     void beginGesture(int band, core::BandParam param);
     void endGesture(int band, core::BandParam param);
     void addBandAt(juce::Point<float> position);

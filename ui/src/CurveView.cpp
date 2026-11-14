@@ -655,6 +655,16 @@ void CurveView::setParameter(int band, core::BandParam param, float value)
     values_[index] = core::sanitize(core::parameters()[index], value);
 }
 
+void CurveView::setParameterAsGesture(std::size_t index, float value)
+{
+    auto& p = processor_.parameter(index);
+    p.beginChangeGesture();
+    p.setValueNotifyingHost(p.convertTo0to1(value));
+    p.endChangeGesture();
+    values_[index] = core::sanitize(core::parameters()[index], value);
+    repaint();
+}
+
 void CurveView::beginGesture(int band, core::BandParam param)
 {
     processor_.parameter(core::bandParameter(band, param)).beginChangeGesture();
@@ -914,33 +924,16 @@ void CurveView::showBandMenu(int band)
                                return;
                            }
                            if (result >= kFirstChannelId)
-                           {
-                               const auto index = core::channelParameter(band);
-                               const auto next = static_cast<float>(result - kFirstChannelId);
-                               auto& p = safe->processor_.parameter(index);
-                               p.beginChangeGesture();
-                               p.setValueNotifyingHost(p.convertTo0to1(next));
-                               p.endChangeGesture();
-                               safe->values_[index] = next;
-                               safe->repaint();
-                               return;
-                           }
-                           if (result == kDynamicId)
+                               safe->setParameterAsGesture(core::channelParameter(band),
+                                                           static_cast<float>(result - kFirstChannelId));
+                           else if (result == kDynamicId)
                            {
                                const auto index = core::dynamicParameter(band, core::DynParam::Enabled);
-                               auto& p = safe->processor_.parameter(index);
-                               const float next = safe->values_[index] >= 0.5f ? 0.0f : 1.0f;
-                               p.beginChangeGesture();
-                               p.setValueNotifyingHost(p.convertTo0to1(next));
-                               p.endChangeGesture();
-                               safe->values_[index] = next;
-                               safe->repaint();
-                               return;
+                               safe->setParameterAsGesture(index, safe->values_[index] >= 0.5f ? 0.0f : 1.0f);
                            }
-                           safe->beginGesture(band, core::BandParam::Type);
-                           safe->setParameter(band, core::BandParam::Type, static_cast<float>(result - 1));
-                           safe->endGesture(band, core::BandParam::Type);
-                           safe->repaint();
+                           else
+                               safe->setParameterAsGesture(core::bandParameter(band, core::BandParam::Type),
+                                                           static_cast<float>(result - 1));
                        });
 }
 
