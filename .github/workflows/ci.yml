@@ -141,7 +141,7 @@ jobs:
           $APT update
           $APT install -y --no-install-recommends \
             libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb
+            libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb gdb
 
       - name: Version
         id: version
@@ -185,7 +185,21 @@ jobs:
         run: |
           VST3="$ARTEFACTS/VST3/esceQ.vst3"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            xvfb-run -a ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
+            # Bajo gdb: si pluginval se cae (una vez lo hizo al salir, después
+            # de SUCCESS, y no se pudo reproducir), el registro trae la pila de
+            # todos los hilos. El código de salida es el de pluginval, o 139
+            # si una señal lo detiene.
+            cat > crash.gdb <<'GDB'
+          set pagination off
+          run
+          if $_isvoid($_exitcode)
+            thread apply all bt
+            quit 139
+          end
+          quit $_exitcode
+          GDB
+            xvfb-run -a gdb -q -batch -x crash.gdb --args \
+              ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
           else
             ${{ matrix.pluginval_bin }} --strictness-level 10 --validate "$VST3"
           fi
