@@ -101,6 +101,8 @@ private:
     bool updateAnalyzer();
     void drawGrid(juce::Graphics& g, const CurveMapping& m) const;
     void drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const;
+    /// Rehace la curva de las bandas que han cambiado (ver CurveCache).
+    void updateCurveCache(const CurveMapping& m);
     void drawCurves(juce::Graphics& g, const CurveMapping& m) const;
     void drawNodes(juce::Graphics& g, const CurveMapping& m) const;
     void drawReadout(juce::Graphics& g, const CurveMapping& m) const;
@@ -128,6 +130,33 @@ private:
     std::vector<float> readBuffer_;
     double lastAnalyzerUpdateMs_ = 0.0;
     double lastSampleRate_ = 0.0;
+
+    /// Curva de cada banda ya calculada: dB por columna y los trazados.
+    /// Solo se rehace la de una banda si cambia lo que suena (frecuencia,
+    /// ganancia con la dinámica, Q...) o su referencia estática; todas, si
+    /// cambia la geometría de la vista o la frecuencia de muestreo. Al
+    /// arrastrar un nodo, las demás bandas no se recalculan.
+    struct BandCurve
+    {
+        bool valid = false;
+        bool dynamic = false;
+        dsp::FilterParams sounding;  ///< Lo que suena, con la ganancia dinámica.
+        dsp::FilterParams reference; ///< El ajuste estático (solo si es dinámica).
+        std::vector<double> db;      ///< Magnitud en cada columna.
+        juce::Path line;
+        juce::Path fill;
+        juce::Path dashed;           ///< Referencia estática punteada, ya convertida en contorno.
+    };
+    struct CurveCache
+    {
+        Rect area;
+        double rangeDb = 0.0;
+        double sampleRate = 0.0;
+        std::vector<float> xs;
+        std::vector<double> tangents; ///< tan(ω/2) de cada columna, común a todas las bandas.
+        std::array<BandCurve, core::kNumBands> bands;
+    };
+    CurveCache curveCache_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CurveView)
 };

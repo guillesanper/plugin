@@ -228,6 +228,7 @@ void CurveView::paint(juce::Graphics& g)
 
         drawAnalyzer(g, m);
         drawGrid(g, m);
+        updateCurveCache(m);
         drawCurves(g, m);
         drawNodes(g, m);
         drawReadout(g, m);
@@ -323,43 +324,38 @@ void CurveView::drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const
     }
 }
 
-void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
+void CurveView::updateCurveCache(const CurveMapping& m)
 {
+    auto& cache = curveCache_;
     const auto area = m.area();
     const double sampleRate = processor_.currentSampleRate();
 
-    // Diseño que suena (con la ganancia dinámica) y, en las bandas dinámicas,
-    // el estático como referencia. Ambos salen de dsp::designBand, como el audio.
-    std::array<dsp::BandDesign, core::kNumBands> designs{};
-    std::array<dsp::BandDesign, core::kNumBands> staticDesigns{};
-    std::array<bool, core::kNumBands> enabled{};
-    std::array<bool, core::kNumBands> dynamic{};
-    bool any = false;
-    for (int band = 0; band < core::kNumBands; ++band)
+    // Geometría de las columnas: cambia con el tamaño, el rango o la frecuencia de muestreo.
+    const bool sameGeometry = !cache.xs.empty() && juce::exactlyEqual(cache.area.x, area.x) &&
+                              juce::exactlyEqual(cache.area.y, area.y) && juce::exactlyEqual(cache.area.width, area.width) &&
+                              juce::exactlyEqual(cache.area.height, area.height) &&
+                              juce::exactlyEqual(cache.rangeDb, m.rangeDb()) && juce::exactlyEqual(cache.sampleRate, sampleRate);
+    if (!sameGeometry)
     {
-        const auto index = static_cast<std::size_t>(band);
-        const auto settings = core::bandSettings(values_, band);
-        enabled[index] = settings.enabled;
-        if (!settings.enabled)
-            continue;
-        any = true;
-        dynamic[index] = settings.dynamics.enabled && core::usesDynamics(settings.filter.type);
-        designs[index] = dsp::designBand(soundingSettings(band).filter, sampleRate);
-        if (dynamic[index])
-            staticDesigns[index] = dsp::designBand(settings.filter, sampleRate);
+        cache.area = area;
+        cache.rangeDb = m.rangeDb();
+        cache.sampleRate = sampleRate;
+        const int points = std::max(2, static_cast<int>(area.width / 2.0f));
+        cache.xs.resize(static_cast<std::size_t>(points));
+        cache.tangents.resize(static_cast<std::size_t>(points));
+        for (int i = 0; i < points; ++i)
+        {
+            const auto idx = static_cast<std::size_t>(i);
+            const float x = area.x + area.width * static_cast<float>(i) / static_cast<float>(points - 1);
+            cache.xs[idx] = x;
+            cache.tangents[idx] = dsp::responseTangent(std::min(m.frequencyForX(x), 0.499 * sampleRate), sampleRate);
+        }
+        for (auto& band : cache.bands)
+            band.valid = false;
     }
 
-    const int points = std::max(2, static_cast<int>(area.width / 2.0f));
-    std::vector<float> xs(static_cast<std::size_t>(points));
-    std::vector<double> total(static_cast<std::size_t>(points), 0.0);
-    std::vector<double> freqs(static_cast<std::size_t>(points));
-    for (int i = 0; i < points; ++i)
-    {
-        const float x = area.x + area.width * static_cast<float>(i) / static_cast<float>(points - 1);
-        xs[static_cast<std::size_t>(i)] = x;
-        freqs[static_cast<std::size_t>(i)] = std::min(m.frequencyForX(x), 0.499 * sampleRate);
-    }
-
+    const auto& xs = cache.xs;
+    const std::size_t points = xs.size();
     const float top = area.y;
     const float bottom = area.y + area.height;
     auto clampY = [&](double db) { return std::clamp(m.yForGain(db), top - 2.0f, bottom + 2.0f); };
@@ -367,61 +363,110 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
 
     for (int band = 0; band < core::kNumBands; ++band)
     {
-        const auto index = static_cast<std::size_t>(band);
-        if (!enabled[index])
+        auto& curve = cache.bands[static_cast<std::size_t>(band)];
+        const auto settings = core::bandSettings(values_, band);
+        if (!settings.enabled)
+        {
+            curve.valid = false;
+            continue;
+        }
+        const bool dynamic = isDynamic(settings);
+        const auto sounding = soundingSettings(band).filter;
+        if (curve.valid && curve.dynamic == dynamic && curve.sounding == sounding &&
+            (!dynamic || curve.reference == settings.filter))
             continue;
 
-        juce::Path line;
-        juce::Path fill;
-        juce::Path reference;
-        fill.startNewSubPath(xs.front(), zeroY);
-        for (int i = 0; i < points; ++i)
+        // La curva que suena: solo si ha cambiado (en una banda dinámica, casi siempre).
+        if (!curve.valid || curve.sounding != sounding)
         {
-            const auto idx = static_cast<std::size_t>(i);
-            const double db = dsp::magnitudeDb(designs[index], freqs[idx], sampleRate);
-            total[idx] += db;
-            const float y = clampY(db);
-            i == 0 ? line.startNewSubPath(xs[idx], y) : line.lineTo(xs[idx], y);
-            fill.lineTo(xs[idx], y);
-
-            if (dynamic[index])
+            const auto design = dsp::designBand(sounding, sampleRate);
+            curve.db.resize(points);
+            curve.line.clear();
+            curve.fill.clear();
+            curve.fill.startNewSubPath(xs.front(), zeroY);
+            for (std::size_t i = 0; i < points; ++i)
             {
-                const float ys = clampY(dsp::magnitudeDb(staticDesigns[index], freqs[idx], sampleRate));
-                i == 0 ? reference.startNewSubPath(xs[idx], ys) : reference.lineTo(xs[idx], ys);
+                const double db = dsp::magnitudeDbAtTangent(design, cache.tangents[i]);
+                curve.db[i] = db;
+                const float y = clampY(db);
+                i == 0 ? curve.line.startNewSubPath(xs[i], y) : curve.line.lineTo(xs[i], y);
+                curve.fill.lineTo(xs[i], y);
             }
+            curve.fill.lineTo(xs.back(), zeroY);
+            curve.fill.closeSubPath();
         }
-        fill.lineTo(xs.back(), zeroY);
-        fill.closeSubPath();
+
+        // La referencia estática punteada solo depende del ajuste estático:
+        // no se rehace aunque la ganancia dinámica se mueva.
+        if (dynamic && (!curve.valid || !curve.dynamic || curve.reference != settings.filter))
+        {
+            const auto design = dsp::designBand(settings.filter, sampleRate);
+            juce::Path reference;
+            for (std::size_t i = 0; i < points; ++i)
+            {
+                const float ys = clampY(dsp::magnitudeDbAtTangent(design, cache.tangents[i]));
+                i == 0 ? reference.startNewSubPath(xs[i], ys) : reference.lineTo(xs[i], ys);
+            }
+            const float dashes[] = {4.0f, 4.0f};
+            curve.dashed.clear();
+            juce::PathStrokeType(1.0f).createDashedStroke(curve.dashed, reference, dashes, 2);
+        }
+        if (!dynamic)
+            curve.dashed.clear();
+
+        curve.valid = true;
+        curve.dynamic = dynamic;
+        curve.sounding = sounding;
+        curve.reference = settings.filter;
+    }
+}
+
+void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
+{
+    const auto& cache = curveCache_;
+    const auto& xs = cache.xs;
+    const std::size_t points = xs.size();
+    const float top = m.area().y;
+    const float bottom = m.area().y + m.area().height;
+    auto clampY = [&](double db) { return std::clamp(m.yForGain(db), top - 2.0f, bottom + 2.0f); };
+    const float zeroY = m.yForGain(0.0);
+
+    std::vector<double> total(points, 0.0);
+    bool any = false;
+    for (int band = 0; band < core::kNumBands; ++band)
+    {
+        const auto& curve = cache.bands[static_cast<std::size_t>(band)];
+        if (!curve.valid)
+            continue;
+        any = true;
+        for (std::size_t i = 0; i < points; ++i)
+            total[i] += curve.db[i];
 
         const auto colour = theme::band(band);
         const bool isSelected = band == selected_;
         const bool isHot = isSelected || band == hovered_ || band == dragging_;
         g.setColour(colour.withAlpha(isSelected ? 0.20f : isHot ? 0.14f : 0.06f));
-        g.fillPath(fill);
+        g.fillPath(curve.fill);
         g.setColour(colour.withAlpha(isHot ? 0.95f : 0.45f));
-        g.strokePath(line, juce::PathStrokeType(isHot ? stroke::thin : stroke::hairline, juce::PathStrokeType::curved,
-                                                juce::PathStrokeType::rounded));
-
-        if (dynamic[index])
+        g.strokePath(curve.line, juce::PathStrokeType(isHot ? stroke::thin : stroke::hairline,
+                                                      juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+        if (curve.dynamic)
         {
-            juce::Path dashed;
-            const float dashes[] = {4.0f, 4.0f};
-            juce::PathStrokeType(1.0f).createDashedStroke(dashed, reference, dashes, 2);
             g.setColour(colour.withAlpha(isSelected ? 0.7f : 0.35f));
-            g.fillPath(dashed);
+            g.fillPath(curve.dashed);
         }
     }
 
     juce::Path curve;
-    for (int i = 0; i < points; ++i)
+    for (std::size_t i = 0; i < points; ++i)
     {
-        const auto idx = static_cast<std::size_t>(i);
-        const float y = any ? clampY(total[idx]) : zeroY;
-        i == 0 ? curve.startNewSubPath(xs[idx], y) : curve.lineTo(xs[idx], y);
+        const float y = any ? clampY(total[i]) : zeroY;
+        i == 0 ? curve.startNewSubPath(xs[i], y) : curve.lineTo(xs[i], y);
     }
     // Con el bypass puesto la curva no suena: se atenúa.
     g.setColour(colour::curve.withAlpha(values_[core::kBypass] >= 0.5f ? 0.35f : 1.0f));
-    g.strokePath(curve, juce::PathStrokeType(stroke::medium, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath(curve,
+                 juce::PathStrokeType(stroke::medium, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 }
 
 void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const

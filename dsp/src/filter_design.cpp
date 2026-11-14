@@ -158,21 +158,34 @@ BandDesign designBandPrewarped(const FilterParams& params, double g) noexcept ES
     return design;
 }
 
-std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
+double responseTangent(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     const double frequency = std::clamp(frequencyHz, 0.0, 0.4999 * sampleRate);
-    const double tanHalfOmega = std::tan(kPi * frequency / sampleRate);
+    return std::tan(kPi * frequency / sampleRate);
+}
 
+std::complex<double> responseAtTangent(const BandDesign& design, double tangent) noexcept ESCEQ_NONBLOCKING
+{
     std::complex<double> h{1.0, 0.0};
     for (int i = 0; i < design.numSections; ++i)
-        h *= sectionResponse(design.sections[static_cast<std::size_t>(i)], tanHalfOmega);
+        h *= sectionResponse(design.sections[static_cast<std::size_t>(i)], tangent);
     return h;
+}
+
+double magnitudeDbAtTangent(const BandDesign& design, double tangent) noexcept ESCEQ_NONBLOCKING
+{
+    const double magnitude = std::abs(responseAtTangent(design, tangent));
+    return 20.0 * std::log10(std::max(magnitude, 1.0e-15));
+}
+
+std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
+{
+    return responseAtTangent(design, responseTangent(frequencyHz, sampleRate));
 }
 
 double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
-    const double magnitude = std::abs(response(design, frequencyHz, sampleRate));
-    return 20.0 * std::log10(std::max(magnitude, 1.0e-15));
+    return magnitudeDbAtTangent(design, responseTangent(frequencyHz, sampleRate));
 }
 
 } // namespace esceq::dsp

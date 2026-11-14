@@ -95,7 +95,7 @@ orden 2:  H = m0 + (m1·s + m2) / (s² + k·s + 1)
 orden 1:  H = m0 + m2 / (s + 1)
 ```
 
-y la de la banda es el producto de sus secciones. `response()` calcula esto. Es la respuesta **exacta** del filtro digital, no una aproximación analógica: incluye la compresión de frecuencias de la transformada bilineal cerca de Nyquist. Por eso la curva que dibuje la interfaz coincidirá con lo que se oye.
+y la de la banda es el producto de sus secciones. `response()` calcula esto. Es la respuesta **exacta** del filtro digital, no una aproximación analógica: incluye la compresión de frecuencias de la transformada bilineal cerca de Nyquist. Por eso la curva que dibuje la interfaz coincidirá con lo que se oye. Para evaluar muchas bandas en las mismas frecuencias, `responseTangent()` calcula `tan(ω/2)` una vez y `responseAtTangent()` / `magnitudeDbAtTangent()` la reutilizan, con el mismo resultado bit a bit.
 
 Verificado: 4911 comparaciones entre la respuesta medida sobre el audio procesado y la calculada, a 44,1, 48, 96 y 192 kHz, con una desviación máxima de 0,000065 dB (el criterio era ±0,1 dB).
 

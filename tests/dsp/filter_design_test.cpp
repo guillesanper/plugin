@@ -215,3 +215,20 @@ TEST_CASE("Diseno: parametros extremos o absurdos dan coeficientes finitos y est
                         REQUIRE(std::isfinite(magnitudeDb(design, 1000.0, sampleRate)));
                     }
 }
+
+TEST_CASE("Respuesta con la tangente ya calculada: identica bit a bit")
+{
+    // La curva de la interfaz calcula tan(w/2) una vez por frecuencia y la
+    // reutiliza en todas las bandas: no puede cambiar ni un bit.
+    for (auto type : esceq::test::kAllTypes)
+        for (double sampleRate : {44100.0, 96000.0})
+        {
+            const auto design = designBand({type, 1200.0, 4.5, 2.0, 36}, sampleRate);
+            for (double f : {0.0, 15.0, 440.0, 1200.0, 9000.0, 21000.0, 30000.0, 100000.0})
+            {
+                const double t = responseTangent(f, sampleRate);
+                REQUIRE(magnitudeDbAtTangent(design, t) == magnitudeDb(design, f, sampleRate));
+                REQUIRE(responseAtTangent(design, t) == response(design, f, sampleRate));
+            }
+        }
+}

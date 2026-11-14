@@ -137,7 +137,18 @@ Pico por canal después del ecualizador y de la ganancia de salida. Sube al inst
 
 ## Coste de pintado
 
-El editor consulta el procesador 30 veces por segundo, pero la curva y el medidor solo se repintan si algo ha cambiado: parámetros, ganancia dinámica, frecuencia de muestreo, espectro (más de 0,05 dB en algún punto) o nivel del medidor. Con el transporte parado, o con el analizador apagado y sin bandas dinámicas, no se repinta nada. Dibujar la curva no es barato: con 24 bandas dinámicas cuesta unos 14 ms en una ventana L a escala 1 (renderizador por software de JUCE en Linux).
+El editor consulta el procesador 30 veces por segundo, pero la curva y el medidor solo se repintan si algo ha cambiado: parámetros, ganancia dinámica, frecuencia de muestreo, espectro (más de 0,05 dB en algún punto) o nivel del medidor. Con el transporte parado, o con el analizador apagado y sin bandas dinámicas, no se repinta nada.
+
+Al repintar, `CurveView` no recalcula lo que no ha cambiado: guarda por banda la magnitud en cada columna, sus trazados y la referencia punteada ya convertida en contorno, y solo los rehace si cambia lo que suena en esa banda (al arrastrar un nodo, solo esa banda; con la dinámica actuando, las dinámicas, pero no su referencia estática). `tan(ω/2)` se calcula una vez por columna para todas las bandas (`dsp::responseTangent`). Lo que se dibuja es idéntico píxel a píxel.
+
+Cuánto cuesta, medido con `esceq_snapshot --bench` (ver [CONTRIBUTING.md](../CONTRIBUTING.md)) con las 24 bandas dinámicas, renderizador por software de JUCE en Linux, mediana por fotograma:
+
+| Ventana | Antes de la caché | Con la caché |
+|---|---|---|
+| L (1480 × 860), escala 1 | 16–18 ms | 12,5–13,5 ms |
+| Máxima (2400 × 1400), escala 2 | 75–81 ms | 67–74 ms |
+
+Lo que queda es casi todo rasterizar los rellenos y los trazos (más del 60 % del tiempo a escala 1, más a escala 2): reducirlo exige dibujar otra cosa. En Windows (Direct2D, el renderizador por defecto de JUCE 9) y en macOS (CoreGraphics) la rasterización la hace el sistema; ahí no se ha medido.
 
 ## Accesibilidad
 

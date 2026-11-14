@@ -97,4 +97,15 @@ std::complex<double> response(const BandDesign& design, double frequencyHz, doub
 /// Magnitud de response() en decibelios.
 double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
+/// tan(ω/2) para evaluar la respuesta en `frequencyHz` (ajustada a [0, 0,4999·fs]).
+/// Solo depende de la frecuencia y de la frecuencia de muestreo: al evaluar
+/// muchas bandas en las mismas frecuencias (la curva de la interfaz) se
+/// calcula una vez por frecuencia y no una por banda.
+double responseTangent(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
+
+/// Como response() y magnitudeDb(), con `tangent` calculada por
+/// responseTangent(). El resultado es idéntico bit a bit.
+std::complex<double> responseAtTangent(const BandDesign& design, double tangent) noexcept ESCEQ_NONBLOCKING;
+double magnitudeDbAtTangent(const BandDesign& design, double tangent) noexcept ESCEQ_NONBLOCKING;
+
 } // namespace esceq::dsp
