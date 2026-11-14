@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PresetManager.h"
 
+#include "JuceText.h"
 #include "PluginProcessor.h"
 
 #include "esceq/core/presets.h"
@@ -11,11 +12,6 @@
 namespace esceq {
 
 namespace {
-
-juce::String toJuce(std::string_view text)
-{
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
-}
 
 juce::String extension()
 {

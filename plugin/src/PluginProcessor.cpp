@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "PluginProcessor.h"
 
+#include "JuceText.h"
+
 #include "esceq/core/band_model.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/decibels.h"
@@ -16,11 +18,6 @@ namespace esceq {
 namespace {
 
 constexpr double kGainRampSeconds = 0.02;
-
-juce::String toJuce(std::string_view text)
-{
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
-}
 
 juce::StringArray choiceNames(const core::ParameterSpec& spec)
 {

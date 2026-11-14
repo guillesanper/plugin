@@ -2,6 +2,7 @@
 #include "EqEditor.h"
 
 #include "Draw.h"
+#include "JuceConvert.h"
 #include "PluginProcessor.h"
 #include "Theme.h"
 
@@ -14,11 +15,6 @@ namespace {
 using namespace theme;
 
 constexpr int kRefreshHz = 30;
-
-juce::Rectangle<float> toJuce(const Rect& r)
-{
-    return {r.x, r.y, r.width, r.height};
-}
 
 juce::Rectangle<int> toInt(const Rect& r)
 {

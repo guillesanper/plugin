@@ -2,6 +2,7 @@
 #include "CurveView.h"
 
 #include "Draw.h"
+#include "JuceConvert.h"
 #include "PluginProcessor.h"
 #include "Theme.h"
 
@@ -30,11 +31,6 @@ using namespace theme;
 juce::String frequencyLabel(double hz)
 {
     return hz >= 1000.0 ? juce::String(hz / 1000.0, 0) + "k" : juce::String(static_cast<int>(hz));
-}
-
-juce::String toJuce(const std::string& text)
-{
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
 }
 
 bool isDynamic(const dsp::BandSettings& settings)
@@ -891,8 +887,7 @@ void CurveView::showBandMenu(int band)
     for (std::size_t i = 0; i < core::kFilterTypeChoices.size(); ++i)
     {
         const auto& name = core::kFilterTypeChoices[i];
-        menu.addItem(static_cast<int>(i) + 1, juce::String::fromUTF8(name.data(), static_cast<int>(name.size())), true,
-                     static_cast<int>(i) == current);
+        menu.addItem(static_cast<int>(i) + 1, toJuce(name), true, static_cast<int>(i) == current);
     }
     juce::PopupMenu channels;
     channels.setLookAndFeel(&getLookAndFeel());
@@ -901,8 +896,7 @@ void CurveView::showBandMenu(int band)
     for (std::size_t i = 0; i < core::kChannelChoices.size(); ++i)
     {
         const auto& name = core::kChannelChoices[i];
-        channels.addItem(kFirstChannelId + static_cast<int>(i),
-                         juce::String::fromUTF8(name.data(), static_cast<int>(name.size())), true,
+        channels.addItem(kFirstChannelId + static_cast<int>(i), toJuce(name), true,
                          static_cast<int>(values_[channelIndex]) == static_cast<int>(i));
     }
     menu.addSeparator();

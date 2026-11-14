@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "BandPanel.h"
 
+#include "JuceConvert.h"
 #include "PluginProcessor.h"
 #include "Theme.h"
 
@@ -17,19 +18,9 @@ namespace {
 
 using namespace theme;
 
-juce::Rectangle<float> toJuce(const Rect& r)
-{
-    return {r.x, r.y, r.width, r.height};
-}
-
 juce::Rectangle<int> toInt(const Rect& r)
 {
     return toJuce(r).toNearestInt();
-}
-
-juce::String toJuce(std::string_view text)
-{
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
 }
 
 std::vector<Segmented::Option> channelOptions()

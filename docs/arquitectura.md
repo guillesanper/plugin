@@ -85,6 +85,7 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | `EditHistory` | Deshacer y rehacer: convierte los gestos de los parámetros en acciones de `core::UndoHistory` |
 | `PresetManager` | Presets de fábrica y de usuario (archivos en una carpeta del sistema) |
 | `PluginEditorFactory.cpp` | Único punto en el que el procesador conoce a la interfaz (`createEditor`) |
+| `JuceText.h` | `toJuce`: texto UTF-8 de `core` como `juce::String` (`ui/src/JuceConvert.h` añade la conversión de los rectángulos de `ui/logic`) |
 
 ## Contenido de `ui/logic/`
 

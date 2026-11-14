@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "Controls.h"
 
+#include "JuceConvert.h"
+
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/layout.h"
 
@@ -13,16 +15,6 @@ namespace {
 using namespace theme;
 
 constexpr float kBarValueWidth = 60.0f;
-
-juce::String toJuce(std::string_view text)
-{
-    return juce::String::fromUTF8(text.data(), static_cast<int>(text.size()));
-}
-
-juce::Rectangle<float> toJuce(const Rect& r)
-{
-    return {r.x, r.y, r.width, r.height};
-}
 
 Rect toLogic(juce::Rectangle<float> r)
 {
