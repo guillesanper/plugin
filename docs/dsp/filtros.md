@@ -110,7 +110,7 @@ Verificado: 4911 comparaciones entre la respuesta medida sobre el audio procesad
 | Ganancia | ±60 dB |
 | Pendiente | 6 a 96 dB/oct, redondeada a múltiplo de 6 |
 
-Los rangos que verá el usuario (más estrechos) se definirán en `core/` en la fase 2.
+Los rangos que ve el usuario, más estrechos, los define la tabla de parámetros de `core/` (`core/src/parameters.cpp`).
 
 ## Coste
 
@@ -123,7 +123,7 @@ El estado y los coeficientes son `double`; el audio entra y sale en `float`. Ent
 ## Limitaciones conocidas
 
 - **Deformación cerca de Nyquist.** A 44,1 y 48 kHz, las campanas y shelves por encima de unos 10 kHz quedan más estrechas que su equivalente analógico. Es inherente a la transformada bilineal. Está previsto corregirlo en la fase 5 (coeficientes ajustados de Vicanek o sobremuestreo), como un algoritmo nuevo para no alterar el sonido de los presets existentes.
-- **Cambios de coeficientes sin suavizar.** `BandFilter::setDesign()` aplica el cambio de inmediato. Es estable, pero un salto grande de parámetros produce un salto audible. El suavizado de parámetros se añade en la fase 2, en la capa que llama al filtro.
+- **Cambios de coeficientes sin suavizar.** `BandFilter::setDesign()` aplica el cambio de inmediato. Es estable, pero un salto grande de parámetros produce un salto audible. El suavizado lo hace quien llama al filtro: `dsp::Equalizer` (ver [ecualizador.md](ecualizador.md)).
 - **Shelves con pendiente variable.** Solo hay shelves de segundo orden.
 - **Máximo dos canales** por `BandFilter`.
 

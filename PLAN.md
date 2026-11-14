@@ -109,19 +109,21 @@ Notas de licencias: el SDK de VST3 es MIT desde la 3.8 (octubre de 2025) y CLAP 
 
 ```
 plugin/
-├── dsp/            Biblioteca C++20 pura. Sin JUCE, sin asignaciones en tiempo real.
-│   ├── filters/    SVF, cascadas, cálculo de coeficientes, respuesta en frecuencia
-│   ├── dynamics/   Detector, seguidor de envolvente, curva de ganancia
-│   ├── analysis/   FFT, ventanas, suavizado del espectro
-│   └── phase/      Fase lineal (FIR / FFT)
-├── core/           Modelo de parámetros, estado y serialización. Sin JUCE.
-├── plugin/         Capa JUCE: AudioProcessor, parámetros, estado, presets
-├── ui/             Componentes: curva, nodos, analizador, panel de banda
+├── dsp/            Biblioteca C++20 pura (MIT). Sin JUCE, sin asignaciones en tiempo real:
+│                   filtros SVF, ecualizador, dinámica, FFT y analizador
+├── core/           Tabla de parámetros, estado, presets, deshacer. Sin JUCE.
+├── plugin/         Capa JUCE: AudioProcessor, parámetros del host, deshacer y presets
+├── ui/
+│   ├── logic/      Lógica de la interfaz sin JUCE (escalas, gestos, disposición), con tests
+│   └── src/        Componentes JUCE: curva, nodos, analizador, panel de banda
 ├── tests/          Tests unitarios y de respuesta (Catch2)
-├── bench/          Medidas de rendimiento
 │   └── fixtures/   Estados guardados y salidas de referencia de versiones anteriores
-└── docs/           arquitectura.md, decisiones/ (ADR), dsp/
+├── tools/          Captura del editor sin host y notas de la release
+├── packaging/      Instalador de Windows e instrucciones de macOS y Linux
+└── docs/           arquitectura.md, decisiones/ (ADR), dsp/, ui.md
 ```
+
+Así está el repositorio desde la fase 4; el detalle de cada módulo está en [docs/arquitectura.md](docs/arquitectura.md). La fase lineal (prevista en `dsp/`) y las medidas de rendimiento (un `bench/`) aún no existen.
 
 ### Hilos y comunicación
 

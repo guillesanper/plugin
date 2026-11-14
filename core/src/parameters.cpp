@@ -222,7 +222,10 @@ float fromNormalized(const ParameterSpec& spec, float normalized) noexcept
     // menos cifras significativas). Así los valores escritos a mano, los de
     // los presets y los valores por defecto dan la vuelta exactos, y la
     // correspondencia con la posición (el contrato de automatización) no
-    // cambia: el valor devuelto sigue normalizándose a `normalized`.
+    // cambia: el valor devuelto se normaliza a la misma posición que el valor
+    // exacto, que puede diferir de `normalized` en menos de 1e-7 (la posición
+    // es un float). Se comprobó con todas las posiciones float de cada rango:
+    // la ida y vuelta es exacta y la correspondencia sigue siendo monótona.
     const float position = toNormalized(spec, exact);
     for (int digits = 1; digits <= 7; ++digits)
     {
