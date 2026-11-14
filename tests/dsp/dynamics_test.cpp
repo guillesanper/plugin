@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -483,4 +484,22 @@ TEST_CASE("Dinamica: ajustes absurdos no producen NaN")
 
     CHECK(std::all_of(left.begin(), left.end(), [](float v) { return std::isfinite(v); }));
     CHECK(std::all_of(right.begin(), right.end(), [](float v) { return std::isfinite(v); }));
+}
+
+TEST_CASE("Dinamica: un NaN o un infinito en el sidechain no deja la banda muerta")
+{
+    const auto quiet = sine(48000, 1000.0, 0.05);
+    for (const float bad : {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity()})
+    {
+        auto sidechain = sine(48000, 1000.0, 0.9);
+        sidechain[1000] = bad;
+
+        Equalizer eq;
+        eq.setBand(0, dynamicBell(1000.0, 2.0, -20.0, -10.0, 0.0, 1.0, 100.0, true));
+        eq.prepare(kFs);
+        const auto out = run(eq, quiet, 256, &sidechain);
+        CHECK(std::all_of(out.begin(), out.end(), [](float x) { return std::isfinite(x); }));
+        // Al final de 1 s la banda vuelve a reducir lo que dice la curva.
+        CHECK_THAT(peakDb(out, 36000) - peakDb(quiet, 0), WithinAbs(-10.0, 0.1));
+    }
 }

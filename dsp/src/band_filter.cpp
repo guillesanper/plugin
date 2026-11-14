@@ -2,6 +2,7 @@
 #include "esceq/dsp/band_filter.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace esceq::dsp {
 
@@ -25,6 +26,18 @@ void BandFilter::setDesign(const BandDesign& design) noexcept ESCEQ_NONBLOCKING
 void BandFilter::reset() noexcept ESCEQ_NONBLOCKING
 {
     state_ = {};
+}
+
+bool BandFilter::isFinite() const noexcept
+{
+    for (const auto& channel : state_)
+        for (int i = 0; i < design_.numSections; ++i)
+        {
+            const SectionState& state = channel[static_cast<std::size_t>(i)];
+            if (!std::isfinite(state.ic1) || !std::isfinite(state.ic2))
+                return false;
+        }
+    return true;
 }
 
 void BandFilter::process(float* const* channels, int numChannels, int numSamples) noexcept ESCEQ_NONBLOCKING

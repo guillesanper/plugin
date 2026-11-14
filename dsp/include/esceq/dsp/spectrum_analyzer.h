@@ -30,7 +30,7 @@ public:
     /// Un valor de 4,5 hace que la música suene "plana" en la pantalla.
     void setTiltDbPerOctave(double tilt) noexcept { tilt_ = tilt; }
 
-    /// Añade muestras al historial.
+    /// Añade muestras al historial. Las no finitas (NaN, infinito) cuentan como silencio.
     void push(const float* samples, int numSamples) noexcept;
 
     /// Vacía el historial (silencio).

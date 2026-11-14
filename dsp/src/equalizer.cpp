@@ -28,16 +28,12 @@ double finiteOr(double value, double fallback) noexcept
 /// suavizado trabaje siempre con valores positivos y comparables.
 BandSettings sanitized(BandSettings s) noexcept
 {
-    s.filter.frequencyHz = std::max(s.filter.frequencyHz, kMinFrequencyHz);
-    s.filter.q = std::clamp(s.filter.q, kMinQ, kMaxQ);
-    s.filter.gainDb = std::clamp(s.filter.gainDb, -kMaxGainDb, kMaxGainDb);
+    // Los no finitos pasan a su valor por defecto antes de ajustar el rango: un
+    // infinito ajustado seguiría rompiendo el suavizado logarítmico.
+    s.filter.frequencyHz = std::max(finiteOr(s.filter.frequencyHz, 1000.0), kMinFrequencyHz);
+    s.filter.q = std::clamp(finiteOr(s.filter.q, kButterworthQ), kMinQ, kMaxQ);
+    s.filter.gainDb = std::clamp(finiteOr(s.filter.gainDb, 0.0), -kMaxGainDb, kMaxGainDb);
     s.filter.slopeDbPerOct = normalizedSlope(s.filter.slopeDbPerOct);
-    if (std::isnan(s.filter.frequencyHz))
-        s.filter.frequencyHz = 1000.0;
-    if (std::isnan(s.filter.q))
-        s.filter.q = kButterworthQ;
-    if (std::isnan(s.filter.gainDb))
-        s.filter.gainDb = 0.0;
 
     const DynamicSettings defaults{};
     DynamicSettings& d = s.dynamics;
@@ -256,6 +252,20 @@ void Equalizer::process(float* const* channels, int numChannels, int numSamples,
         chunkPhase_ = (chunkPhase_ + length) % kChunkSize;
         position += length;
     }
+
+    // Un NaN o un infinito que haya entrado se queda para siempre en la memoria
+    // de los filtros. Se detecta en la salida (un estado no finito siempre
+    // llega a ella) y se vuelve a empezar desde cero, con el bloque en silencio.
+    bool finite = true;
+    for (int ch = 0; ch < usedChannels; ++ch)
+        for (int i = 0; i < numSamples; ++i)
+            finite = finite && std::isfinite(channels[ch][i]);
+    if (!finite)
+    {
+        for (int ch = 0; ch < usedChannels; ++ch)
+            std::fill_n(channels[ch], numSamples, 0.0f);
+        reset();
+    }
 }
 
 void Equalizer::processChunk(float* const* channels, int numChannels, int offset, int length,
@@ -411,6 +421,17 @@ void Equalizer::runDetector(Band& band, int numChannels, int length, const Sidec
 
     if (sourceChannels > 0)
         band.detector.process(work.data(), sourceChannels, length);
+
+    // El detector no llega a la salida: si el sidechain trae un NaN o un
+    // infinito, su memoria se estropea sin que se note y la banda deja de
+    // actuar para siempre. Se vigila aquí y se reinicia.
+    if (!band.detector.isFinite())
+    {
+        band.detector.reset();
+        band.envelope.reset();
+        for (int ch = 0; ch < sourceChannels; ++ch)
+            std::fill_n(work[static_cast<std::size_t>(ch)], length, 0.0f);
+    }
 
     // En estéreo la detección es enlazada: el canal más fuerte manda, y los
     // dos reciben la misma ganancia (la imagen estéreo no se mueve).

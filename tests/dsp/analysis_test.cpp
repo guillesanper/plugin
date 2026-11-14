@@ -6,11 +6,13 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstdint>
 #include <numbers>
 #include <thread>
+#include <limits>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -175,4 +177,18 @@ TEST_CASE("SpscFifo: un productor y un consumidor en hilos distintos")
 
     CHECK(ordered);
     CHECK(fifo.available() == 0);
+}
+
+TEST_CASE("Analizador: una muestra no finita cuenta como silencio")
+{
+    SpectrumAnalyzer analyzer(12);
+    analyzer.setSampleRate(48000.0);
+    std::vector<float> samples(4096, 0.0f);
+    samples[10] = std::numeric_limits<float>::quiet_NaN();
+    samples[20] = std::numeric_limits<float>::infinity();
+    analyzer.push(samples.data(), static_cast<int>(samples.size()));
+    const std::vector<double> frequencies{100.0, 1000.0, 10000.0};
+    std::vector<float> levels(frequencies.size());
+    analyzer.compute(frequencies, levels);
+    CHECK(std::all_of(levels.begin(), levels.end(), [](float x) { return std::isfinite(x); }));
 }

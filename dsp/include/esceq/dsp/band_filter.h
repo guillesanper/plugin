@@ -37,6 +37,10 @@ public:
 
     const BandDesign& design() const noexcept { return design_; }
 
+    /// false si el estado interno se ha vuelto no finito (ha entrado un NaN
+    /// o un infinito). Un filtro así ya no se recupera solo: hay que reset().
+    bool isFinite() const noexcept;
+
 private:
     struct SectionState
     {

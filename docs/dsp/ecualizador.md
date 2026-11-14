@@ -61,6 +61,17 @@ Durante el fundido de bypass se guarda una copia de la señal seca y se mezcla c
 
 FL Studio entrega bloques de tamaño variable, a veces de muy pocas muestras. El ecualizador trocea el audio en tramos alineados con un contador global de muestras, de modo que el suavizado ocurre siempre en las mismas muestras. Con parámetros fijos, la salida es idéntica bit a bit sea cual sea el tamaño de bloque (lo comprueba un test con bloques de 1, 13, 64, 511 y 4096).
 
+## Valores no finitos
+
+Un NaN o un infinito que entre en un filtro se queda en su memoria para siempre: el filtro ya no vuelve a dar números. Por eso:
+
+- Al final de cada bloque se comprueba la salida. Si tiene algún valor no finito, el bloque sale en silencio y todos los filtros se reinician, como en `reset()`. Un estado no finito siempre llega a la salida (incluso en una campana a 0 dB, porque `0·NaN` es NaN), así que basta con mirar ahí.
+- El detector de la dinámica no llega a la salida: si el sidechain trae un valor no finito, se reinician el detector y la envolvente de esa banda.
+- Los ajustes no finitos (frecuencia, ganancia o Q) toman su valor por defecto antes de ajustarse al rango.
+- El analizador trata las muestras no finitas como silencio.
+
+Con entrada finita nada de esto cambia el resultado: la salida es la misma bit a bit.
+
 ## Verificación
 
 `tests/dsp/equalizer_test.cpp` comprueba, entre otras cosas:

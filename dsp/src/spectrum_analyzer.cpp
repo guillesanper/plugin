@@ -31,7 +31,9 @@ void SpectrumAnalyzer::push(const float* samples, int numSamples) noexcept
     const std::size_t n = history_.size();
     for (int i = 0; i < numSamples; ++i)
     {
-        history_[writePos_] = samples[i];
+        // Una muestra no finita estropearía el espectro (y el suavizado de la
+        // interfaz) para siempre: se trata como silencio.
+        history_[writePos_] = std::isfinite(samples[i]) ? samples[i] : 0.0f;
         writePos_ = (writePos_ + 1) % n;
     }
 }

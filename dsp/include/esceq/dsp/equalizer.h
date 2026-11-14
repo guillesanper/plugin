@@ -68,6 +68,8 @@ struct BandSettings
 ///  - Con parámetros constantes, el resultado no depende de cómo se trocee
 ///    el audio en bloques.
 ///  - Con todas las bandas desactivadas el audio pasa bit a bit.
+///  - Un NaN o un infinito en la entrada no deja el ecualizador estropeado:
+///    se recupera en el bloque siguiente (ver process()).
 ///  - No es segura entre hilos: todas las llamadas deben venir del mismo hilo.
 class Equalizer
 {
@@ -96,6 +98,11 @@ public:
     /// con detección externa, con `numSidechainChannels` canales y las mismas
     /// `numSamples` muestras. Sin sidechain, esas bandas no reciben señal y su
     /// ganancia dinámica vuelve a 0 dB.
+    ///
+    /// Valores no finitos: si la salida tiene algún NaN o infinito (porque lo
+    /// traía la entrada), el bloque sale en silencio y todos los filtros se
+    /// reinician, como tras reset(). Si lo trae el sidechain, se reinicia el
+    /// detector de las bandas afectadas. Con entrada finita no hace nada.
     void process(float* const* channels, int numChannels, int numSamples,
                  const float* const* sidechain = nullptr, int numSidechainChannels = 0) noexcept ESCEQ_NONBLOCKING;
 

@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <vector>
 
@@ -265,4 +266,68 @@ TEST_CASE("Equalizer: canales extra se dejan intactos")
     float* channels[] = {a.data(), b.data(), c.data()};
     eq.process(channels, 3, 512);
     CHECK(c == original);
+}
+
+TEST_CASE("Ecualizador: un NaN o un infinito en la entrada no lo deja estropeado")
+{
+    for (const float bad : {std::numeric_limits<float>::quiet_NaN(), std::numeric_limits<float>::infinity(),
+                            -std::numeric_limits<float>::infinity()})
+    {
+        Equalizer eq;
+        BandSettings bell;
+        bell.enabled = true;
+        bell.filter = {FilterType::Bell, 1000.0, 6.0, 1.0};
+        eq.setBand(0, bell);
+        BandSettings cut = bell;
+        cut.filter = {FilterType::LowCut, 80.0, 0.0, kButterworthQ, 96};
+        eq.setBand(1, cut);
+        BandSettings dynamic = bell;
+        dynamic.filter.frequencyHz = 3000.0;
+        dynamic.dynamics.enabled = true;
+        dynamic.dynamics.thresholdDb = -40.0;
+        eq.setBand(2, dynamic);
+        eq.prepare(kFs);
+
+        const int block = 512;
+        auto left = noise(block * 40, 1u);
+        auto right = noise(block * 40, 2u);
+        left[block * 3 + 100] = bad;
+        for (int b = 0; b < 40; ++b)
+        {
+            float* channels[] = {left.data() + b * block, right.data() + b * block};
+            eq.process(channels, 2, block);
+            const bool finite = std::all_of(channels[0], channels[0] + block, [](float x) { return std::isfinite(x); }) &&
+                                std::all_of(channels[1], channels[1] + block, [](float x) { return std::isfinite(x); });
+            REQUIRE(finite);
+            if (b == 3)
+            {
+                // El bloque que trae el valor no finito sale en silencio.
+                CHECK(std::all_of(channels[0], channels[0] + block, [](float x) { return x == 0.0f; }));
+            }
+        }
+        // Y después vuelve a sonar.
+        CHECK(std::any_of(left.end() - block, left.end(), [](float x) { return std::abs(x) > 0.01f; }));
+    }
+}
+
+TEST_CASE("Ecualizador: ajustes no finitos se sanean")
+{
+    for (const double bad : {std::numeric_limits<double>::infinity(), -std::numeric_limits<double>::infinity(),
+                             std::numeric_limits<double>::quiet_NaN()})
+    {
+        Equalizer eq;
+        BandSettings s;
+        s.enabled = true;
+        s.filter = {FilterType::Bell, 1000.0, 6.0, 1.0};
+        eq.setBand(0, s);
+        eq.prepare(kFs);
+        s.filter = {FilterType::Bell, bad, bad, bad};
+        eq.setBand(0, s);
+
+        auto signal = noise(4800);
+        float* channel = signal.data();
+        eq.process(&channel, 1, static_cast<int>(signal.size()));
+        CHECK(std::all_of(signal.begin(), signal.end(), [](float x) { return std::isfinite(x); }));
+        CHECK(std::any_of(signal.begin(), signal.end(), [](float x) { return x != 0.0f; }));
+    }
 }
