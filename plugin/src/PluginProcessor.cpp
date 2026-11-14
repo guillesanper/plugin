@@ -179,9 +179,15 @@ double PluginProcessor::currentSampleRate() const noexcept
     return rate > 0.0 ? rate : 48000.0;
 }
 
-void PluginProcessor::pushParametersToEngine() noexcept
+void PluginProcessor::pushParametersToEngine(bool force) noexcept
 {
+    // Traducir los 338 parámetros cuesta unos 2 µs: con bloques muy pequeños
+    // (FL Studio los entrega a veces de pocas muestras) se nota. Si no ha
+    // cambiado ninguno, el ecualizador ya tiene sus ajustes.
     const auto values = currentValues();
+    if (!force && values == pushedValues_)
+        return;
+    pushedValues_ = values;
     for (int band = 0; band < core::kNumBands; ++band)
         equalizer_.setBand(band, core::bandSettings(values, band));
     equalizer_.setBypassed(values[core::kBypass] >= 0.5f);
@@ -190,7 +196,7 @@ void PluginProcessor::pushParametersToEngine() noexcept
 void PluginProcessor::prepareToPlay(double sampleRate, int)
 {
     sampleRate_.store(sampleRate);
-    pushParametersToEngine();
+    pushParametersToEngine(true);
     equalizer_.prepare(sampleRate);
 
     const bool bypassed = raw_[core::kBypass]->load() >= 0.5f;

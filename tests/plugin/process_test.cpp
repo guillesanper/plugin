@@ -149,3 +149,35 @@ TEST_CASE("processBlock: con bypass la salida es la entrada")
                 REQUIRE(buffer.getSample(ch, i) == input.getSample(ch, i));
     }
 }
+
+TEST_CASE("processBlock: un parametro que cambia con el audio en marcha se aplica")
+{
+    auto p = makeProcessor();
+    drag(*p, core::bandParameter(0, core::BandParam::Frequency), {1000.0f});
+    drag(*p, core::bandParameter(0, core::BandParam::Enabled), {1.0f});
+    auto peakOf = [](const juce::AudioBuffer<float>& b) {
+        float peak = 0.0f;
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            peak = std::max(peak, std::abs(b.getSample(0, i)));
+        return peak;
+    };
+
+    CHECK(peakOf(run(*p, 40, 0.5f, 0.0f)) == Catch::Approx(0.5f).margin(0.005));
+
+    // run() vuelve a llamar a prepareToPlay; aquí se procesa sin hacerlo.
+    drag(*p, core::bandParameter(0, core::BandParam::Gain), {-12.0f});
+    juce::AudioBuffer<float> buffer(p->getTotalNumInputChannels(), kBlock);
+    juce::MidiBuffer midi;
+    long n = 0;
+    for (int b = 0; b < 40; ++b)
+    {
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+            for (int i = 0; i < kBlock; ++i)
+                buffer.setSample(ch, i, ch < 2 ? 0.5f * static_cast<float>(std::sin(2.0 * std::numbers::pi * 1000.0 *
+                                                                                    static_cast<double>(n + i) / kRate))
+                                                : 0.0f);
+        n += kBlock;
+        p->processBlock(buffer, midi);
+    }
+    CHECK(peakOf(buffer) == Catch::Approx(0.5f * std::pow(10.0f, -12.0f / 20.0f)).margin(0.005));
+}

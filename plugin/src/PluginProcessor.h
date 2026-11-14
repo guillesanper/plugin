@@ -101,13 +101,15 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    void pushParametersToEngine() noexcept;
+    /// Pasa los parámetros al ecualizador si han cambiado desde la última vez (o siempre, con `force`).
+    void pushParametersToEngine(bool force = false) noexcept;
 
     juce::AudioProcessorValueTreeState apvts_;
     std::array<std::atomic<float>*, core::kNumParameters> raw_{};
     std::array<juce::RangedAudioParameter*, core::kNumParameters> params_{};
 
     dsp::Equalizer equalizer_;
+    core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
     dsp::GainRamp outputGain_;
     dsp::SpscFifo preFifo_{1 << 15};
     dsp::SpscFifo postFifo_{1 << 15};
