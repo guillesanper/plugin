@@ -94,7 +94,7 @@ Con entrada finita nada de esto cambia el resultado: la salida es la misma bit a
 El analizador no está en el hilo de audio:
 
 1. El procesador escribe el audio en mono (media de los canales) en dos `SpscFifo` de 32768 muestras: antes y después del EQ.
-2. El editor, 30 veces por segundo, vacía las colas en dos `SpectrumAnalyzer`, aunque el analizador esté apagado, para no mostrar audio viejo al encenderlo.
+2. El editor, 30 veces por segundo, vacía las colas en dos `SpectrumAnalyzer`, aunque el analizador esté apagado, para no mostrar audio viejo al encenderlo. Al abrirse, las vacía sin analizarlas: con el editor cerrado se han llenado con el audio de cuando se cerró.
 3. `SpectrumAnalyzer` guarda las últimas 4096 muestras y calcula su FFT con ventana de Hann.
 4. Para cada uno de los 320 puntos de la pantalla toma el máximo de los bins dentro de ±1/24 de octava, o interpola entre los dos bins vecinos si no hay ninguno (graves).
 5. Aplica una inclinación de 4,5 dB/oct centrada en 1 kHz, para que la música suene "plana" en la pantalla.

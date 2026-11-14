@@ -59,6 +59,12 @@ CurveView::CurveView(PluginProcessor& processor)
     preAnalyzer_->setTiltDbPerOctave(kAnalyzerTiltDbPerOctave);
     postAnalyzer_->setTiltDbPerOctave(kAnalyzerTiltDbPerOctave);
     values_ = processor_.currentValues();
+    // Con el editor cerrado, las colas del analizador se llenan y se quedan con
+    // el audio de cuando se cerró. Se vacían para no dibujarlo al abrir.
+    for (auto* fifo : {&processor_.preAnalyzerFifo(), &processor_.postAnalyzerFifo()})
+        while (fifo->read(readBuffer_.data(), static_cast<int>(readBuffer_.size())) > 0)
+        {
+        }
     setOpaque(true);
     setWantsKeyboardFocus(true);
     setTitle("Equalizer curve");

@@ -32,6 +32,8 @@ private:
     void showMenu();
     void askForName();
     void save(const juce::String& name);
+    /// Pregunta antes de borrar un preset de usuario.
+    void confirmDelete(const juce::String& name);
 
     /// Diálogo con el aspecto de esceQ. Es una ventana aparte y no hereda el
     /// tema del editor: hay que dárselo, y cerrarla si el editor desaparece.

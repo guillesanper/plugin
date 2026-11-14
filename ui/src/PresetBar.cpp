@@ -183,7 +183,7 @@ void PresetBar::showMenu()
                            else if (result == kDeleteId)
                            {
                                if (const auto now = manager.current())
-                                   manager.deleteUser(now->name);
+                                   safe->confirmDelete(now->name);
                            }
                            else if (result == kDefaultId)
                                manager.loadDefault();
@@ -216,6 +216,26 @@ void PresetBar::askForName()
                                 juce::MessageManager::callAsync([safe, name] {
                                     if (safe != nullptr)
                                         safe->save(name);
+                                });
+                            }),
+                            true);
+}
+
+void PresetBar::confirmDelete(const juce::String& name)
+{
+    // Borrar un preset no se puede deshacer: se pregunta antes.
+    auto* window = makeDialog("Delete preset", "Delete the preset \"" + name + "\"? This cannot be undone.");
+    window->addButton("Delete", 1);
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey), juce::KeyPress(juce::KeyPress::returnKey));
+    juce::Component::SafePointer<PresetBar> safe(this);
+    window->enterModalState(true, juce::ModalCallbackFunction::create([safe, name](int result) {
+                                if (safe == nullptr || result != 1)
+                                    return;
+                                juce::MessageManager::callAsync([safe, name] {
+                                    if (safe == nullptr)
+                                        return;
+                                    safe->processor_.presets().deleteUser(name);
+                                    safe->refresh();
                                 });
                             }),
                             true);

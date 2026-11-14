@@ -111,7 +111,7 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 ### Barra superior
 
-De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar, valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
+De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
 
 ### Panel de banda
 
