@@ -5,6 +5,7 @@
 #include "PresetManager.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/spectrum_session.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/equalizer.h"
 #include "esceq/dsp/gain_ramp.h"
@@ -25,6 +26,9 @@ class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     PluginProcessor();
+    /// Con una sesión de espectros concreta en lugar de la del proceso (tests).
+    explicit PluginProcessor(std::shared_ptr<core::SpectrumSession> session);
+    ~PluginProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -46,6 +50,9 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override { return {}; }
     void changeProgramName(int, const juce::String&) override {}
+
+    /// El host dice el nombre y el color de la pista: se publican en la sesión.
+    void updateTrackProperties(const TrackProperties& properties) override;
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -96,6 +103,17 @@ public:
     /// Canales de la salida principal (1 o 2).
     int outputChannelCount() const noexcept { return outputChannels_.load(std::memory_order_relaxed); }
 
+    /// Espectros de las instancias de esceQ de la sesión, para compararlos.
+    /// Ver esceq/core/spectrum_session.h.
+    core::SpectrumSession& spectrumSession() noexcept { return *session_; }
+    /// Identificador de esta instancia en la sesión.
+    core::InstanceId instanceId() const noexcept { return sessionMember_->id(); }
+
+    /// Qué instancias superpone la interfaz y si marca las colisiones. Vive
+    /// aquí y no en el editor para que sobreviva a cerrar y abrir la ventana;
+    /// no se guarda con el proyecto. Solo desde el hilo de mensajes.
+    core::CompareSelection& compareSelection() noexcept { return compare_; }
+
     /// true si el host tiene conectado el bus de sidechain.
     bool sidechainConnected() const noexcept { return sidechainConnected_.load(std::memory_order_relaxed); }
 
@@ -124,6 +142,10 @@ private:
     std::atomic<int> stateRevision_{0};
     std::unique_ptr<EditHistory> history_;
     PresetManager presets_{*this};
+
+    std::shared_ptr<core::SpectrumSession> session_;
+    std::unique_ptr<core::SpectrumSession::Member> sessionMember_;
+    core::CompareSelection compare_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

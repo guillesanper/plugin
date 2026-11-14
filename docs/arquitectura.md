@@ -64,6 +64,7 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | `spsc_fifo.h` | Cola sin bloqueo de un productor y un consumidor | Audio escribe, interfaz lee |
 | `fft.h` | FFT radix-2 | Cualquiera |
 | `spectrum_analyzer.h` | Espectro calibrado para dibujar | Interfaz |
+| `spectrum_collision.h` | Colisiones (enmascaramiento) entre dos espectros: suavizado por octavas, presencia, severidad, tramos y promedio temporal. Ver [docs/dsp/colisiones.md](dsp/colisiones.md) | Cualquiera |
 
 El diseño (`designBand`) y el procesado (`BandFilter`) están separados a propósito: la interfaz puede calcular la curva sin procesar audio, y el filtro no sabe nada de tipos ni de parámetros de usuario. Un tipo de filtro nuevo se añade en `designBand` sin tocar `BandFilter`. Detalles en [docs/dsp/filtros.md](dsp/filtros.md), [docs/dsp/ecualizador.md](dsp/ecualizador.md) y [docs/dsp/dinamica.md](dsp/dinamica.md).
 
@@ -75,13 +76,14 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | `state.h` | Lectura y escritura del estado guardado: parámetros y preferencias de la interfaz (`UiSettings`), con migraciones entre versiones |
 | `history.h` | Historial de deshacer y rehacer por instantáneas (`UndoHistory`) |
 | `presets.h` | Presets de fábrica, texto de un preset y nombres de preset válidos como nombre de archivo |
+| `spectrum_session.h` | Espectros compartidos entre las instancias del proceso: registro, hilo trabajador que solo calcula si alguien mira, y la selección de instancias a comparar ([ADR 0011](decisiones/0011-espectros-compartidos.md)) |
 | `band_model.h` | De los valores de los parámetros a `dsp::BandSettings`, dinámica incluida. El procesador y la interfaz usan la misma función, así que **la curva que se dibuja es siempre la que suena** (la interfaz le suma la ganancia dinámica que publica el procesador) |
 
 ## Contenido de `plugin/`
 
 | Archivo | Qué hace |
 |---|---|
-| `PluginProcessor` | Buses, parámetros del host generados a partir de la tabla de `core`, `processBlock`, estado, colas del analizador y picos de salida |
+| `PluginProcessor` | Buses, parámetros del host generados a partir de la tabla de `core`, `processBlock`, estado, colas del analizador, picos de salida, y su lugar en la sesión de espectros compartidos (salida y nombre y color de la pista) |
 | `EditHistory` | Deshacer y rehacer: convierte los gestos de los parámetros en acciones de `core::UndoHistory` |
 | `PresetManager` | Presets de fábrica y de usuario (archivos en una carpeta del sistema) |
 | `PluginEditorFactory.cpp` | Único punto en el que el procesador conoce a la interfaz (`createEditor`) |
@@ -95,6 +97,7 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto |
 | `meter_logic.h` | Escala y balística del medidor de salida; balística del analizador; fracción del medidor de dinámica |
 | `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control |
+| `session_overlay.h` | Comparación con otras instancias: entradas del menú, colisiones con varias a la vez y colocación de sus etiquetas |
 
 Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/src` solo pinta y traduce gestos ([ADR 0008](decisiones/0008-sistema-visual.md), [ui.md](ui.md)).
 
@@ -145,6 +148,7 @@ Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignor
 |---|---|---|
 | Audio | `processBlock` | No asigna memoria, no bloquea, no hace E/S |
 | Mensajes / interfaz | Editor (refresco a 30 Hz), analizador, carga y guardado de estado, historial de deshacer, presets (lectura y escritura de archivos) | Ninguna especial |
+| Sesión de espectros (uno por proceso) | Lee la cola de cada instancia y calcula su espectro, 20 veces por segundo, solo mientras alguna interfaz compara ([ADR 0011](decisiones/0011-espectros-compartidos.md)) | No lo usa el hilo de audio; se crea con la primera instancia y se para con la última, nunca al descargar el binario |
 
 **Carga y guardado del estado.** VST3 (`IComponent::setState`) y CLAP (`state.load`) exigen que el host llame a `setStateInformation` desde el hilo de mensajes, y el envoltorio VST3 de JUCE lo comprueba con una aserción en depuración; AU no dice nada. Si algún host lo hiciera desde otro hilo, no hay carreras de datos: los parámetros son atómicos, las preferencias tienen su cerrojo, el historial (`EditHistory`) protege lo suyo con otro, y en JUCE 9 `Timer::stopTimer` se puede llamar desde cualquier hilo (lo dice su documentación) y `AsyncUpdater::cancelPendingUpdate` solo pone a cero un atómico. Un test de `tests/plugin/state_test.cpp` carga estados desde un hilo mientras el de mensajes deshace y el de audio procesa; ejecutado con ThreadSanitizer no da ningún aviso (el CI no lo ejecuta así; cómo hacerlo, en [DEV.md](../DEV.md)). Lo único que no se garantiza en ese caso es el orden: una carga simultánea a un deshacer puede dejar parámetros de los dos. `getStateInformation` solo lee, y se puede llamar desde cualquier hilo.
 
@@ -154,6 +158,7 @@ Comunicación:
 - **Preferencias de la interfaz:** viven en el procesador (`uiSettings()`), protegidas con un cerrojo que el hilo de audio nunca toma. El editor las lee al abrirse y cuando el host carga un estado (`stateRevision()`), y las escribe cuando cambian.
 - **Audio → interfaz:** dos `dsp::SpscFifo` (audio mono antes y después del EQ). El hilo de audio escribe; si la cola está llena, descarta. El editor abierto es el **único** lector. Si algún host abriera dos editores a la vez del mismo plugin, habría dos lectores: no está soportado.
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
+- **Audio → otras instancias:** una tercera `dsp::SpscFifo` por instancia, en `core::SpectrumSession`. El hilo de audio solo escribe si alguna interfaz del proceso está comparando (un atómico); la lee el hilo de la sesión, que publica el espectro bajo un cerrojo que el hilo de audio nunca toma. Las interfaces leen copias (`snapshot`).
 - **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.
 
 Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y si es segura entre hilos. Las que se llaman desde el hilo de audio llevan además la marca `ESCEQ_NONBLOCKING` (`esceq/dsp/realtime.h`): el job `RealtimeSanitizer` del CI ejecuta todos los tests con Clang y `-fsanitize=realtime`, y aborta si alguna de ellas, o algo que llamen, asigna memoria o bloquea. Un test "canario" comprueba que el sanitizador está actuando.
@@ -161,7 +166,7 @@ Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y s
 ## Flujo de audio actual (fase 4)
 
 ```
-entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp::GainRamp (salida) ─► cola "post" + picos ─► salida
+entrada ─► cola "pre" ─► dsp::Equalizer (24 bandas en serie) ─► dsp::GainRamp (salida) ─► cola "post" + cola de la sesión + picos ─► salida
                               ▲ detectores
 sidechain (bus opcional) ─────┘
 ```

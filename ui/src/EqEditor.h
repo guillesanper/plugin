@@ -41,6 +41,10 @@ private:
     void applyUiSettings();
     /// Guarda en el procesador las preferencias actuales de la interfaz.
     void storeUiSettings();
+    /// Menú para elegir con qué instancias de la sesión comparar.
+    void showCompareMenu();
+    /// Pone el botón Compare de acuerdo con la selección del procesador.
+    void updateCompareButton();
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
@@ -54,6 +58,7 @@ private:
     PresetBar presets_;
     IconButton undo_{draw::Icon::Undo, "Undo", draw::Corners::Left};
     IconButton redo_{draw::Icon::Redo, "Redo", draw::Corners::Right};
+    IconButton compare_{draw::Icon::Compare, "Compare with other tracks"};
     juce::TooltipWindow tooltips_{this, 700};
     Dropdown analyzer_{"Analyzer"};
     Dropdown range_{"Display range"};

@@ -102,6 +102,7 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"presets", bar.presets},
                              {"deshacer", bar.undo},
                              {"rehacer", bar.redo},
+                             {"comparar", bar.compare},
                              {"analizador", bar.analyzer},
                              {"rango", bar.range},
                              {"tamano", bar.size},
@@ -111,6 +112,9 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                             editor.topBar);
         CHECK(bar.presets.width >= 140.0f); // sitio para el nombre de un preset
         CHECK(bar.presets.width <= 320.0f);
+        // Los botones de icono son cuadrados y del mismo tamaño.
+        CHECK(bar.compare.width == bar.undo.width);
+        CHECK(bar.compare.width == bar.compare.height);
     }
 }
 

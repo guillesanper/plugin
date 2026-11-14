@@ -18,6 +18,7 @@ constexpr float kTopBarHeight = 48.0f;
 constexpr float kPanelHeight = 168.0f;
 constexpr float kMeterWidth = 52.0f;
 constexpr float kControlHeight = 24.0f;
+constexpr float kIconButton = 28.0f;
 
 constexpr float kBandCardWidth = 180.0f;
 constexpr float kDynamicsSideWidth = 104.0f;
@@ -131,10 +132,12 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     layout.range = takeRight(row, 92.0f);
     takeRight(row, kS2);
     layout.analyzer = takeRight(row, 124.0f);
+    takeRight(row, kS2);
+    layout.compare = takeRight(row, kIconButton);
     takeRight(row, kS4);
 
     // Lo que queda es para los presets (hasta un máximo) y deshacer/rehacer.
-    constexpr float kHistoryButton = 28.0f;
+    constexpr float kHistoryButton = kIconButton;
     constexpr float kMaxPresetsWidth = 320.0f;
     const float presets = std::clamp(row.width - 2.0f * kHistoryButton - kS2, 0.0f, kMaxPresetsWidth);
     layout.presets = takeLeft(row, presets);

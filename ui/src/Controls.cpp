@@ -601,7 +601,23 @@ void IconButton::paintButton(juce::Graphics& g, bool highlighted, bool down)
     state.pressed = down;
     state.enabled = isEnabled();
     state.focused = keyboardFocus_ && hasKeyboardFocus(false);
-    draw::iconButton(g, getLocalBounds().toFloat(), icon_, state, corners_);
+    draw::iconButton(g, getLocalBounds().toFloat(), icon_, state, corners_, on_, badge_);
+}
+
+void IconButton::setOn(bool on)
+{
+    if (on == on_)
+        return;
+    on_ = on;
+    repaint();
+}
+
+void IconButton::setBadge(const juce::String& badge)
+{
+    if (badge == badge_)
+        return;
+    badge_ = badge;
+    repaint();
 }
 
 void IconButton::focusGained(FocusChangeType cause)

@@ -62,6 +62,7 @@ struct TopBarLayout
     Rect presets; ///< Navegador de presets: ocupa el espacio que sobra.
     Rect undo;
     Rect redo;
+    Rect compare; ///< Comparar con otras instancias de la sesión (botón con icono).
     Rect analyzer;
     Rect range;
     Rect size;

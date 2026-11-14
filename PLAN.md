@@ -211,7 +211,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
 | **5. Calidad** | Corrección en agudos, fase lineal, auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
-| **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias, surround | Versión 1.0 | Abierto |
+| **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), surround | Versión 1.0 | Abierto |
 
 ---
 

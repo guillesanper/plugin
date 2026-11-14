@@ -145,6 +145,7 @@ void CurveView::refresh()
         setSelectedBand(-1);
 
     changed = updateAnalyzer() || changed;
+    changed = updateSession(false) || changed;
     if (changed)
         repaint();
 }
@@ -190,6 +191,65 @@ bool CurveView::updateAnalyzer()
 // ---------------------------------------------------------------------------
 // Pintado
 
+void CurveView::compareChanged()
+{
+    updateSession(true);
+    repaint();
+}
+
+bool CurveView::updateSession(bool force)
+{
+    auto& selection = processor_.compareSelection();
+    auto& session = processor_.spectrumSession();
+
+    if (selection.shown.empty())
+    {
+        sessionViewer_.release();
+        const bool hadSomething = !overlays_.empty() || !collisions_.zones.empty();
+        overlays_.clear();
+        collisions_ = {};
+        return hadSomething;
+    }
+
+    if (!sessionViewer_.active())
+    {
+        sessionViewer_ = session.watch();
+        force = true;
+    }
+    const auto revision = session.revision();
+    if (!force && revision == sessionRevision_)
+        return false;
+    sessionRevision_ = revision;
+
+    session.snapshot(sessionSnapshot_);
+    // Las instancias que se han ido (pista borrada, plugin quitado) dejan de estar seleccionadas.
+    if (selection.retainExisting(sessionSnapshot_) && selection.shown.empty())
+        return updateSession(true);
+
+    const core::InstanceSpectrum* own = nullptr;
+    overlays_.clear();
+    for (const auto& instance : sessionSnapshot_)
+    {
+        if (instance.id == processor_.instanceId())
+            own = &instance;
+        else if (selection.contains(instance.id))
+            overlays_.push_back({instance.id, instance.displayName(),
+                                 theme::instance(instance.number, instance.trackColour), instance.hasSignal,
+                                 instance.levelsDb});
+    }
+
+    showCollisions_ = selection.showCollisions && own != nullptr;
+    collisions_ = {};
+    if (showCollisions_)
+    {
+        std::vector<std::span<const float>> others;
+        for (const auto& overlay : overlays_)
+            others.emplace_back(overlay.levels);
+        collisions_ = computeCollisions(core::sessionFrequencies(), own->levelsDb, others);
+    }
+    return true;
+}
+
 void CurveView::paint(juce::Graphics& g)
 {
     g.fillAll(colour::window);
@@ -205,10 +265,13 @@ void CurveView::paint(juce::Graphics& g)
         g.fillAll(colour::plot);
 
         drawAnalyzer(g, m);
+        drawCollisions(g, m);
+        drawSession(g, m);
         drawGrid(g, m);
         updateCurveCache(m);
         drawCurves(g, m);
         drawNodes(g, m);
+        drawCollisionLabels(g, m);
         drawReadout(g, m);
     }
 
@@ -299,6 +362,120 @@ void CurveView::drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const
     {
         g.setColour(colour::analyzerPre.withAlpha(0.6f));
         g.strokePath(makePath(preLevels_.levels(), false), juce::PathStrokeType(stroke::hairline));
+    }
+}
+
+void CurveView::drawSession(juce::Graphics& g, const CurveMapping& m) const
+{
+    if (overlays_.empty())
+        return;
+
+    const auto area = m.area();
+    const float bottom = area.y + area.height;
+    const auto& frequencies = core::sessionFrequencies();
+    for (const auto& overlay : overlays_)
+    {
+        juce::Path path;
+        for (std::size_t i = 0; i < overlay.levels.size() && i < frequencies.size(); ++i)
+        {
+            const float x = m.xForFrequency(frequencies[i]);
+            const float y = std::clamp(m.yForAnalyzerDb(overlay.levels[i]), area.y, bottom);
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        // Una instancia sin señal se queda atenuada: su espectro se va apagando.
+        g.setColour(overlay.colour.withAlpha(overlay.hasSignal ? 0.85f : 0.35f));
+        g.strokePath(path, juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved));
+    }
+}
+
+void CurveView::drawCollisions(juce::Graphics& g, const CurveMapping& m) const
+{
+    if (!showCollisions_ || collisions_.severity.empty())
+        return;
+
+    const auto area = m.area();
+    const float bottom = area.y + area.height;
+    const auto& frequencies = core::sessionFrequencies();
+    const auto& severity = collisions_.severity;
+    const std::size_t n = std::min(frequencies.size(), severity.size());
+
+    // Cada punto ocupa la columna entre los puntos medios con sus vecinos.
+    // Un velo de arriba abajo, y una franja más intensa en el borde inferior.
+    constexpr float kStripHeight = 4.0f;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (severity[i] < 0.02f)
+            continue;
+        const float x = m.xForFrequency(frequencies[i]);
+        // Bordes en píxeles enteros: dos columnas vecinas comparten borde sin
+        // que el suavizado de bordes deje una raya entre ellas.
+        const float left = std::round(i > 0 ? 0.5f * (x + m.xForFrequency(frequencies[i - 1])) : area.x);
+        const float right =
+            std::round(i + 1 < n ? 0.5f * (x + m.xForFrequency(frequencies[i + 1])) : area.x + area.width);
+        if (right <= left)
+            continue;
+        const juce::Rectangle<float> column{left, area.y, right - left, area.height};
+        g.setColour(colour::danger.withAlpha(0.07f * severity[i]));
+        g.fillRect(column);
+        g.setColour(colour::danger.withAlpha(0.9f * severity[i]));
+        g.fillRect(column.withTop(bottom - kStripHeight));
+    }
+}
+
+void CurveView::drawCollisionLabels(juce::Graphics& g, const CurveMapping& m) const
+{
+    if (!showCollisions_ || collisions_.zones.empty())
+        return;
+    const auto area = m.area();
+
+    // Etiquetas de las zonas más importantes, en una fila arriba. A la derecha
+    // queda sitio para la escala de dB.
+    CollisionViewSettings settings;
+    constexpr std::size_t kMaxLabels = 4;
+    constexpr float kLabelHeight = 20.0f;
+    const auto labelFont = font(type::small, Weight::Medium);
+    std::vector<float> centres;
+    std::vector<float> widths;
+    std::vector<const CollisionZone*> zones;
+    for (const auto& zone : collisions_.zones)
+    {
+        if (zones.size() == kMaxLabels)
+            break;
+        if (zone.culprit < 0 || static_cast<std::size_t>(zone.culprit) >= overlays_.size() ||
+            std::log2(zone.region.highHz / zone.region.lowHz) < settings.minLabelledOctaves)
+            continue;
+        const auto& culprit = overlays_[static_cast<std::size_t>(zone.culprit)];
+        const auto text = toJuce(collisionLabel(culprit.name, zone.region.peakHz));
+        zones.push_back(&zone);
+        centres.push_back(m.xForFrequency(zone.region.peakHz));
+        widths.push_back(juce::GlyphArrangement::getStringWidth(labelFont, text) + 2.0f * space::x2 + space::x3);
+    }
+    const Rect row{area.x + space::x2, area.y, area.width - 52.0f, area.height};
+    const auto placed = placeLabels(centres, widths, row, area.y + space::x2, kLabelHeight, space::x1);
+
+    g.setFont(labelFont);
+    for (std::size_t i = 0; i < zones.size(); ++i)
+    {
+        if (!placed[i])
+            continue;
+        const auto& zone = *zones[i];
+        const auto& culprit = overlays_[static_cast<std::size_t>(zone.culprit)];
+        const auto r = toJuce(*placed[i]);
+        g.setColour(colour::card.withAlpha(0.92f));
+        g.fillRoundedRectangle(r, radius::control);
+        g.setColour(colour::danger.withAlpha(0.35f + 0.65f * zone.region.peakSeverity));
+        g.drawRoundedRectangle(r.reduced(0.5f), radius::control, stroke::hairline);
+
+        auto inner = r.reduced(space::x2, 0.0f);
+        g.setColour(culprit.colour);
+        g.fillEllipse(inner.removeFromLeft(6.0f).withSizeKeepingCentre(6.0f, 6.0f));
+        inner.removeFromLeft(space::x1 + 2.0f);
+        g.setColour(colour::text);
+        g.drawText(toJuce(collisionLabel(culprit.name, zone.region.peakHz)), inner,
+                   juce::Justification::centredLeft, false);
     }
 }
 

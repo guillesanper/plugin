@@ -179,6 +179,11 @@ class IconButton final : public juce::Button
 public:
     IconButton(draw::Icon icon, const juce::String& accessibleName, draw::Corners corners = draw::Corners::All);
 
+    /// Encendido: el icono va en el color de acento (por ejemplo, Compare con algo seleccionado).
+    void setOn(bool on);
+    /// Texto corto en una pastilla sobre la esquina (un número), o vacío.
+    void setBadge(const juce::String& badge);
+
     void paintButton(juce::Graphics& g, bool highlighted, bool down) override;
     void focusGained(FocusChangeType cause) override;
     void focusLost(FocusChangeType cause) override;
@@ -187,6 +192,8 @@ private:
     draw::Icon icon_;
     draw::Corners corners_;
     bool keyboardFocus_ = false;
+    bool on_ = false;
+    juce::String badge_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(IconButton)
 };

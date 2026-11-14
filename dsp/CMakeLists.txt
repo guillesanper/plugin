@@ -8,6 +8,7 @@ add_library(esceq_dsp STATIC
     src/equalizer.cpp
     src/fft.cpp
     src/spectrum_analyzer.cpp
+    src/spectrum_collision.cpp
     src/spsc_fifo.cpp
     src/filter_design.cpp
     src/gain_ramp.cpp)

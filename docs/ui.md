@@ -95,7 +95,7 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ marca   presets   deshacer   analizador  rango  S M L  salida  bypass │  48 px
+│ marca  presets  deshacer  comparar  analizador  rango  S M L  salida  bypass │  48 px
 ├──────────────────────────────────────────────────────────┬───────────┤
 │                                                          │           │
 │                         curva                            │  medidor  │
@@ -111,7 +111,7 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 ### Barra superior
 
-De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
+De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
 
 ### Panel de banda
 
@@ -130,6 +130,18 @@ Sin banda seleccionada, el panel muestra los gestos de la curva:
 - **Fuera de rango:** si la ganancia de una banda no cabe en el rango visible, el nodo se queda junto al borde con una flecha que indica hacia dónde sigue.
 
 ![Banda fuera del rango visible, en el tamaño mínimo](img/ui/fuera-de-rango.png)
+
+### Comparar con otras pistas
+
+El botón con dos curvas que se cruzan, a la izquierda del analizador, abre el menú **Compare with**: las demás instancias de esceQ del proyecto, con el nombre y el color de su pista (o "esceQ 2", "esceQ 3"... si el host no los da), marcadas como "(silent)" si no les llega audio. Se pueden elegir varias, todas ("Show all") o ninguna ("Hide all"), y activar o no **Highlight collisions**. Con alguna elegida, el botón se enciende y muestra cuántas.
+
+- Cada instancia elegida se dibuja como una línea con su color, en la escala del analizador. Sin señal, se atenúa y se apaga en unos segundos.
+- Donde otra pista tapa a esta, un velo rojo (`colour::danger`) por columnas, más intenso en una franja en el borde inferior; su intensidad es la severidad de la colisión.
+- Hasta cuatro etiquetas arriba con la pista y la frecuencia del centro de cada zona ("Bass · 113 Hz"), de la más importante a la menos; si dos se solaparían, se queda la importante (`placeLabels`).
+
+La selección no se guarda con el proyecto (sobrevive a cerrar y abrir la ventana). Solo se ven las instancias del mismo proceso y formato. La lógica está en `esceq/ui/session_overlay.h`; el algoritmo, en [dsp/colisiones.md](dsp/colisiones.md); las decisiones, en la [ADR 0011](decisiones/0011-espectros-compartidos.md).
+
+![Comparando con un bajo y unos teclados](img/ui/comparar.png)
 
 ### Medidor de salida
 

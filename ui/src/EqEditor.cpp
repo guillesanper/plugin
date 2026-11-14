@@ -7,6 +7,9 @@
 #include "Theme.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/ui/session_overlay.h"
+
+#include <algorithm>
 
 namespace esceq::ui {
 
@@ -51,6 +54,11 @@ EqEditor::EqEditor(PluginProcessor& owner)
     };
     addAndMakeVisible(analyzer_);
 
+    compare_.setTooltip("Compare with other esceQ instances: overlay their spectrum and show where it collides with this one");
+    compare_.onClick = [this] { showCompareMenu(); };
+    addAndMakeVisible(compare_);
+    updateCompareButton();
+
     for (int range : {6, 12, 18, 30})
         range_.addItem(juce::String::fromUTF8("\xC2\xB1") + juce::String(range) + " dB", range);
     range_.onChange = [this] {
@@ -87,7 +95,7 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     // Orden de tabulación: barra superior, curva y panel.
     int order = 1;
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &analyzer_, &range_, &size_, &output_, &bypass_, &curve_,
+    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &analyzer_, &range_, &size_, &output_, &bypass_, &curve_,
                                                                       &panel_})
         c->setExplicitFocusOrder(order++);
 
@@ -196,6 +204,7 @@ void EqEditor::resized()
     presets_.setBounds(toInt(topBar_.presets));
     undo_.setBounds(toInt(topBar_.undo));
     redo_.setBounds(toInt(topBar_.redo).withTrimmedLeft(-1)); // comparten el borde central
+    compare_.setBounds(toInt(topBar_.compare));
     analyzer_.setBounds(toInt(topBar_.analyzer));
     range_.setBounds(toInt(topBar_.range));
     size_.setBounds(toInt(topBar_.size));
@@ -224,8 +233,73 @@ void EqEditor::timerCallback()
     meter_.refresh();
     panel_.refresh();
     presets_.refresh();
+    updateCompareButton(); // la curva quita de la selección las instancias que se van
     undo_.setEnabled(processor_.history().canUndo());
     redo_.setEnabled(processor_.history().canRedo());
+}
+
+void EqEditor::updateCompareButton()
+{
+    const auto& selection = processor_.compareSelection();
+    compare_.setOn(!selection.shown.empty());
+    compare_.setBadge(toJuce(compareBadge(selection)));
+}
+
+void EqEditor::showCompareMenu()
+{
+    constexpr int kCollisionsId = 1;
+    constexpr int kAllId = 2;
+    constexpr int kNoneId = 3;
+    constexpr int kFirstInstanceId = 100;
+
+    std::vector<core::InstanceSpectrum> instances;
+    processor_.spectrumSession().snapshot(instances);
+    auto& selection = processor_.compareSelection();
+    selection.retainExisting(instances);
+    const auto items = compareMenuItems(instances, processor_.instanceId(), selection);
+
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(&getLookAndFeel());
+    menu.addSectionHeader("Compare with");
+    if (items.empty())
+        menu.addItem(-1, "No other esceQ in this project", false);
+    for (std::size_t i = 0; i < items.size(); ++i)
+    {
+        const auto& item = items[i];
+        juce::PopupMenu::Item entry(toJuce(item.name) + (item.hasSignal ? "" : "  (silent)"));
+        entry.itemID = kFirstInstanceId + static_cast<int>(i);
+        entry.isTicked = item.ticked;
+        const auto it = std::find_if(instances.begin(), instances.end(), [&](const auto& s) { return s.id == item.id; });
+        if (it != instances.end())
+            entry.colour = theme::instance(it->number, it->trackColour);
+        menu.addItem(std::move(entry));
+    }
+    menu.addSeparator();
+    menu.addItem(kAllId, "Show all", std::any_of(items.begin(), items.end(), [](const auto& i) { return !i.ticked; }));
+    menu.addItem(kNoneId, "Hide all", !selection.shown.empty());
+    menu.addSeparator();
+    menu.addItem(kCollisionsId, "Highlight collisions", true, selection.showCollisions);
+
+    juce::Component::SafePointer<EqEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&compare_), [safe, items](int result) {
+        if (safe == nullptr || result <= 0)
+            return;
+        auto& chosen = safe->processor_.compareSelection();
+        if (result == kCollisionsId)
+            chosen.showCollisions = !chosen.showCollisions;
+        else if (result == kAllId)
+        {
+            for (const auto& item : items)
+                if (!chosen.contains(item.id))
+                    chosen.toggle(item.id);
+        }
+        else if (result == kNoneId)
+            chosen.shown.clear();
+        else if (const auto index = static_cast<std::size_t>(result - kFirstInstanceId); index < items.size())
+            chosen.toggle(items[index].id);
+        safe->updateCompareButton();
+        safe->curve_.compareChanged();
+    });
 }
 
 } // namespace esceq::ui

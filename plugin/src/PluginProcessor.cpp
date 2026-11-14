@@ -39,6 +39,11 @@ juce::NormalisableRange<float> rangeFor(const core::ParameterSpec* spec)
 } // namespace
 
 PluginProcessor::PluginProcessor()
+    : PluginProcessor(core::SpectrumSession::shared())
+{
+}
+
+PluginProcessor::PluginProcessor(std::shared_ptr<core::SpectrumSession> session)
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)
@@ -55,6 +60,21 @@ PluginProcessor::PluginProcessor()
         jassert(raw_[i] != nullptr && params_[i] != nullptr);
     }
     history_ = std::make_unique<EditHistory>(*this);
+
+    jassert(session != nullptr);
+    session_ = std::move(session);
+    sessionMember_ = session_->join();
+}
+
+// Fuera de línea: la sesión se suelta aquí, y si era la última instancia del
+// proceso, su hilo se para aquí (en el hilo que destruye el plugin, nunca al
+// descargar el binario).
+PluginProcessor::~PluginProcessor() = default;
+
+void PluginProcessor::updateTrackProperties(const TrackProperties& properties)
+{
+    sessionMember_->setTrackName(properties.name.value_or(juce::String{}).trim().toStdString());
+    sessionMember_->setTrackColour(properties.colourARGB);
 }
 
 // Los parámetros del host se generan a partir de la tabla de core: no se
@@ -193,6 +213,7 @@ void PluginProcessor::pushParametersToEngine(bool force) noexcept
 void PluginProcessor::prepareToPlay(double sampleRate, int)
 {
     sampleRate_.store(sampleRate);
+    sessionMember_->setSampleRate(sampleRate);
     pushParametersToEngine(true);
     equalizer_.prepare(sampleRate);
 
@@ -239,6 +260,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     outputGain_.process(channels, numChannels, numSamples);
 
     postFifo_.writeMix(channels, numChannels, numSamples);
+    // Lo que sale de la pista, para las demás instancias. Si nadie compara, no hace nada.
+    sessionMember_->feed(channels, numChannels, numSamples);
 
     // Pico de salida para el medidor. El hilo de audio solo sube el valor; el
     // medidor lo lee y lo pone a cero. Si ambos coinciden puede perderse un
