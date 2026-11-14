@@ -54,6 +54,67 @@ TEST_CASE("Fft: coincide con la DFT directa")
     }
 }
 
+TEST_CASE("Fft: la inversa deshace la directa multiplicada por N")
+{
+    for (int order : {1, 5, 12})
+    {
+        Fft fft(order);
+        const int n = fft.size();
+        std::vector<std::complex<float>> data(static_cast<std::size_t>(n));
+        std::uint32_t rng = 99u;
+        for (auto& x : data)
+        {
+            rng = rng * 1664525u + 1013904223u;
+            x = {static_cast<float>(rng >> 8) / 8388608.0f - 1.0f, static_cast<float>(rng & 0xff) / 128.0f - 1.0f};
+        }
+        auto result = data;
+        fft.forward(result.data());
+        fft.inverse(result.data());
+        for (std::size_t i = 0; i < data.size(); ++i)
+        {
+            INFO("orden " << order << " muestra " << i);
+            CHECK_THAT(result[i].real() / static_cast<float>(n), WithinAbs(data[i].real(), 1e-5));
+            CHECK_THAT(result[i].imag() / static_cast<float>(n), WithinAbs(data[i].imag(), 1e-5));
+        }
+    }
+}
+
+TEST_CASE("Fft: la inversa usa el signo positivo del exponente")
+{
+    // Un solo bin en k = 1 da e^(+2πi·n/N) en el tiempo.
+    FftDouble fft(4);
+    std::vector<std::complex<double>> data(16);
+    data[1] = 1.0;
+    fft.inverse(data.data());
+    for (int t = 0; t < 16; ++t)
+    {
+        const auto expected = std::polar(1.0, 2.0 * std::numbers::pi * t / 16.0);
+        CHECK_THAT(data[static_cast<std::size_t>(t)].real(), WithinAbs(expected.real(), 1e-12));
+        CHECK_THAT(data[static_cast<std::size_t>(t)].imag(), WithinAbs(expected.imag(), 1e-12));
+    }
+}
+
+TEST_CASE("Fft: en double el error de una FFT larga es del orden del redondeo")
+{
+    // 2^16 puntos, como al diseñar el FIR de 32768 coeficientes.
+    FftDouble fft(16);
+    const int n = fft.size();
+    std::vector<std::complex<double>> data(static_cast<std::size_t>(n));
+    std::uint32_t rng = 7u;
+    for (auto& x : data)
+    {
+        rng = rng * 1664525u + 1013904223u;
+        x = static_cast<double>(rng >> 8) / 8388608.0 - 1.0;
+    }
+    auto result = data;
+    fft.forward(result.data());
+    fft.inverse(result.data());
+    double worst = 0.0;
+    for (std::size_t i = 0; i < data.size(); ++i)
+        worst = std::max(worst, std::abs(result[i] / static_cast<double>(n) - data[i]));
+    CHECK(worst < 1e-13);
+}
+
 namespace {
 
 std::vector<float> sine(int numSamples, double hz, double amplitude, double fs)
