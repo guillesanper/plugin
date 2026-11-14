@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 
 namespace esceq::ui {
 
@@ -83,6 +84,16 @@ std::string editText(const core::ParameterSpec& spec, float value)
 std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text)
 {
     return core::parseValue(spec, text);
+}
+
+std::string phaseModeTooltip(int latencySamples, double sampleRate)
+{
+    if (latencySamples <= 0 || !(sampleRate > 0.0))
+        return "Phase mode \xC2\xB7 no latency";
+    const double ms = 1000.0 * latencySamples / sampleRate;
+    char text[96];
+    std::snprintf(text, sizeof text, "Phase mode \xC2\xB7 latency %.1f ms (%d samples)", ms, latencySamples);
+    return text;
 }
 
 } // namespace esceq::ui

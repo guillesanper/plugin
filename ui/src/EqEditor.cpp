@@ -7,6 +7,7 @@
 #include "Theme.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/ui/control_logic.h"
 #include "esceq/ui/session_overlay.h"
 
 #include <algorithm>
@@ -59,6 +60,10 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(compare_);
     updateCompareButton();
 
+    phase_.attach(owner.parameter(core::kPhaseMode), core::parameters()[core::kPhaseMode]);
+    addAndMakeVisible(phase_);
+    updatePhaseTooltip();
+
     for (int range : {6, 12, 18, 30})
         range_.addItem(juce::String::fromUTF8("\xC2\xB1") + juce::String(range) + " dB", range);
     range_.onChange = [this] {
@@ -95,8 +100,9 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     // Orden de tabulación: barra superior, curva y panel.
     int order = 1;
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &analyzer_, &range_, &size_, &output_, &bypass_, &curve_,
-                                                                      &panel_})
+    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &phase_,
+                                                                      &analyzer_, &range_, &size_, &output_, &bypass_,
+                                                                      &curve_, &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -205,6 +211,7 @@ void EqEditor::resized()
     undo_.setBounds(toInt(topBar_.undo));
     redo_.setBounds(toInt(topBar_.redo).withTrimmedLeft(-1)); // comparten el borde central
     compare_.setBounds(toInt(topBar_.compare));
+    phase_.setBounds(toInt(topBar_.phase));
     analyzer_.setBounds(toInt(topBar_.analyzer));
     range_.setBounds(toInt(topBar_.range));
     size_.setBounds(toInt(topBar_.size));
@@ -234,8 +241,19 @@ void EqEditor::timerCallback()
     panel_.refresh();
     presets_.refresh();
     updateCompareButton(); // la curva quita de la selección las instancias que se van
+    updatePhaseTooltip();
     undo_.setEnabled(processor_.history().canUndo());
     redo_.setEnabled(processor_.history().canRedo());
+}
+
+void EqEditor::updatePhaseTooltip()
+{
+    // La latencia del modo que suena: cambia un momento después de elegir otro.
+    const int latency = processor_.engineLatencySamples();
+    if (latency == shownLatency_)
+        return;
+    shownLatency_ = latency;
+    phase_.setTooltip(toJuce(phaseModeTooltip(latency, processor_.currentSampleRate())));
 }
 
 void EqEditor::updateCompareButton()

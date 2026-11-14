@@ -19,8 +19,8 @@ class PluginProcessor;
 
 namespace esceq::ui {
 
-/// Ventana del plugin: barra superior (analizador, rango, tamaño, salida y
-/// bypass), curva, medidor de salida y panel de la banda seleccionada.
+/// Ventana del plugin: barra superior (modo de fase, analizador, rango,
+/// tamaño, salida y bypass), curva, medidor de salida y panel de la banda seleccionada.
 /// La disposición sale de esceq/ui/layout.h.
 class EqEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -45,6 +45,8 @@ private:
     void showCompareMenu();
     /// Pone el botón Compare de acuerdo con la selección del procesador.
     void updateCompareButton();
+    /// Pone en la ayuda del modo de fase la latencia del modo que suena.
+    void updatePhaseTooltip();
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
@@ -60,6 +62,8 @@ private:
     IconButton redo_{draw::Icon::Redo, "Redo", draw::Corners::Right};
     IconButton compare_{draw::Icon::Compare, "Compare with other tracks"};
     juce::TooltipWindow tooltips_{this, 700};
+    Dropdown phase_{"Phase mode"};
+    int shownLatency_ = -1;
     Dropdown analyzer_{"Analyzer"};
     Dropdown range_{"Display range"};
     Segmented size_;

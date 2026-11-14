@@ -226,3 +226,11 @@ TEST_CASE("Controles: confirmar texto escrito a mano")
     CHECK_FALSE(commitText(gain(), "abc").has_value());
     CHECK_FALSE(commitText(frequency(), "   ").has_value());
 }
+
+TEST_CASE("Controles: la ayuda del modo de fase dice la latencia")
+{
+    CHECK(phaseModeTooltip(0, 48000.0) == "Phase mode \xC2\xB7 no latency");
+    CHECK(phaseModeTooltip(1280, 48000.0) == "Phase mode \xC2\xB7 latency 26.7 ms (1280 samples)");
+    CHECK(phaseModeTooltip(17408, 48000.0) == "Phase mode \xC2\xB7 latency 362.7 ms (17408 samples)");
+    CHECK(phaseModeTooltip(4608, 0.0) == "Phase mode \xC2\xB7 no latency");
+}

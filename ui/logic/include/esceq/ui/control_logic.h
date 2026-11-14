@@ -68,4 +68,9 @@ std::string editText(const core::ParameterSpec& spec, float value);
 /// no se entiende (el control conserva su valor). Usa core::parseValue.
 std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text);
 
+/// Texto de ayuda del selector del modo de fase, con la latencia que el modo
+/// que suena añade: "Phase mode · latency 26.7 ms (1280 samples)", o
+/// "Phase mode · no latency".
+std::string phaseModeTooltip(int latencySamples, double sampleRate);
+
 } // namespace esceq::ui

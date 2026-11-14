@@ -105,13 +105,13 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 └──────────────┴─────────────────┴─────────────────────────────────────┘
 ```
 
-- **Tamaños:** S (960 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 960 × 540 y 2400 × 1400.
+- **Tamaños:** S (1080 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 1080 × 540 y 2400 × 1400. El ancho mínimo es el que necesita la barra superior entera con el navegador de presets en su mínimo ([ADR 0012](decisiones/0012-modos-de-fase.md)).
 - **Sin textos cortados:** los tests de `tests/ui/layout_test.cpp` recorren los tamaños de ventana y comprueban que ninguna zona ni control se solapa, y que cada celda de potenciómetro tiene ancho para su etiqueta y su valor.
 - **Escalado:** todo es vectorial y se dibuja en píxeles lógicos; el factor de escala (100, 125, 150, 200 %) lo aplican JUCE y el host. Las líneas de 1 px se alinean a píxeles enteros.
 
 ### Barra superior
 
-De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
+De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **modo de fase** (Natural Phase, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
 
 ### Panel de banda
 

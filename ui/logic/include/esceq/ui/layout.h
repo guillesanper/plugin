@@ -20,7 +20,9 @@ struct WindowSize
     friend bool operator==(const WindowSize&, const WindowSize&) = default;
 };
 
-inline constexpr WindowSize kMinWindow{960, 540};
+/// El ancho mínimo es el que necesita la barra superior entera, con el
+/// navegador de presets en su ancho mínimo (ver docs/ui.md).
+inline constexpr WindowSize kMinWindow{1080, 540};
 inline constexpr WindowSize kMaxWindow{2400, 1400};
 
 /// Tamaños predefinidos de la ventana. CONTRATO: el índice se guarda en el
@@ -63,6 +65,7 @@ struct TopBarLayout
     Rect undo;
     Rect redo;
     Rect compare; ///< Comparar con otras instancias de la sesión (botón con icono).
+    Rect phase;   ///< Modo de fase.
     Rect analyzer;
     Rect range;
     Rect size;
