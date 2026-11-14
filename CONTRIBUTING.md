@@ -53,6 +53,8 @@ cmake --build build --target esceq_snapshot
 
 En Linux sin pantalla, anteponer `xvfb-run -a`. Opciones: `ancho alto`, `--scale F` (1, 1.25, 1.5, 2), `--select N`, `--hover N` (etiqueta flotante de esa banda), `--overflow`, `--bypass` y `--gallery` (estados de los controles).
 
+Para medir el coste de pintar la curva, `--bench N` pone las 24 bandas dinámicas y pinta N fotogramas de arrastre (por ejemplo `esceq_snapshot x.png 1480 860 --scale 1 --bench 60`). Imprime la media y la mediana, sin audio y con audio, y una huella de los píxeles de un fotograma fijo: si una optimización no debe cambiar lo que se ve, la huella tiene que salir igual antes y después.
+
 Cuando cambie el aspecto de la interfaz, regenera las imágenes de la documentación y míralas:
 
 ```

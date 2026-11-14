@@ -7,6 +7,12 @@
 //   --overflow    sube una banda por encima del rango visible.
 //   --bypass      con el bypass activado.
 //   --gallery     en vez del editor, la galería de estados de los controles.
+//   --bench N     mide el coste de pintar la curva en vez de guardar una captura:
+//                 pone las 24 bandas como campanas dinámicas y pinta N
+//                 fotogramas de arrastre de un nodo, sin audio y con audio
+//                 (media y mediana, en ms). Imprime además una huella de los
+//                 píxeles de un fotograma fijo, para comprobar que una
+//                 optimización no cambia lo que se dibuja.
 //   --desktop QUE SEGUNDOS
 //                 muestra el editor en el escritorio durante SEGUNDOS con algo
 //                 abierto, para capturar la pantalla con otra herramienta (los
@@ -28,6 +34,9 @@
 
 #include <juce_audio_utils/juce_audio_utils.h>
 
+#include <algorithm>
+#include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <iostream>
 #include <functional>
@@ -243,11 +252,11 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] "
-                     "[--overflow] [--bypass] [--gallery]\n";
+                     "[--overflow] [--bypass] [--gallery] [--bench N]\n";
         return 2;
     }
 
-    int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0;
+    int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0;
     std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, gallery = false;
@@ -268,6 +277,8 @@ int main(int argc, char** argv)
             bypass = true;
         else if (arg == "--gallery")
             gallery = true;
+        else if (arg == "--bench")
+            bench = std::max(1, std::atoi(next()));
         else if (arg == "--desktop")
         {
             desktop = next();
@@ -313,6 +324,18 @@ int main(int argc, char** argv)
     setDynamic(*processor, 5, DynParam::Enabled, 1.0f);
     if (bypass)
         processor->parameter(esceq::core::kBypass).setValueNotifyingHost(1.0f);
+    if (bench > 0)
+    {
+        // El peor caso: las 24 bandas, todas campanas dinámicas que actúan.
+        for (int band = 0; band < esceq::core::kNumBands; ++band)
+        {
+            const float hz = 30.0f * std::pow(600.0f, static_cast<float>(band) / 23.0f);
+            addBand(*processor, band, 0.0f, hz, (band % 2 == 0) ? 3.0f : -3.0f, 1.2f);
+            setDynamic(*processor, band, DynParam::Threshold, -50.0f);
+            setDynamic(*processor, band, DynParam::Range, -6.0f);
+            setDynamic(*processor, band, DynParam::Enabled, 1.0f);
+        }
+    }
 
     constexpr double sampleRate = 48000.0;
     constexpr int blockSize = 512;
@@ -353,6 +376,60 @@ int main(int argc, char** argv)
         juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
     }
     curve.setHoveredBand(hover - 1);
+
+    if (bench > 0)
+    {
+        // Como un arrastre: cada fotograma cambia la ganancia de una banda, el
+        // editor lee los parámetros y la curva se pinta entera. Dos casos: sin
+        // audio (solo cambia la banda arrastrada) y con audio (además se mueve
+        // la ganancia dinámica de las 24 bandas en cada fotograma).
+        auto& gain = processor->parameter(esceq::core::bandParameter(5, BandParam::Gain));
+        // Se pinta siempre en la misma imagen, como en una ventana: reservar
+        // una imagen nueva en cada fotograma mediría también al reservador.
+        juce::Image target(juce::Image::RGB, juce::roundToInt(static_cast<float>(curve.getWidth()) * scale),
+                           juce::roundToInt(static_cast<float>(curve.getHeight()) * scale), true);
+        auto measure = [&](bool withAudio) {
+            std::vector<double> times;
+            for (int frame = 0; frame < bench; ++frame)
+            {
+                gain.setValueNotifyingHost(gain.convertTo0to1(-6.0f + 12.0f * static_cast<float>(frame % 50) / 49.0f));
+                if (withAudio)
+                    feed(3);
+                curve.refresh();
+                const auto start = std::chrono::steady_clock::now();
+                {
+                    juce::Graphics g(target);
+                    g.addTransform(juce::AffineTransform::scale(scale));
+                    curve.paintEntireComponent(g, true);
+                }
+                times.push_back(std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
+            }
+            std::sort(times.begin(), times.end());
+            double mean = 0.0;
+            for (const double t : times)
+                mean += t / static_cast<double>(times.size());
+            std::cout << "curva " << curve.getWidth() << "x" << curve.getHeight() << " escala " << scale
+                      << (withAudio ? ", con audio" : ", sin audio") << ": media " << mean << " ms, mediana "
+                      << times[times.size() / 2] << " ms\n";
+        };
+        measure(false);
+        measure(true);
+
+        // Huella de un fotograma fijo, sin analizador (que depende del reloj).
+        curve.setAnalyzerMode(esceq::ui::AnalyzerMode::Off);
+        gain.setValueNotifyingHost(gain.convertTo0to1(2.0f));
+        curve.refresh();
+        const auto image = curve.createComponentSnapshot(curve.getLocalBounds(), true, scale);
+        const juce::Image::BitmapData pixels(image, juce::Image::BitmapData::readOnly);
+        std::uint64_t hash = 14695981039346656037ull;
+        for (int y = 0; y < pixels.height; ++y)
+            for (int x = 0; x < pixels.width; ++x)
+                hash = (hash ^ pixels.getPixelColour(x, y).getARGB()) * 1099511628211ull; // FNV-1a
+        std::cout << "huella del fotograma fijo: " << std::hex << hash << std::dec << "\n";
+        editor.reset();
+        processor->releaseResources();
+        return 0;
+    }
 
     if (!desktop.empty())
     {
