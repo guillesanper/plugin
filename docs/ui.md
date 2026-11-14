@@ -135,6 +135,10 @@ Sin banda seleccionada, el panel muestra los gestos de la curva:
 
 Pico por canal después del ecualizador y de la ganancia de salida. Sube al instante y baja a 24 dB/s; el pico máximo se retiene 1,2 s. Verde hasta −6 dB, ámbar hasta 0 dBFS, rojo por encima. El número de arriba es el pico retenido; se pone rojo si ha habido recorte y se borra con un clic. Escala y balística en `esceq/ui/meter_logic.h`.
 
+## Coste de pintado
+
+El editor consulta el procesador 30 veces por segundo, pero la curva y el medidor solo se repintan si algo ha cambiado: parámetros, ganancia dinámica, frecuencia de muestreo, espectro (más de 0,05 dB en algún punto) o nivel del medidor. Con el transporte parado, o con el analizador apagado y sin bandas dinámicas, no se repinta nada. Dibujar la curva no es barato: con 24 bandas dinámicas cuesta unos 14 ms en una ventana L a escala 1 (renderizador por software de JUCE en Linux).
+
 ## Accesibilidad
 
 - Todos los controles tienen nombre y rol para los lectores de pantalla; los potenciómetros exponen su rango, su valor y su valor como texto ("1.20 kHz").

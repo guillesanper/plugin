@@ -26,6 +26,7 @@ constexpr float kNodeEdgeMargin = kNodeRadius + 10.0f; // sitio para la flecha d
 constexpr double kAnalyzerRiseSeconds = 0.06;  // constante de tiempo al subir
 constexpr double kAnalyzerFallSeconds = 0.35;  // y al bajar: más lenta, para que se pueda leer
 constexpr double kAnalyzerTiltDbPerOctave = 4.5;
+constexpr float kAnalyzerRepaintDb = 0.05f; // por debajo de esto el espectro no se mueve en pantalla
 
 using namespace theme;
 
@@ -133,22 +134,32 @@ void CurveView::resized()
 
 void CurveView::refresh()
 {
-    values_ = processor_.currentValues();
+    const auto values = processor_.currentValues();
+    std::array<float, core::kNumBands> gains{};
     for (int band = 0; band < core::kNumBands; ++band)
-        dynamicGains_[static_cast<std::size_t>(band)] = processor_.dynamicGainDb(band);
+        gains[static_cast<std::size_t>(band)] = processor_.dynamicGainDb(band);
+
+    // Solo se repinta si algo ha cambiado: dibujar la curva con muchas bandas
+    // en una ventana grande cuesta varios milisegundos.
+    const double sampleRate = processor_.currentSampleRate(); // cambia la curva cerca de Nyquist
+    bool changed = values != values_ || gains != dynamicGains_ || !juce::exactlyEqual(sampleRate, lastSampleRate_);
+    values_ = values;
+    dynamicGains_ = gains;
+    lastSampleRate_ = sampleRate;
 
     // Si la banda seleccionada se ha desactivado (desde el host o el panel), se deselecciona.
     if (selected_ >= 0 && values_[core::bandParameter(selected_, core::BandParam::Enabled)] < 0.5f && dragging_ < 0)
         setSelectedBand(-1);
 
-    updateAnalyzer();
-    repaint();
+    changed = updateAnalyzer() || changed;
+    if (changed)
+        repaint();
 }
 
 // ---------------------------------------------------------------------------
 // Analizador
 
-void CurveView::updateAnalyzer()
+bool CurveView::updateAnalyzer()
 {
     const double now = juce::Time::getMillisecondCounterHiRes();
     const double dt = lastAnalyzerUpdateMs_ > 0.0 ? (now - lastAnalyzerUpdateMs_) / 1000.0 : 0.0;
@@ -168,28 +179,34 @@ void CurveView::updateAnalyzer()
     drain(processor_.postAnalyzerFifo(), *postAnalyzer_);
 
     if (!active)
-        return;
+        return false;
 
     // Suavizado exponencial en dB: cada fotograma es una sola FFT y, sin
     // promediar, el espectro del ruido o la música sale muy dentado.
     const auto rise = static_cast<float>(1.0 - std::exp(-dt / kAnalyzerRiseSeconds));
     const auto fall = static_cast<float>(1.0 - std::exp(-dt / kAnalyzerFallSeconds));
+    // Devuelve true si algún punto se ha movido lo bastante para verse.
     auto update = [&](dsp::SpectrumAnalyzer& analyzer, std::vector<float>& levels) {
         analyzer.setSampleRate(sampleRate);
         analyzer.compute(analyzerFrequencies_, scratch_);
+        bool moved = false;
         for (std::size_t i = 0; i < levels.size(); ++i)
         {
             float& level = levels[i];
+            const float before = level;
             if (level <= dsp::SpectrumAnalyzer::kFloorDb + 1.0f)
                 level = scratch_[i]; // primer dato: sin transición desde el silencio
             else
                 level += (scratch_[i] - level) * (scratch_[i] > level ? rise : fall);
+            moved = moved || std::abs(level - before) > kAnalyzerRepaintDb;
         }
+        return moved;
     };
 
-    update(*postAnalyzer_, postLevels_);
+    bool moved = update(*postAnalyzer_, postLevels_);
     if (analyzerMode_ == AnalyzerMode::PreAndPost)
-        update(*preAnalyzer_, preLevels_);
+        moved = update(*preAnalyzer_, preLevels_) || moved;
+    return moved;
 }
 
 // ---------------------------------------------------------------------------

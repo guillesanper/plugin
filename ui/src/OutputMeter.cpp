@@ -26,10 +26,22 @@ void OutputMeter::refresh()
     const double dt = lastUpdateMs_ > 0.0 ? (now - lastUpdateMs_) / 1000.0 : 0.0;
     lastUpdateMs_ = now;
 
-    channels_ = std::clamp(processor_.outputChannelCount(), 1, 2);
+    const int channels = std::clamp(processor_.outputChannelCount(), 1, 2);
+    bool changed = channels != channels_;
+    channels_ = channels;
     for (int ch = 0; ch < 2; ++ch)
-        meters_[static_cast<std::size_t>(ch)].update(processor_.takeOutputPeak(ch), dt);
-    repaint();
+    {
+        auto& meter = meters_[static_cast<std::size_t>(ch)];
+        const double level = meter.levelDb();
+        const double hold = meter.holdDb();
+        const bool clipped = meter.clipped();
+        meter.update(processor_.takeOutputPeak(ch), dt);
+        changed = changed || !juce::exactlyEqual(meter.levelDb(), level) || !juce::exactlyEqual(meter.holdDb(), hold) ||
+                  meter.clipped() != clipped;
+    }
+    // En silencio el medidor no se mueve: no hace falta repintarlo.
+    if (changed)
+        repaint();
 }
 
 void OutputMeter::mouseDown(const juce::MouseEvent&)

@@ -66,7 +66,7 @@ public:
     void setRangeDb(double rangeDb);
     void setAnalyzerMode(AnalyzerMode mode);
 
-    /// Lee parámetros y audio nuevo y repinta. La llama el temporizador del editor.
+    /// Lee parámetros y audio nuevo, y repinta si algo ha cambiado. La llama el temporizador del editor.
     void refresh();
 
     void paint(juce::Graphics& g) override;
@@ -97,7 +97,8 @@ private:
     void removeBand(int band);
     void showBandMenu(int band);
 
-    void updateAnalyzer();
+    /// Lee el audio nuevo y actualiza el espectro. true si ha cambiado lo bastante para repintar.
+    bool updateAnalyzer();
     void drawGrid(juce::Graphics& g, const CurveMapping& m) const;
     void drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const;
     void drawCurves(juce::Graphics& g, const CurveMapping& m) const;
@@ -126,6 +127,7 @@ private:
     std::vector<float> scratch_;
     std::vector<float> readBuffer_;
     double lastAnalyzerUpdateMs_ = 0.0;
+    double lastSampleRate_ = 0.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CurveView)
 };
