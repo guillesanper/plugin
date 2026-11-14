@@ -75,9 +75,19 @@ struct BandDesign
 };
 
 /// Calcula los coeficientes de una banda.
-/// Segura en tiempo real (no asigna memoria); usa tan() y pow(), así que
-/// conviene llamarla una vez por bloque y no por muestra.
+/// Segura en tiempo real (no asigna memoria). Usa tan() y pow(): unos 40 ns.
+/// El ecualizador la llama una vez por tramo de 32 muestras, y en las bandas
+/// dinámicas hasta una vez por muestra (con designBandPrewarped()).
 BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING;
+
+/// g = tan(π·f/fs) de una banda, con la frecuencia ajustada al mismo rango que
+/// en designBand(). Solo depende de la frecuencia y de la frecuencia de muestreo.
+double prewarpedG(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
+
+/// Como designBand(), pero con `g` ya calculada con prewarpedG() para la
+/// frecuencia de `params`. El resultado es idéntico bit a bit; sirve para no
+/// recalcular la tangente cuando solo cambia la ganancia (la dinámica).
+BandDesign designBandPrewarped(const FilterParams& params, double g) noexcept ESCEQ_NONBLOCKING;
 
 /// Respuesta compleja exacta del filtro digital en `frequencyHz`.
 /// Coincide con lo que mide BandFilter, incluida la deformación de la

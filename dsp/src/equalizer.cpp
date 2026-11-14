@@ -92,7 +92,10 @@ void Equalizer::prepare(double sampleRate) noexcept
     fadeLength_ = std::max(1, static_cast<int>(std::lround(kCrossfadeSeconds * sampleRate_)));
     chunkPhase_ = 0;
     for (auto& band : bands_)
+    {
         band.envelope.prepare(sampleRate_);
+        band.prewarpedFor = -1.0; // la tangente depende de la frecuencia de muestreo
+    }
     reset();
 }
 
@@ -232,7 +235,14 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
     if (!force && effective == band.designed)
         return;
     band.designed = effective;
-    band.active.setDesign(designBand(effective, sampleRate_));
+    // La dinámica rediseña la banda hasta una vez por muestra cambiando solo la
+    // ganancia: la tangente de la frecuencia se guarda y no se recalcula.
+    if (effective.frequencyHz != band.prewarpedFor)
+    {
+        band.prewarpedFor = effective.frequencyHz;
+        band.prewarped = prewarpedG(effective.frequencyHz, sampleRate_);
+    }
+    band.active.setDesign(designBandPrewarped(effective, band.prewarped));
 }
 
 void Equalizer::process(float* const* channels, int numChannels, int numSamples, const float* const* sidechain,

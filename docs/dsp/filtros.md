@@ -112,6 +112,10 @@ Verificado: 4911 comparaciones entre la respuesta medida sobre el audio procesad
 
 Los rangos que verá el usuario (más estrechos) se definirán en `core/` en la fase 2.
 
+## Coste
+
+Una sección de segundo orden es una recurrencia: cada muestra depende de la anterior, y el tiempo lo marca la latencia de esa cadena de operaciones, no su número. Por eso `BandFilter` procesa los dos canales de una banda estéreo en el mismo bucle: las dos recurrencias son independientes y el procesador las solapa. Cada canal hace exactamente las mismas operaciones que en una pasada propia, así que el resultado es idéntico bit a bit, y cuesta un tercio menos (24 campanas estéreo a 48 kHz: 0,9 % de un núcleo; 24 cortes de 96 dB/oct: 6 %).
+
 ## Precisión
 
 El estado y los coeficientes son `double`; el audio entra y sale en `float`. Entre secciones de una cascada la señal pasa por `float`, lo que no supone un error apreciable (ver la cifra de verificación de arriba).

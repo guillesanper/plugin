@@ -89,11 +89,19 @@ std::complex<double> sectionResponse(const SectionCoeffs& c, double tanHalfOmega
 
 BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
-    const double frequency = std::clamp(params.frequencyHz, kMinFrequencyHz, kMaxFrequencyRatio * sampleRate);
+    return designBandPrewarped(params, prewarpedG(params.frequencyHz, sampleRate));
+}
+
+double prewarpedG(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING
+{
+    const double frequency = std::clamp(frequencyHz, kMinFrequencyHz, kMaxFrequencyRatio * sampleRate);
+    return std::tan(kPi * frequency / sampleRate);
+}
+
+BandDesign designBandPrewarped(const FilterParams& params, double g) noexcept ESCEQ_NONBLOCKING
+{
     const double q = std::clamp(params.q, kMinQ, kMaxQ);
     const double gainDb = std::clamp(params.gainDb, -kMaxGainDb, kMaxGainDb);
-
-    const double g = std::tan(kPi * frequency / sampleRate);
     const double k = 1.0 / q;
 
     BandDesign design;

@@ -130,6 +130,8 @@ private:
 
         // Dinámica
         FilterParams designed{};  ///< Parámetros efectivos (con la ganancia dinámica) del diseño activo.
+        double prewarpedFor = -1.0; ///< Frecuencia para la que se calculó `prewarped` (-1: ninguna).
+        double prewarped = 0.0;     ///< prewarpedG() de esa frecuencia: la dinámica solo cambia la ganancia.
         BandFilter detector;      ///< Filtro del detector.
         FilterParams detectorFor{};
         EnvelopeFollower envelope;
