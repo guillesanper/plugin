@@ -190,4 +190,34 @@ std::vector<GridLine> gainGrid(double rangeDb)
     return lines;
 }
 
+std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
+                                            double gainDb)
+{
+    const auto& specs = core::parameters();
+    std::vector<ParameterChange> changes;
+    auto set = [&](std::size_t index, float value) {
+        value = core::sanitize(specs[index], value);
+        if (values[index] != value)
+            changes.push_back({index, value});
+    };
+    auto setDefault = [&](std::size_t index) { set(index, specs[index].defaultValue); };
+
+    const auto frequency = core::bandParameter(band, core::BandParam::Frequency);
+    const auto gain = core::bandParameter(band, core::BandParam::Gain);
+    for (const auto param : {core::BandParam::Type, core::BandParam::Q, core::BandParam::Slope})
+        setDefault(core::bandParameter(band, param));
+    set(frequency, static_cast<float>(frequencyHz));
+    set(gain, static_cast<float>(gainDb));
+
+    for (const auto param : {core::DynParam::Enabled, core::DynParam::Threshold, core::DynParam::Range,
+                             core::DynParam::Attack, core::DynParam::Release, core::DynParam::Knee,
+                             core::DynParam::Source})
+        setDefault(core::dynamicParameter(band, param));
+    setDefault(core::channelParameter(band));
+
+    // La última: la banda suena ya con sus valores.
+    set(core::bandParameter(band, core::BandParam::Enabled), 1.0f);
+    return changes;
+}
+
 } // namespace esceq::ui

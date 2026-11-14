@@ -99,6 +99,24 @@ std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bo
                                 float radius) noexcept;
 
 /// `count` frecuencias repartidas logarítmicamente entre los límites de la vista.
+/// Un parámetro y el valor que debe tomar.
+struct ParameterChange
+{
+    std::size_t index = 0;
+    float value = 0.0f;
+
+    friend bool operator==(const ParameterChange&, const ParameterChange&) = default;
+};
+
+/// Cambios que crean una banda nueva con doble clic en la curva: una campana
+/// en `frequencyHz` y `gainDb`, y todo lo demás de la banda (Q, pendiente,
+/// dinámica, canal) en su valor por defecto, aunque la banda guardara otros
+/// ajustes de cuando estuvo activa. Solo incluye los parámetros que cambian
+/// respecto a `values`, y la activación va la última: la banda empieza a
+/// sonar ya con sus valores.
+std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
+                                            double gainDb);
+
 std::vector<double> logFrequencies(int count);
 
 /// Frecuencias con línea de rejilla (20, 30, 40... 100, 200...) y si llevan texto.

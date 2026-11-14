@@ -29,7 +29,8 @@ enum class AnalyzerMode
 /// Vista principal: rejilla, analizador, curva de respuesta y nodos de las bandas.
 ///
 /// Interacción:
-///  - Doble clic en un hueco: añade una banda (campana) en ese punto.
+///  - Doble clic en un hueco: añade una banda (campana) en ese punto, con el
+///    resto de ajustes por defecto (sin dinámica, en Stereo).
 ///  - Arrastrar un nodo: frecuencia y ganancia. Con Mayús, ajuste fino.
 ///  - Rueda sobre un nodo o con una banda seleccionada: Q.
 ///  - Doble clic en un nodo: elimina (desactiva) la banda.

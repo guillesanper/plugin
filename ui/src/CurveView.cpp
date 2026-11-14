@@ -26,7 +26,6 @@ constexpr float kNodeEdgeMargin = kNodeRadius + 10.0f; // sitio para la flecha d
 constexpr double kAnalyzerRiseSeconds = 0.06;  // constante de tiempo al subir
 constexpr double kAnalyzerFallSeconds = 0.35;  // y al bajar: más lenta, para que se pueda leer
 constexpr double kAnalyzerTiltDbPerOctave = 4.5;
-constexpr float kDefaultQ = 0.7071f;
 
 using namespace theme;
 
@@ -803,21 +802,16 @@ void CurveView::addBandAt(juce::Point<float> position)
     if (!band)
         return;
 
+    // Una campana en el punto del doble clic, con el resto de ajustes por
+    // defecto: la banda no hereda la dinámica ni el canal de cuando estuvo activa.
     const auto m = mapping();
-    const std::array<std::pair<core::BandParam, float>, 6> settings{{
-        {core::BandParam::Type, 0.0f},
-        {core::BandParam::Frequency, static_cast<float>(m.frequencyForX(position.x))},
-        {core::BandParam::Gain, static_cast<float>(m.gainForY(position.y))},
-        {core::BandParam::Q, kDefaultQ},
-        {core::BandParam::Slope, 1.0f},
-        {core::BandParam::Enabled, 1.0f}, // el último: la banda suena ya con sus valores
-    }};
-
-    for (const auto& [param, value] : settings)
+    for (const auto& change : newBandChanges(values_, *band, m.frequencyForX(position.x), m.gainForY(position.y)))
     {
-        beginGesture(*band, param);
-        setParameter(*band, param, value);
-        endGesture(*band, param);
+        auto& p = processor_.parameter(change.index);
+        p.beginChangeGesture();
+        p.setValueNotifyingHost(p.convertTo0to1(change.value));
+        p.endChangeGesture();
+        values_[change.index] = change.value;
     }
 
     setSelectedBand(*band);

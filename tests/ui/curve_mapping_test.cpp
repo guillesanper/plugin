@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/curve_mapping.h"
 
+#include "esceq/core/band_model.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -221,4 +223,55 @@ TEST_CASE("Vista: con margen, el nodo fuera de rango queda entero dentro de la v
     // Un margen absurdo no cruza el centro ni produce valores no finitos.
     CHECK(nodePosition(m, high, 5000.0f).y == 190.0f);
     CHECK(nodePosition(m, high, -5.0f).y == 10.0f);
+}
+
+TEST_CASE("Vista: una banda nueva no hereda la dinamica ni el canal de antes")
+{
+    using core::BandParam;
+    using core::DynParam;
+    auto values = core::defaultValues();
+    const int band = 4;
+    // La banda estuvo activa como corte dinámico en Side, y se desactivó.
+    values[core::bandParameter(band, BandParam::Type)] = 3.0f;
+    values[core::bandParameter(band, BandParam::Q)] = 5.0f;
+    values[core::bandParameter(band, BandParam::Slope)] = 7.0f;
+    values[core::dynamicParameter(band, DynParam::Enabled)] = 1.0f;
+    values[core::dynamicParameter(band, DynParam::Threshold)] = -50.0f;
+    values[core::dynamicParameter(band, DynParam::Source)] = 1.0f;
+    values[core::channelParameter(band)] = 4.0f;
+
+    const auto changes = newBandChanges(values, band, 2500.0, -4.0);
+    REQUIRE_FALSE(changes.empty());
+    CHECK(changes.back() == ParameterChange{core::bandParameter(band, BandParam::Enabled), 1.0f});
+
+    for (const auto& change : changes)
+        values[change.index] = change.value;
+    const auto settings = core::bandSettings(values, band);
+    CHECK(settings.enabled);
+    CHECK(settings.filter.type == dsp::FilterType::Bell);
+    CHECK_THAT(settings.filter.frequencyHz, WithinRel(2500.0, 1e-6));
+    CHECK(settings.filter.gainDb == -4.0);
+    CHECK(settings.channel == dsp::ChannelMode::Stereo);
+    CHECK_FALSE(settings.dynamics.enabled);
+    CHECK_FALSE(settings.dynamics.external);
+    for (int i = 0; i < 6; ++i)
+        if (i != static_cast<int>(BandParam::Frequency) && i != static_cast<int>(BandParam::Gain) &&
+            i != static_cast<int>(BandParam::Enabled))
+        {
+            const auto index = core::bandParameter(band, static_cast<BandParam>(i));
+            CHECK(values[index] == core::parameters()[index].defaultValue);
+        }
+    for (int i = 0; i < 7; ++i)
+    {
+        const auto index = core::dynamicParameter(band, static_cast<DynParam>(i));
+        CHECK(values[index] == core::parameters()[index].defaultValue);
+    }
+}
+
+TEST_CASE("Vista: una banda nueva solo cambia lo que hace falta")
+{
+    const auto values = core::defaultValues();
+    const auto changes = newBandChanges(values, 0, 1000.0, 0.0); // todo ya está por defecto
+    REQUIRE(changes.size() == 1);
+    CHECK(changes[0] == ParameterChange{core::bandParameter(0, core::BandParam::Enabled), 1.0f});
 }
