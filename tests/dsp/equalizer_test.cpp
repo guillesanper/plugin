@@ -365,3 +365,23 @@ TEST_CASE("Ecualizador: dos cambios estructurales seguidos no producen saltos")
         CHECK(maxStep(out) <= 1.05f * cleanStep);
     }
 }
+
+TEST_CASE("Ecualizador: cambiar los ajustes de una banda apagada no impide asentarse")
+{
+    Equalizer eq;
+    eq.prepare(kFs);
+    BandSettings off;
+    off.filter = {FilterType::Bell, 500.0, 3.0, 1.0};
+    eq.setBand(3, off); // sigue apagada, con otros ajustes
+
+    std::vector<float> silence(4800, 0.0f);
+    float* channel = silence.data();
+    eq.process(&channel, 1, static_cast<int>(silence.size()));
+    CHECK(eq.isSettled());
+    CHECK(std::all_of(silence.begin(), silence.end(), [](float x) { return x == 0.0f; }));
+
+    // Y al encenderla suena con esos ajustes.
+    off.enabled = true;
+    eq.setBand(3, off);
+    CHECK(eq.target(3).filter.frequencyHz == 500.0);
+}

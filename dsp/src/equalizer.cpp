@@ -110,6 +110,13 @@ void Equalizer::setBand(int index, const BandSettings& settings) noexcept ESCEQ_
         return;
 
     band.target = next;
+    if (!band.current.enabled && !next.enabled)
+    {
+        // Los ajustes de una banda apagada no suenan: se copian sin más.
+        band.current = next;
+        band.structuralPending = false;
+        return;
+    }
     if (!isStructuralChange(band.current, next))
         return; // frecuencia, ganancia, Q y dinámica: los suaviza smoothBand()
 
