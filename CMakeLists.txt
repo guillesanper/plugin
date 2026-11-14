@@ -42,6 +42,13 @@ if(MSVC)
     add_compile_options(/utf-8 /MP)
 endif()
 
+# Biblioteca de ejecución de MSVC enlazada de forma estática (/MT): el plugin no
+# depende de las DLL del redistribuible de Visual C++, que no todos los
+# equipos tienen y que el instalador no incluye. Afecta a todo lo que se
+# compila (también JUCE y Catch2), para que nada mezcle las dos. El CI
+# comprueba con dumpbin que el VST3 y el CLAP no las importan.
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(ESCEQ_RTSAN)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "Clang" OR CMAKE_CXX_COMPILER_VERSION VERSION_LESS 20)
         message(FATAL_ERROR "ESCEQ_RTSAN necesita Clang 20 o posterior (compilador actual: "

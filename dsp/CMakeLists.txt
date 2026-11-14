@@ -12,5 +12,7 @@ add_library(esceq_dsp STATIC
     src/filter_design.cpp
     src/gain_ramp.cpp)
 
+# Quien use la biblioteca necesita C++20 para sus cabeceras.
+target_compile_features(esceq_dsp PUBLIC cxx_std_20)
 target_include_directories(esceq_dsp PUBLIC include)
 target_link_libraries(esceq_dsp PRIVATE esceq_warnings)

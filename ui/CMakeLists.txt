@@ -12,6 +12,8 @@ add_library(esceq_ui_logic STATIC
     logic/src/layout.cpp
     logic/src/meter_logic.cpp)
 
+# Quien use la biblioteca necesita C++20 para sus cabeceras.
+target_compile_features(esceq_ui_logic PUBLIC cxx_std_20)
 target_include_directories(esceq_ui_logic PUBLIC logic/include)
 target_link_libraries(esceq_ui_logic
     PUBLIC esceq_core

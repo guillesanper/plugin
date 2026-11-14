@@ -212,6 +212,18 @@ ctest --test-dir build-rtsan --output-on-failure
 
 El test `rtsan_detecta_asignaciones` es un canario: un programa que asigna memoria a propósito en una función de tiempo real y que **debe** abortar. Si pasara sin abortar, el sanitizador no estaría actuando.
 
+### AddressSanitizer y UndefinedBehaviorSanitizer
+
+Detectan accesos a memoria ya liberada, fuera de ámbito o fuera de los límites, y comportamiento indefinido. El CI ejecuta así todos los tests, incluidos los del plugin. En local (Linux o macOS, con GCC o Clang):
+
+```
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=RelWithDebInfo -DESCEQ_BUILD_CLAP=OFF \
+  "-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer" \
+  "-DCMAKE_EXE_LINKER_FLAGS=-fsanitize=address,undefined"
+cmake --build build-asan --parallel --target esceq_tests esceq_plugin_tests
+ASAN_OPTIONS=detect_leaks=0 ctest --test-dir build-asan --output-on-failure
+```
+
 ## Problemas frecuentes
 
 | Síntoma | Causa y solución |

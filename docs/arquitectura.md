@@ -176,7 +176,7 @@ El búfer que entrega el host contiene los canales de todos los buses: el proces
 | CLAP | Windows, macOS, Linux | clap-juce-extensions | clap-validator |
 | Standalone | Todas | JUCE | — (para depurar; no se distribuye) |
 
-El workflow `CI` (`.github/workflows/ci.yml`) tiene tres jobs: `core` (los módulos sin JUCE, en las tres plataformas), `rtsan` (los tests con RealtimeSanitizer) y `plugin` (compila todo, tests, validadores y paquetes; en Windows prueba el instalador). El workflow `Release` (`release.yml`) lo reutiliza al subir una etiqueta `vX.Y.Z` y publica los paquetes. Ver [ADR 0010](decisiones/0010-distribucion.md).
+El workflow `CI` (`.github/workflows/ci.yml`) tiene cuatro jobs: `core` (los módulos sin JUCE, en las tres plataformas), `rtsan` (los tests con RealtimeSanitizer), `sanitizers` (todos los tests, también los del plugin, con AddressSanitizer y UndefinedBehaviorSanitizer) y `plugin` (compila todo, tests, validadores y paquetes; en macOS valida el AU con `auval`; en Windows comprueba que no depende del redistribuible de Visual C++ y prueba el instalador). El workflow `Release` (`release.yml`) lo reutiliza al subir una etiqueta `vX.Y.Z` y publica los paquetes. Ver [ADR 0010](decisiones/0010-distribucion.md).
 
 ## Dependencias externas
 
@@ -188,6 +188,8 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 | clap-juce-extensions | commit `6bde108` (incluye CLAP 1.2.7) | Formato CLAP del plugin | MIT |
 | Catch2 | 3.16.1 | `tests/` | BSL-1.0 |
 
-En el CI, además: pluginval (última versión) y clap-validator 0.3.2 para validar los formatos, e Inno Setup 6 para el instalador de Windows.
+En el CI, además: pluginval 1.0.4 y clap-validator 0.3.2 para validar los formatos (los dos fijados por versión), `auval` del sistema para el AU, e Inno Setup 6 para el instalador de Windows.
+
+En Windows la biblioteca de ejecución de MSVC se enlaza de forma estática (`CMAKE_MSVC_RUNTIME_LIBRARY`, `/MT`): el plugin no depende del redistribuible de Visual C++, que el instalador no incluye. El CI lo comprueba con `dumpbin`.
 
 Además, la tipografía Inter 4.1 (SIL OFL 1.1) va copiada en `ui/assets/fonts/`, sin modificar y con su licencia, y se embebe en el binario.

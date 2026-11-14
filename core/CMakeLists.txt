@@ -10,6 +10,8 @@ add_library(esceq_core STATIC
     src/presets.cpp
     src/state.cpp)
 
+# Quien use la biblioteca necesita C++20 para sus cabeceras.
+target_compile_features(esceq_core PUBLIC cxx_std_20)
 target_include_directories(esceq_core PUBLIC include)
 target_link_libraries(esceq_core
     PUBLIC esceq_dsp
