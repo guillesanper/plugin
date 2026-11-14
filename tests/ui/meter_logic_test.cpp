@@ -6,6 +6,7 @@
 
 #include <cmath>
 #include <limits>
+#include <vector>
 
 using Catch::Matchers::WithinAbs;
 using namespace esceq::ui;
@@ -143,4 +144,49 @@ TEST_CASE("Medidor de dinamica: fraccion del rango que se esta usando")
     CHECK(dynamicMeterFraction(3.0, -12.0) == 0.0f);
     CHECK(dynamicMeterFraction(-3.0, 0.0) == 0.0f);
     CHECK(dynamicMeterFraction(std::numeric_limits<double>::quiet_NaN(), -12.0) == 0.0f);
+}
+
+TEST_CASE("Analizador: el primer dato tras el silencio se toma tal cual")
+{
+    constexpr float kFloor = -120.0f;
+    SpectrumBallistics b(3, kFloor);
+    CHECK(b.levels() == std::vector<float>{kFloor, kFloor, kFloor});
+    // Aunque no haya pasado tiempo: sin transición desde el silencio.
+    CHECK(b.update({-30.0f, -40.0f, kFloor}, 0.0));
+    CHECK(b.levels() == std::vector<float>{-30.0f, -40.0f, kFloor});
+}
+
+TEST_CASE("Analizador: sube rapido y baja despacio, con constantes de tiempo exponenciales")
+{
+    SpectrumBallistics b(2, -120.0f);
+    b.update({-40.0f, -40.0f}, 0.0);
+
+    // Tras una constante de tiempo, cada punto ha recorrido 1 - 1/e del camino.
+    const float path = 1.0f - std::exp(-1.0f);
+    b.update({-20.0f, -40.0f}, SpectrumBallistics::kRiseSeconds);
+    CHECK_THAT(b.levels()[0], WithinAbs(-40.0 + 20.0 * path, 1e-4));
+    CHECK(b.levels()[1] == -40.0f);
+
+    SpectrumBallistics c(1, -120.0f);
+    c.update({-20.0f}, 0.0);
+    c.update({-40.0f}, SpectrumBallistics::kFallSeconds);
+    CHECK_THAT(c.levels()[0], WithinAbs(-20.0 - 20.0 * path, 1e-4));
+
+    // En el mismo tiempo, subir avanza más que bajar.
+    SpectrumBallistics up(1, -120.0f), down(1, -120.0f);
+    up.update({-40.0f}, 0.0);
+    down.update({-20.0f}, 0.0);
+    up.update({-20.0f}, 0.033);
+    down.update({-40.0f}, 0.033);
+    CHECK(up.levels()[0] - (-40.0f) > (-20.0f) - down.levels()[0]);
+}
+
+TEST_CASE("Analizador: solo pide repintar si algun punto se mueve lo bastante para verse")
+{
+    SpectrumBallistics b(2, -120.0f);
+    b.update({-40.0f, -40.0f}, 0.0);
+    CHECK_FALSE(b.update({-40.0f, -40.0f}, 0.033)); // nada cambia
+    CHECK_FALSE(b.update({-40.0f, -40.01f}, 0.033)); // menos de kRepaintDb
+    CHECK(b.update({-40.0f, -30.0f}, 0.033));
+    CHECK_FALSE(b.update({-40.0f, -30.0f}, 0.0)); // sin tiempo no se mueve
 }

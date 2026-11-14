@@ -92,7 +92,7 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 |---|---|
 | `curve_mapping.h` | Frecuencia y ganancia ↔ píxeles, posición y selección de nodos, rejillas, etiqueta flotante, indicador de ganancia fuera de rango, valores de una banda nueva, navegación con el teclado y Q con la rueda |
 | `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto |
-| `meter_logic.h` | Escala y balística del medidor de salida; fracción del medidor de dinámica |
+| `meter_logic.h` | Escala y balística del medidor de salida; balística del analizador; fracción del medidor de dinámica |
 | `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control |
 
 Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/src` solo pinta y traduce gestos ([ADR 0008](decisiones/0008-sistema-visual.md), [ui.md](ui.md)).

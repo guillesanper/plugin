@@ -62,4 +62,29 @@ float dynamicMeterFraction(double dynamicGainDb, double rangeDb) noexcept
     return static_cast<float>(std::clamp(dynamicGainDb / rangeDb, 0.0, 1.0));
 }
 
+SpectrumBallistics::SpectrumBallistics(std::size_t points, float floorDb)
+    : levels_(points, floorDb),
+      floorDb_(floorDb)
+{
+}
+
+bool SpectrumBallistics::update(const std::vector<float>& target, double dtSeconds) noexcept
+{
+    const auto rise = static_cast<float>(1.0 - std::exp(-dtSeconds / kRiseSeconds));
+    const auto fall = static_cast<float>(1.0 - std::exp(-dtSeconds / kFallSeconds));
+    bool moved = false;
+    const std::size_t n = std::min(levels_.size(), target.size());
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        float& level = levels_[i];
+        const float before = level;
+        if (level <= floorDb_ + 1.0f)
+            level = target[i]; // primer dato: sin transición desde el silencio
+        else
+            level += (target[i] - level) * (target[i] > level ? rise : fall);
+        moved = moved || std::abs(level - before) > kRepaintDb;
+    }
+    return moved;
+}
+
 } // namespace esceq::ui

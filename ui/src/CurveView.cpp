@@ -23,10 +23,7 @@ constexpr int kAnalyzerPoints = 320;
 constexpr float kNodeRadius = 8.0f;
 constexpr float kHitRadius = 13.0f;
 constexpr float kNodeEdgeMargin = kNodeRadius + 10.0f; // sitio para la flecha de "fuera de rango"
-constexpr double kAnalyzerRiseSeconds = 0.06;  // constante de tiempo al subir
-constexpr double kAnalyzerFallSeconds = 0.35;  // y al bajar: más lenta, para que se pueda leer
 constexpr double kAnalyzerTiltDbPerOctave = 4.5;
-constexpr float kAnalyzerRepaintDb = 0.05f; // por debajo de esto el espectro no se mueve en pantalla
 
 using namespace theme;
 
@@ -181,26 +178,11 @@ bool CurveView::updateAnalyzer()
     if (!active)
         return false;
 
-    // Suavizado exponencial en dB: cada fotograma es una sola FFT y, sin
-    // promediar, el espectro del ruido o la música sale muy dentado.
-    const auto rise = static_cast<float>(1.0 - std::exp(-dt / kAnalyzerRiseSeconds));
-    const auto fall = static_cast<float>(1.0 - std::exp(-dt / kAnalyzerFallSeconds));
     // Devuelve true si algún punto se ha movido lo bastante para verse.
-    auto update = [&](dsp::SpectrumAnalyzer& analyzer, std::vector<float>& levels) {
+    auto update = [&](dsp::SpectrumAnalyzer& analyzer, SpectrumBallistics& levels) {
         analyzer.setSampleRate(sampleRate);
         analyzer.compute(analyzerFrequencies_, scratch_);
-        bool moved = false;
-        for (std::size_t i = 0; i < levels.size(); ++i)
-        {
-            float& level = levels[i];
-            const float before = level;
-            if (level <= dsp::SpectrumAnalyzer::kFloorDb + 1.0f)
-                level = scratch_[i]; // primer dato: sin transición desde el silencio
-            else
-                level += (scratch_[i] - level) * (scratch_[i] > level ? rise : fall);
-            moved = moved || std::abs(level - before) > kAnalyzerRepaintDb;
-        }
-        return moved;
+        return levels.update(scratch_, dt);
     };
 
     bool moved = update(*postAnalyzer_, postLevels_);
@@ -310,17 +292,17 @@ void CurveView::drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const
         return path;
     };
 
-    const auto fill = makePath(postLevels_, true);
+    const auto fill = makePath(postLevels_.levels(), true);
     g.setGradientFill(juce::ColourGradient(colour::analyzerPost.withAlpha(0.30f), 0.0f, area.y + 0.35f * area.height,
                                            colour::analyzerPost.withAlpha(0.06f), 0.0f, bottom, false));
     g.fillPath(fill);
     g.setColour(colour::analyzerPost.withAlpha(0.75f));
-    g.strokePath(makePath(postLevels_, false), juce::PathStrokeType(stroke::hairline));
+    g.strokePath(makePath(postLevels_.levels(), false), juce::PathStrokeType(stroke::hairline));
 
     if (analyzerMode_ == AnalyzerMode::PreAndPost)
     {
         g.setColour(colour::analyzerPre.withAlpha(0.6f));
-        g.strokePath(makePath(preLevels_, false), juce::PathStrokeType(stroke::hairline));
+        g.strokePath(makePath(preLevels_.levels(), false), juce::PathStrokeType(stroke::hairline));
     }
 }
 

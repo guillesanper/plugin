@@ -4,6 +4,7 @@
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/spectrum_analyzer.h"
 #include "esceq/ui/curve_mapping.h"
+#include "esceq/ui/meter_logic.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -124,8 +125,8 @@ private:
     std::unique_ptr<dsp::SpectrumAnalyzer> preAnalyzer_;
     std::unique_ptr<dsp::SpectrumAnalyzer> postAnalyzer_;
     std::vector<double> analyzerFrequencies_;
-    std::vector<float> preLevels_;
-    std::vector<float> postLevels_;
+    SpectrumBallistics preLevels_;
+    SpectrumBallistics postLevels_;
     std::vector<float> scratch_;
     std::vector<float> readBuffer_;
     double lastAnalyzerUpdateMs_ = 0.0;
