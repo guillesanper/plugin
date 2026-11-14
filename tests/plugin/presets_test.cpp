@@ -186,3 +186,25 @@ TEST_CASE("Presets: el nombre del preset viaja con el estado del proyecto")
     drag(*b, core::bandParameter(1, core::BandParam::Gain), {-6.0f});
     CHECK(b->presets().isModified());
 }
+
+TEST_CASE("Presets: un nombre de preset con ruta en el estado no lee archivos de fuera de la carpeta")
+{
+    auto p = makeProcessor();
+    const auto directory = PresetManager::userDirectory();
+    directory.createDirectory();
+    // Un archivo .esceq junto a la carpeta de presets, no dentro.
+    const auto outside = directory.getParentDirectory().getChildFile("esceq_test_outside.esceq");
+    REQUIRE(outside.replaceWithText("esceQ-state 2\nb01_on 1\n"));
+
+    for (const juce::String& name : {juce::String("../esceq_test_outside"), outside.getFullPathName().dropLastCharacters(6)})
+    {
+        const std::string state = "esceQ-state 2\nui.preset " + name.toStdString() + "\n";
+        p->setStateInformation(state.data(), static_cast<int>(state.size()));
+        // Se conserva el nombre (es informativo), pero no se lee ni se compara ningún archivo.
+        REQUIRE(p->presets().current().has_value());
+        CHECK_FALSE(p->presets().isModified());
+        CHECK_FALSE(p->presets().deleteUser(name));
+    }
+    CHECK(outside.existsAsFile());
+    outside.deleteFile();
+}

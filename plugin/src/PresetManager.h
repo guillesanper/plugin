@@ -63,7 +63,10 @@ public:
     bool isModified() const;
 
 private:
-    static juce::File fileFor(const juce::String& name);
+    /// Archivo de un preset de usuario, o nullopt si `name` no es un nombre de
+    /// preset válido. El nombre puede venir de un estado guardado (ui.preset):
+    /// uno con rutas ("../x", "/x") o caracteres reservados nunca llega al disco.
+    static std::optional<juce::File> fileFor(const juce::String& name);
     std::optional<core::ParameterValues> read(const Entry& entry) const;
     void setCurrent(const juce::String& name);
 

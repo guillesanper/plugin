@@ -43,8 +43,11 @@ juce::File PresetManager::userDirectory()
     return base.getChildFile("esceQ").getChildFile("Presets");
 }
 
-juce::File PresetManager::fileFor(const juce::String& name)
+std::optional<juce::File> PresetManager::fileFor(const juce::String& name)
 {
+    const auto text = name.toStdString();
+    if (text.empty() || core::sanitizePresetName(text) != text)
+        return std::nullopt;
     return userDirectory().getChildFile(name + extension());
 }
 
@@ -69,9 +72,9 @@ std::optional<core::ParameterValues> PresetManager::read(const Entry& entry) con
         return core::loadFactoryPreset(entry.name.toStdString());
 
     const auto file = fileFor(entry.name);
-    if (!file.existsAsFile())
+    if (!file || !file->existsAsFile())
         return std::nullopt;
-    return core::deserializeState(file.loadFileAsString().toStdString());
+    return core::deserializeState(file->loadFileAsString().toStdString());
 }
 
 void PresetManager::setCurrent(const juce::String& name)
@@ -130,7 +133,8 @@ bool PresetManager::saveUser(const juce::String& name)
         return false;
 
     const auto values = processor_.currentValues();
-    if (!fileFor(clean).replaceWithText(toJuce(core::serializePreset(values)), false, false, "\n"))
+    const auto file = fileFor(clean);
+    if (!file || !file->replaceWithText(toJuce(core::serializePreset(values)), false, false, "\n"))
         return false;
 
     cachedName_ = clean;
@@ -142,13 +146,14 @@ bool PresetManager::saveUser(const juce::String& name)
 bool PresetManager::userPresetExists(const juce::String& name) const
 {
     const auto clean = toJuce(core::sanitizePresetName(name.toStdString()));
-    return clean.isNotEmpty() && fileFor(clean).existsAsFile();
+    const auto file = fileFor(clean);
+    return file && file->existsAsFile();
 }
 
 bool PresetManager::deleteUser(const juce::String& name)
 {
     const auto file = fileFor(name);
-    if (!file.existsAsFile() || !file.deleteFile())
+    if (!file || !file->existsAsFile() || !file->deleteFile())
         return false;
     if (processor_.uiSettings().presetName == name.toStdString())
     {
@@ -167,7 +172,7 @@ std::optional<PresetManager::Entry> PresetManager::current() const
 
     // Un preset de usuario con el nombre de uno de fábrica tiene preferencia:
     // es el que el usuario guardó a propósito.
-    if (fileFor(name).existsAsFile())
+    if (const auto file = fileFor(name); file && file->existsAsFile())
         return Entry{name, false};
     if (core::loadFactoryPreset(name.toStdString()))
         return Entry{name, true};
