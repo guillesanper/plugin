@@ -35,15 +35,6 @@ struct Entry
     std::string_view value;
 };
 
-std::string_view trim(std::string_view text)
-{
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-        text.remove_prefix(1);
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-        text.remove_suffix(1);
-    return text;
-}
-
 /// Devuelve la siguiente línea de `text` (sin '\r' final) y la consume.
 std::string_view nextLine(std::string_view& text)
 {
@@ -57,11 +48,11 @@ std::string_view nextLine(std::string_view& text)
 
 Entry splitLine(std::string_view line)
 {
-    line = trim(line);
+    line = detail::trim(line);
     const auto space = line.find_first_of(" \t");
     if (space == std::string_view::npos)
         return {line, {}};
-    return {line.substr(0, space), trim(line.substr(space + 1))};
+    return {line.substr(0, space), detail::trim(line.substr(space + 1))};
 }
 
 /// Lee el número con el que empieza `text`, con la configuración regional
@@ -88,7 +79,7 @@ void migrate1to2(std::vector<Entry>& entries)
 std::string cleanPresetName(std::string_view name)
 {
     std::string out;
-    for (const char c : trim(name))
+    for (const char c : detail::trim(name))
     {
         // Sin caracteres de control: el nombre ocupa una sola línea del estado.
         if (static_cast<unsigned char>(c) < 0x20 || c == 0x7f)

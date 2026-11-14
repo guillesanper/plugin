@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/parameters.h"
 
+#include "text_utils.h"
+
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -112,15 +114,6 @@ std::string lower(std::string_view text)
     for (const char c : text)
         out.push_back(static_cast<char>(std::tolower(static_cast<unsigned char>(c))));
     return out;
-}
-
-std::string_view trim(std::string_view text)
-{
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
-        text.remove_prefix(1);
-    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
-        text.remove_suffix(1);
-    return text;
 }
 
 std::string fixed(double value, int decimals)
@@ -279,7 +272,7 @@ std::string formatValue(const ParameterSpec& spec, float value)
 
 std::optional<float> parseValue(const ParameterSpec& spec, std::string_view text)
 {
-    const std::string clean = lower(trim(text));
+    const std::string clean = lower(detail::trim(text));
     if (clean.empty())
         return std::nullopt;
 

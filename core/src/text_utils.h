@@ -1,11 +1,23 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include <cctype>
 #include <cstddef>
 #include <string>
+#include <string_view>
 
 /// Utilidades internas de core para texto UTF-8. No es una cabecera pública.
 namespace esceq::core::detail {
+
+/// `text` sin espacios en blanco al principio ni al final.
+inline std::string_view trim(std::string_view text)
+{
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.front())))
+        text.remove_prefix(1);
+    while (!text.empty() && std::isspace(static_cast<unsigned char>(text.back())))
+        text.remove_suffix(1);
+    return text;
+}
 
 /// Recorta `text` a `maxBytes` bytes como mucho, sin dejar a medias un
 /// carácter UTF-8 de varios bytes.
