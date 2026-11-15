@@ -16,6 +16,7 @@ Estado: **fases 0 a 3 completadas; fase 4 lista para publicar.** Todo lo de la 0
 - Procesado por banda en estéreo, L, R, Mid o Side.
 - Sidechain externo.
 - Modos de fase: IIR (latencia cero) y fase lineal en tres resoluciones, Low, Medium y High (hechos en la fase 5, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)).
+- Pendiente, especificado en la sección 5: escala de notas, analizador ampliado, bandas desde el espectro, tiempos automáticos en la dinámica, compensación automática de ganancia, igualar a una referencia, dinámica espectral y saturación.
 
 ### Qué no es
 
@@ -161,7 +162,7 @@ Cadena por banda:
 
 1. **Detector:** la señal (interna o sidechain) pasa por un band-pass centrado en la frecuencia de la banda, con su mismo Q.
 2. **Envolvente:** seguidor de nivel con ataque y relajación (pico o RMS).
-3. **Curva de ganancia:** umbral, rango máximo (positivo expande, negativo comprime) y rodilla suave. Opción de umbral automático.
+3. **Curva de ganancia:** umbral, rango máximo (positivo expande, negativo comprime) y rodilla suave. Opción de umbral automático, y tiempos automáticos (sección 5.4).
 4. **Aplicación:** la ganancia resultante se suma a la ganancia estática de la banda.
 
 Para campanas y shelves conviene la forma en paralelo `salida = entrada + (g − 1) · filtro(entrada)`: cambiar la ganancia es multiplicar por un escalar, sin recalcular coeficientes en cada muestra.
@@ -182,7 +183,269 @@ Sin `new`/`malloc`, sin mutex, sin llamadas al sistema en el hilo de audio; deno
 
 ---
 
-## 5. Herramientas, pruebas y distribución
+## 5. Funciones previstas
+
+Funciones del flujo de trabajo de referencia que esceQ aún no tiene, comprobado en noviembre de 2026 contra el código. Hay ya: curva interactiva con analizador pre y post, dinámica por banda con sidechain, 24 bandas, canal por banda (L, R, M, S), cuatro modos de fase y colisiones entre instancias. Los nombres son propios: ninguno copia el de una función comercial.
+
+Reglas comunes a todas:
+
+- **Contratos (sección 2.1):** los parámetros nuevos se añaden al final de la tabla, y su valor por defecto deja el sonido como está: un proyecto o preset anterior suena idéntico, bit a bit, sin tocar nada. Las preferencias de la interfaz van en líneas `ui.*` del estado, que sigue en la versión 2 si solo se añaden líneas ([ADR 0009](docs/decisiones/0009-preferencias-deshacer-y-presets.md)).
+- **Tiempo real (sección 4.5):** lo que corre en el hilo de audio no asigna ni bloquea, y se comprueba con RealtimeSanitizer. Lo que es análisis o diseño corre en la interfaz o en un hilo propio, como el diseño de la fase lineal.
+- **Lógica sin JUCE:** los cálculos (notas, picos, ajuste de bandas, compensación) van en `dsp`, `core` o `ui/logic`, con tests. En `ui/src` solo se pinta.
+- **Deshacer:** cada gesto que cambia varias bandas a la vez (tomar un pico, aplicar una igualación) es una sola acción.
+- **Documentación:** las funciones con DSP nuevo llevan su ADR y su página en `docs/dsp/` antes de fusionarse; todas, su entrada en `CHANGELOG.md` y en la tabla de uso del README.
+
+| Función | Sección | Fase | Parámetros nuevos | Latencia |
+|---|---|---|---|---|
+| Escala de notas | 5.1 | 5 | Ninguno (preferencias) | No |
+| Analizador ampliado | 5.2 | 5 | Ninguno (preferencias) | No |
+| Bandas desde el espectro | 5.3 | 5 | Ninguno | No |
+| Tiempos automáticos en la dinámica | 5.4 | 5 | 24 (uno por banda) | No |
+| Compensación automática de ganancia | 5.5 | 5 | 1 global | No |
+| Igualar a una referencia | 5.6 | 6 | Ninguno (crea bandas normales) | No |
+| Dinámica espectral | 5.7 | 6 | 24 (uno por banda) | Sí, mientras se use |
+| Saturación | 5.8 | 6 | 3 globales | Solo con sobremuestreo en fase lineal |
+
+### 5.1 Escala de notas
+
+**Qué es.** Un teclado de piano a lo largo del eje de frecuencias, para leer y fijar frecuencias como notas: ver qué nota es una resonancia y llevar una banda justo a la fundamental de un bajo o de un bombo.
+
+**Comportamiento**
+
+- Franja de teclas de 14 px bajo la curva, de E0 (20,6 Hz) a D♯10 (19,9 kHz). Las teclas negras van más cortas, y cada do lleva su octava (C1 a C9). Se muestra u oculta con un botón de la barra superior. Por defecto está oculta.
+- Al pasar el ratón por una tecla se ilumina y se dibuja su frecuencia como línea vertical en la curva.
+- La etiqueta flotante del nodo añade la nota más cercana y la desviación en cents, de −50 a +50: "220 Hz · A3 +0 ct". También el campo de frecuencia del panel inferior.
+- **Ajustar a semitonos:** con Alt (Option en macOS) pulsado al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana. Lo mismo con Ctrl/Cmd + izquierda/derecha, que avanza un semitono. Hoy Alt no se usa en la curva.
+- En el campo de frecuencia se puede escribir una nota: "A3", "C#2" o "Eb4" (en inglés, con sostenido `#` o bemol `b`).
+- Afinación: A4 = 440 Hz por defecto, ajustable de 400 a 480 Hz en pasos de 0,1 Hz.
+
+**Estado:** preferencias `ui.notes` (0 o 1) y `ui.a4` (en Hz). No hay parámetros, y la frecuencia de la banda sigue guardándose como número real: la nota solo se calcula al mostrarla.
+
+**Lógica** (`ui/logic`): `noteForFrequency(f, a4) → {midi, cents}`, `frequencyForNote(midi, a4)`, `snapToSemitone(f, a4)`, `parseNote(texto)` y `noteName(midi)`.
+
+**Aceptación**
+
+- 440 Hz es MIDI 69 con 0 ct, y 261,626 Hz es C4 con menos de 0,1 ct de error. Con A4 = 432 Hz, 432 Hz es A4.
+- En el límite de ±50 ct el redondeo es estable, siempre hacia la misma nota.
+- `frequencyForNote(noteForFrequency(f))` recupera la nota.
+- "Eb4" y "D#4" dan la misma frecuencia, y los textos inválidos se rechazan sin cambiar el valor.
+- Con la franja oculta la disposición es la de ahora, píxel a píxel (test de `layout`).
+
+### 5.2 Analizador ampliado
+
+**Qué es.** La curva y el analizador ocupan toda la ventana del plugin, para trabajar el espectro con detalle. No es pantalla completa del sistema: dentro de un host no es fiable (FL Studio gestiona sus propias ventanas). Combinado con el tamaño L o con arrastrar la esquina, ocupa lo que el usuario quiera.
+
+**Comportamiento**
+
+- Botón de la barra superior o tecla F con el foco en la curva. Esc o el mismo botón vuelven.
+- Se ocultan el panel de banda y el medidor de salida; la barra superior se queda. Las bandas se siguen editando en la curva (arrastre, rueda, menú contextual), y la etiqueta flotante del nodo seleccionado muestra también su tipo, su canal y su dinámica.
+- **Ajustes del analizador**, en un menú junto al selector de modo, disponibles también sin ampliar:
+
+| Ajuste | Valores | Por defecto |
+|---|---|---|
+| Resolución | FFT de 4096, 8192 o 16384 puntos | 4096 (la de ahora) |
+| Caída | Constante de tiempo de bajada: lenta (1 s), media (0,35 s) o rápida (0,12 s); la subida sigue en 0,06 s | Media (la de ahora) |
+| Inclinación | 0, 3, 4,5 o 6 dB/oct | 4,5 (la de ahora) |
+| Mantener picos | Apagado o encendido (línea fina con el máximo; se borra con clic en la escala) | Apagado |
+| Congelar | Detiene la actualización del analizador | Apagado |
+
+  Los valores por defecto son los que hay hoy (`ui/src/CurveView.cpp` y `SpectrumBallistics`), para que nada cambie al actualizar. Con 16384 puntos la FFT se calcula a menos fotogramas por segundo si hace falta para no pasar del presupuesto de pintado.
+
+**Estado:** `ui.analyzer_fft`, `ui.analyzer_fall`, `ui.analyzer_tilt` y `ui.analyzer_peaks`. Ni la ampliación ni la congelación se guardan: un proyecto siempre abre en la vista normal y en marcha.
+
+**Aceptación**
+
+- En `layout`, la vista ampliada es la ventana menos la barra superior, en los tres tamaños y en el mínimo.
+- Al volver, la disposición es idéntica a la de antes.
+- El coste de pintar en la vista ampliada a 2400 × 1400 no pasa de 4 ms por cuadro en el portátil de referencia.
+
+### 5.3 Bandas desde el espectro
+
+**Qué es.** Crear una banda señalando un pico del analizador y arrastrándolo: la forma más rápida de atacar una resonancia que se ve.
+
+**Comportamiento**
+
+- Con el analizador encendido y el ratón sobre la curva, lejos de cualquier nodo, se marca el pico del espectro más cercano en ±1/6 de octava. El marcador lleva su frecuencia, su nota (5.1) y su nivel.
+- Al arrastrar desde el marcador se crea una campana en la frecuencia del pico:
+  - La ganancia sigue al arrastre vertical; hacia abajo, recorte.
+  - El Q sale del ancho del pico a −3 dB de su máximo, de 0,5 a 30.
+  - Al soltar queda una banda normal, seleccionada.
+  - Todo el gesto es una sola acción de deshacer.
+- Un clic sin arrastre no crea nada, para que no aparezcan bandas por accidente. Hoy un clic en un hueco solo deselecciona, y lo sigue haciendo. El doble clic sigue creando una banda en el cursor, como ahora.
+- Con Alt al soltar, la banda se crea dinámica, con el umbral 3 dB por debajo del nivel del pico. Es el atajo para controlar resonancias.
+- Si las 24 bandas están en uso no se marca ningún pico, y el cursor lo indica con "No free bands".
+- Se usa el espectro post, o el pre si el modo es pre + post. Con el analizador congelado (5.2) también funciona, y así se pueden escoger picos con calma.
+
+**Detección** (`ui/logic`, sin JUCE): `findPeaks(niveles, frecuencias, opciones)` sobre los niveles ya suavizados que se pintan:
+
+- máximo local con una prominencia de al menos 6 dB sobre el mínimo de su entorno de ±1/3 de octava;
+- por encima de −60 dB;
+- frecuencia refinada por interpolación parabólica entre puntos vecinos.
+
+**Aceptación**
+
+- Un seno en f da un pico en f ±1/48 de octava.
+- Dos senos separados media octava dan dos picos.
+- El rizado del ruido rosa por debajo de la prominencia no da ninguno.
+- El Q estimado de una resonancia sintética de Q conocido queda dentro de un ±25 %.
+- Un test de interfaz comprueba que crear una banda y deshacerla deja el estado exactamente como estaba.
+
+### 5.4 Tiempos automáticos en la dinámica
+
+**Qué es.** Que una banda dinámica elija sola su ataque y su relajación, según su frecuencia y la señal, para que funcione bien sin ajustar tiempos. Con ataques fijos, en graves la ganancia sigue la forma de onda y distorsiona; en agudos, un ataque lento deja pasar las sibilantes.
+
+**Parámetro:** `bNN_autotime` ("Band N Auto Timing"), un interruptor por banda, apagado por defecto. Se añade al final de la tabla. Encendido, los potenciómetros de ataque y relajación se atenúan y muestran "Auto". Sus valores se conservan, y al apagar vuelven a mandar.
+
+**Algoritmo** (a cerrar en una ADR, partiendo de esto):
+
+- **Ataque ligado al periodo:** ataque = 2 periodos de la frecuencia de la banda, limitado a 0,5–50 ms. A 100 Hz da 20 ms; a 1 kHz, 2 ms; a 5 kHz, 0,5 ms.
+- **Relajación de dos tiempos** (*program dependent*): una envolvente rápida (8 periodos, 20 ms como mínimo) y otra lenta (10 veces la rápida, 1 s como máximo). Se aplica la reducción mayor de las dos. Un transitorio aislado se recupera deprisa; una señal sostenida no bombea. Parte del detector de pico suavizado de Giannoulis y otros (sección 9), con dos constantes de relajación en paralelo.
+- La frecuencia que manda es la de la banda, incluso si su ganancia cambia por la dinámica.
+- Si la frecuencia cambia (automatización), los tiempos se recalculan por bloque, sin asignar memoria.
+
+**Aceptación**
+
+- Con un tono sostenido de 80 Hz por encima del umbral, el rizado de la ganancia dinámica queda por debajo de 0,5 dB. Con el ataque fijo mínimo, el test debe fallar, para comprobar que mide lo que debe.
+- Con ráfagas de 7 kHz, la ganancia llega al 90 % de la reducción objetivo en menos de 5 ms.
+- Tras una ráfaga aislada de 50 ms, la ganancia se recupera al 90 % en menos de 150 ms.
+- Con el interruptor apagado, la salida es idéntica bit a bit a la de ahora.
+- Siguen valiendo los tests de chasquidos y de tamaños de bloque de `docs/dsp/dinamica.md`.
+- El coste extra con 24 bandas dinámicas en estéreo no pasa del 1 % de un núcleo.
+
+El umbral automático de la sección 4.2 sigue pendiente aparte; se puede diseñar en la misma ADR.
+
+### 5.5 Compensación automática de ganancia
+
+**Qué es.** Mantener la sonoridad igual al ecualizar, para comparar con el bypass sin que "más fuerte" parezca "mejor".
+
+**Parámetro:** `auto_gain` ("Auto Gain"), interruptor global, apagado por defecto, al final de la tabla. Actúa además de `output_gain`, que no cambia.
+
+**Cálculo:** se hace al cambiar los parámetros, a partir de la curva estática analítica (la misma que se pinta), y no midiendo el audio, que bombearía con la música:
+
+```
+G = −10 · log10( Σ w(f) · |H(f)|²  /  Σ w(f) )      de 20 Hz a 20 kHz, en puntos logarítmicos
+w(f) = densidad de ruido rosa × |K(f)|²             (ponderación K de ITU-R BS.1770)
+```
+
+- Solo cuenta la ganancia estática. La parte dinámica no se compensa: compensarla anularía su efecto.
+- Con bandas en L, R, M o S se promedia la potencia de los dos canales de salida.
+- La compensación se limita a ±12 dB.
+- El hilo de control calcula la ganancia y la publica como un atómico. El hilo de audio la aplica con la rampa de ganancia que ya existe (`dsp/gain_ramp.h`), igual en los cuatro modos de fase.
+- La barra superior muestra la compensación actual, por ejemplo "Auto −2,3 dB".
+
+**Aceptación**
+
+- Con la curva plana la compensación es exactamente 0 y la salida es bit a bit la de `auto_gain` apagado.
+- Una campana de +6 dB, Q 1 a 1 kHz da el valor que sale de la integral numérica, con un error de ±0,05 dB.
+- Ruido rosa por una curva cualquiera, con la compensación encendida, mide la misma sonoridad integrada (BS.1770) que sin EQ, con un margen de ±0,5 dB. Se prueba con al menos cinco curvas típicas.
+- Al encender y apagar no hay chasquidos (test de la rampa).
+
+### 5.6 Igualar a una referencia
+
+**Qué es.** Medir el espectro medio de la pista y el de una referencia, y crear las bandas que acercan una a otra.
+
+**Referencias:**
+
+- otra instancia de esceQ, a través de la sesión de espectros que ya usan las colisiones ([ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), con las mismas limitaciones: mismo proceso y mismo formato;
+- la entrada de sidechain.
+
+Cargar un archivo de audio queda fuera por ahora: exige decodificar y elegir formatos.
+
+**Flujo**
+
+1. Botón *Match* en la barra superior: abre un panel sobre la curva y elige la referencia.
+2. *Learn* acumula, mientras suena, el espectro medio en potencia de la pista y de la referencia desde que se pulsa (sin olvido), y solo los bloques con presencia (los mismos umbrales que las colisiones). Hacen falta 5 s de señal útil; antes, *Apply* está desactivado y un indicador muestra el progreso.
+3. Se dibujan los dos espectros y la curva objetivo. Ajustes:
+
+| Ajuste | Valores | Por defecto |
+|---|---|---|
+| Cantidad | 0 a 100 % | 50 % |
+| Suavizado | 1/12, 1/6, 1/3 o 1 octava | 1/3 |
+| Bandas máximas | 1 a las que estén libres | 8 |
+| Margen | Frecuencias mínima y máxima | 30 Hz a 16 kHz |
+
+4. *Apply* crea las bandas en una sola acción de deshacer.
+
+**El resultado son bandas normales** (campanas y shelves), no un filtro oculto. Así se pueden editar, automatizar y guardar en presets, y funcionan en todos los modos de fase y con la dinámica. No hacen falta parámetros nuevos, y el contrato de sonido no cambia.
+
+**Ajuste** (`core`, en un hilo propio como el diseño de la fase lineal; se puede cancelar y nunca bloquea la interfaz):
+
+1. Objetivo: T(f) = cantidad · (referencia − pista), suavizado y sin su media (no se iguala el nivel, solo el balance), limitado a ±12 dB y a cero fuera del margen.
+2. Inicio voraz: una campana en el punto de mayor error, con el Q del ancho de ese lóbulo. Se repite hasta agotar las bandas, y se usa un shelf si el error de un extremo es monótono.
+3. Refino conjunto de frecuencia, ganancia y Q por mínimos cuadrados (Levenberg-Marquardt) en frecuencia logarítmica, con las curvas analíticas de `dsp`.
+4. Se para cuando el error RMS baja de 0,5 dB, o al agotar las bandas.
+
+**Aceptación**
+
+- Un objetivo generado con 3 campanas conocidas se recupera con un error RMS menor de 0,5 dB y como mucho 6 bandas.
+- Un objetivo plano no crea bandas.
+- Con la cantidad al 50 % las ganancias son la mitad que al 100 %, con un margen de ±0,2 dB.
+- El resultado es determinista: la misma entrada da las mismas bandas.
+- Con un objetivo de 24 bandas el ajuste termina en menos de 2 s.
+
+### 5.7 Dinámica espectral
+
+**Qué es.** Una variante de la banda dinámica que, dentro de su zona, reduce o realza **solo las frecuencias que pasan del umbral**, y no toda la banda. Controla resonancias que se mueven sin apagar el resto de esa zona. Es uno de los diferenciadores citados en la sección 8.
+
+**Parámetro:** `bNN_spectral` ("Band N Spectral"), un interruptor por banda, apagado por defecto, al final de la tabla. Solo actúa si la banda es dinámica. Usa sus mismos umbral, rango, rodilla, ataque, relajación, sidechain y canal: no hay controles nuevos.
+
+**Algoritmo** (ADR propia antes de empezar):
+
+- STFT en el canal de la banda (L, R, M o S):
+  - FFT de 2048 puntos a 48 kHz, escalada con la frecuencia de muestreo;
+  - solapamiento del 75 % y ventana raíz de Hann en análisis y síntesis, para una reconstrucción perfecta.
+- Por cada bin:
+  - nivel del detector (la entrada, o el sidechain con *External*);
+  - envolvente con el ataque y la relajación de la banda, expresados en tramas;
+  - la curva de ganancia de la sección 4.2.
+- La ganancia de cada bin se pondera con la forma de la banda (1 en su centro, 0 fuera) y se suaviza en frecuencia a 1/6 de octava, para evitar el "ruido musical".
+- **Máscaras:** las bandas espectrales de un mismo canal comparten una STFT y suman sus máscaras en dB. La parte estática de la banda sigue en el ecualizador normal (IIR o FIR). La máscara se aplica después.
+
+**Latencia:** una trama, 2048 muestras, 42,7 ms a 48 kHz. Solo existe mientras haya al menos una banda espectral encendida, y en fase lineal se suma a la del FIR. Activar o desactivar cambia la latencia: se gestiona como el cambio de modo de fase, silenciando un momento mientras el host recalcula la compensación. Queda abierto en la ADR si conviene reservar la latencia siempre que el usuario lo elija, para automatizar sin cortes.
+
+**Aceptación**
+
+- Un tono dentro de la banda por encima del umbral baja lo que marca el rango, con un margen de ±0,5 dB. Otro tono en la misma banda, por debajo del umbral, no cambia más de 0,2 dB: es justo lo que la banda dinámica normal no consigue.
+- Con la señal por debajo del umbral, la salida es la entrada retrasada, con un error menor de −90 dB.
+- Con el interruptor apagado en todas las bandas, la salida es bit a bit la de ahora, con la latencia de ahora.
+- Con bloques de 1 a 4096 muestras la salida es idéntica bit a bit.
+- La latencia comunicada coincide con la medida.
+- Coste con cuatro canales con bandas espectrales a 48 kHz: menos del 10 % de un núcleo. Casi todo es FFT, así que el coste crece con los canales y no con las bandas.
+
+### 5.8 Saturación
+
+**Qué es.** Una etapa global de saturación suave tras el ecualizador, para dar color armónico. Va la última en prioridad: no es ecualización.
+
+**Parámetros**, al final de la tabla:
+
+| Parámetro | Valores | Por defecto |
+|---|---|---|
+| `sat_mode` | Off, Soft (simétrica: armónicos impares) o Warm (asimétrica: añade pares) | Off |
+| `sat_drive` | 0 a 24 dB | 6 dB |
+| `sat_mix` | 0 a 100 % | 100 % |
+
+Con Off la etapa no se ejecuta.
+
+**Algoritmo**
+
+- Soft: curva `tanh`. Warm: `tanh` con polarización, seguida de un bloqueador de continua.
+- Contra el aliasing, sobremuestreo ×4 con filtros de media banda:
+  - polifásicos IIR en modo IIR, sin latencia;
+  - FIR de fase lineal en los modos lineales, con su latencia sumada.
+- La ganancia se compensa para que el drive no cambie el nivel de un seno de −18 dBFS a 1 kHz, con un margen de ±0,5 dB.
+- La alternativa al sobremuestreo, antialiasing por antiderivada (ADAA) de primer orden, se mide antes de elegir.
+
+**Aceptación**
+
+- Con Off, la salida es bit a bit la de ahora.
+- Con Soft, los armónicos pares quedan por debajo de −100 dB; con Warm, el segundo armónico es visible.
+- Con un seno de 10 kHz, drive de 12 dB y 48 kHz, el aliasing queda 80 dB por debajo de la fundamental.
+- La continua a la salida queda por debajo de −100 dB.
+- La latencia comunicada coincide con la medida en los cuatro modos de fase.
+
+---
+
+## 6. Herramientas, pruebas y distribución
 
 | Área | Elección |
 |---|---|
@@ -201,7 +464,7 @@ Flujo de trabajo en git: una sola rama, `main`, con commits pequeños. CI en cad
 
 ---
 
-## 6. Hoja de ruta
+## 7. Hoja de ruta
 
 Estimaciones para una persona a tiempo parcial. Son orientativas.
 
@@ -212,12 +475,12 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos, fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), auto-gain, optimización SIMD, macOS y Linux | Versión 0.5 | 6 a 10 semanas |
-| **6. Avanzado** | Dinámica espectral, EQ match, detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), surround | Versión 1.0 | Abierto |
+| **5. Calidad** | Corrección en agudos, fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (5.5), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
+| **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
 
 ---
 
-## 7. Riesgos
+## 8. Riesgos
 
 | Riesgo | Mitigación |
 |---|---|
@@ -231,7 +494,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 
 ---
 
-## 8. Referencias
+## 9. Referencias
 
 **Formatos y frameworks**
 - VST 3 SDK, licencia MIT desde la 3.8: https://steinbergmedia.github.io/vst3_dev_portal/pages/VST+3+Licensing/VST3+License
