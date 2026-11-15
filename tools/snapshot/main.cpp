@@ -7,6 +7,8 @@
 //   --overflow    sube una banda por encima del rango visible.
 //   --bypass      con el bypass activado.
 //   --gallery     en vez del editor, la galería de estados de los controles.
+//   --compare     con otras dos instancias en la sesión ("Bass" y "Keys"), superpuestas
+//                 y con las colisiones marcadas.
 //   --bench N     mide el coste de pintar la curva en vez de guardar una captura:
 //                 pone las 24 bandas como campanas dinámicas y pinta N
 //                 fotogramas de arrastre de un nodo, sin audio y con audio
@@ -18,7 +20,8 @@
 //                 abierto, para capturar la pantalla con otra herramienta (los
 //                 menús y diálogos son ventanas aparte y no salen en la captura
 //                 normal). QUE: presets (menú de presets), edit (campo de
-//                 edición de un valor), save (diálogo de guardar preset).
+//                 edición de un valor), save (diálogo de guardar preset),
+//                 compare (menú Compare, con --compare).
 //                 Ejemplo, en una sola línea:
 //                   xvfb-run -a -s "-screen 0 1280x800x24" sh -c
 //                     'esceq_snapshot x.png --desktop presets 6 & sleep 4; import -window root menu.png; wait'
@@ -252,14 +255,14 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] "
-                     "[--overflow] [--bypass] [--gallery] [--bench N]\n";
+                     "[--overflow] [--bypass] [--gallery] [--compare] [--bench N]\n";
         return 2;
     }
 
     int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0;
     std::string desktop;
     float scale = 2.0f;
-    bool overflow = false, bypass = false, gallery = false;
+    bool overflow = false, bypass = false, gallery = false, compare = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -277,6 +280,8 @@ int main(int argc, char** argv)
             bypass = true;
         else if (arg == "--gallery")
             gallery = true;
+        else if (arg == "--compare")
+            compare = true;
         else if (arg == "--bench")
             bench = std::max(1, std::atoi(next()));
         else if (arg == "--desktop")
@@ -347,6 +352,34 @@ int main(int argc, char** argv)
     PinkNoise noise, noiseRight;
     noiseRight.state = 98765u;
 
+    // Con --compare, otras dos instancias en la misma sesión: un bajo (ruido
+    // rosa con un corte de agudos) y unos teclados (ruido con cortes por los
+    // dos lados), con el nombre y el color de su pista como los daría el host.
+    std::vector<std::unique_ptr<esceq::PluginProcessor>> others;
+    if (compare)
+    {
+        auto makeTrack = [&](const char* name, std::uint32_t colour) {
+            auto& p = others.emplace_back(static_cast<esceq::PluginProcessor*>(createPluginFilter()));
+            juce::AudioProcessor::TrackProperties track;
+            track.name = juce::String(name);
+            track.colourARGB = colour;
+            p->updateTrackProperties(track);
+            p->setPlayConfigDetails(2, 2, sampleRate, blockSize);
+            p->prepareToPlay(sampleRate, blockSize);
+            return p.get();
+        };
+        auto* bass = makeTrack("Bass", 0xffe0a040u);
+        addBand(*bass, 0, 4.0f, 260.0f, 0.0f, 0.7071f, 3.0f);  // corte de agudos, 24 dB/oct
+        addBand(*bass, 1, 0.0f, 80.0f, 9.0f, 1.0f);            // cuerpo
+        auto* keys = makeTrack("Keys", 0xff9a7cf0u);
+        addBand(*keys, 0, 3.0f, 400.0f, 0.0f, 0.7071f, 3.0f);  // corte de graves
+        addBand(*keys, 1, 4.0f, 5000.0f, 0.0f, 0.7071f, 3.0f); // corte de agudos
+        addBand(*keys, 2, 0.0f, 1500.0f, 6.0f, 0.8f);
+    }
+    std::vector<PinkNoise> otherNoise(others.size());
+    for (std::size_t k = 0; k < otherNoise.size(); ++k)
+        otherNoise[k].state = 4242u + 977u * static_cast<std::uint32_t>(k);
+
     auto feed = [&](int blocks) {
         for (int block = 0; block < blocks; ++block)
         {
@@ -359,6 +392,18 @@ int main(int argc, char** argv)
                 buffer.setSample(1, i, centre - side);
             }
             processor->processBlock(buffer, midi);
+
+            for (std::size_t k = 0; k < others.size(); ++k)
+            {
+                juce::AudioBuffer<float> other(2, blockSize);
+                for (int i = 0; i < blockSize; ++i)
+                {
+                    const float v = otherNoise[k].next();
+                    other.setSample(0, i, v);
+                    other.setSample(1, i, v);
+                }
+                others[k]->processBlock(other, midi);
+            }
         }
     };
 
@@ -367,6 +412,9 @@ int main(int argc, char** argv)
         editor->setSize(width, height);
     auto& curve = static_cast<esceq::ui::EqEditor&>(*editor).curve();
     curve.setSelectedBand(select - 1);
+    for (const auto& other : others)
+        processor->compareSelection().toggle(other->instanceId());
+    curve.compareChanged();
 
     // Audio en tiempo "real" mientras corre el temporizador del editor, para
     // que el analizador se asiente como lo haría en un host.
@@ -476,6 +524,11 @@ int main(int argc, char** argv)
                 processor->releaseResources();
                 return 0;
             }
+        }
+        else if (desktop == "compare")
+        {
+            if (auto* button = dynamic_cast<juce::Button*>(find(*editor, "Compare with other tracks")))
+                button->triggerClick();
         }
         else if (desktop == "edit")
         {

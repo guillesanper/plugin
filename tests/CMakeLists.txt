@@ -17,16 +17,23 @@ add_executable(esceq_tests
     dsp/filter_design_test.cpp
     dsp/filter_golden_test.cpp
     dsp/gain_ramp_test.cpp
+    dsp/handoff_test.cpp
+    dsp/linear_phase_test.cpp
+    dsp/phase_equalizer_test.cpp
+    dsp/spectrum_collision_test.cpp
     core/band_model_test.cpp
     core/history_test.cpp
     core/parameters_test.cpp
+    core/phase_design_thread_test.cpp
     core/presets_test.cpp
     core/release_contract_test.cpp
+    core/spectrum_session_test.cpp
     core/state_test.cpp
     ui/control_logic_test.cpp
     ui/curve_mapping_test.cpp
     ui/layout_test.cpp
-    ui/meter_logic_test.cpp)
+    ui/meter_logic_test.cpp
+    ui/session_overlay_test.cpp)
 
 target_compile_definitions(esceq_tests PRIVATE
     ESCEQ_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

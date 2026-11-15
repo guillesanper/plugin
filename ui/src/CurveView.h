@@ -5,6 +5,7 @@
 #include "esceq/dsp/spectrum_analyzer.h"
 #include "esceq/ui/curve_mapping.h"
 #include "esceq/ui/meter_logic.h"
+#include "esceq/ui/session_overlay.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -70,6 +71,10 @@ public:
     /// Lee parámetros y audio nuevo, y repinta si algo ha cambiado. La llama el temporizador del editor.
     void refresh();
 
+    /// La selección de instancias a comparar del procesador ha cambiado: se
+    /// empieza o se deja de mirar la sesión, y se repinta.
+    void compareChanged();
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -109,6 +114,15 @@ private:
     void drawCurves(juce::Graphics& g, const CurveMapping& m) const;
     void drawNodes(juce::Graphics& g, const CurveMapping& m) const;
     void drawReadout(juce::Graphics& g, const CurveMapping& m) const;
+
+    /// Lee la sesión y rehace los espectros superpuestos y las colisiones.
+    /// true si hay que repintar.
+    bool updateSession(bool force);
+    void drawSession(juce::Graphics& g, const CurveMapping& m) const;
+    /// Velo y franja de las colisiones (debajo de la rejilla).
+    void drawCollisions(juce::Graphics& g, const CurveMapping& m) const;
+    /// Etiquetas de las zonas de colisión (encima de curvas y nodos).
+    void drawCollisionLabels(juce::Graphics& g, const CurveMapping& m) const;
 
     PluginProcessor& processor_;
     core::ParameterValues values_{};
@@ -160,6 +174,24 @@ private:
         std::array<BandCurve, core::kNumBands> bands;
     };
     CurveCache curveCache_;
+
+    /// Comparación con otras instancias (ver esceq/ui/session_overlay.h).
+    /// Mientras haya alguna seleccionada, la vista "mira" la sesión: solo
+    /// entonces las instancias calculan y publican su espectro.
+    struct SessionOverlay
+    {
+        core::InstanceId id = 0;
+        std::string name;
+        juce::Colour colour;
+        bool hasSignal = false;
+        std::vector<float> levels;
+    };
+    core::SpectrumSession::Viewer sessionViewer_;
+    std::vector<core::InstanceSpectrum> sessionSnapshot_;
+    std::uint64_t sessionRevision_ = 0;
+    std::vector<SessionOverlay> overlays_;
+    CollisionOverlay collisions_;
+    bool showCollisions_ = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CurveView)
 };

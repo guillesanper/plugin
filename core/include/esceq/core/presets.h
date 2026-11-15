@@ -3,6 +3,8 @@
 
 #include "esceq/core/parameters.h"
 
+#include <array>
+#include <cstddef>
 #include <optional>
 #include <span>
 #include <string>
@@ -29,9 +31,20 @@ std::span<const FactoryPreset> factoryPresets() noexcept;
 /// Parámetros de un preset de fábrica por su nombre, o nullopt si no existe.
 std::optional<ParameterValues> loadFactoryPreset(std::string_view name);
 
+/// Parámetros que no forman parte de un preset: el modo de fase. Es una
+/// decisión de la sesión, no del sonido de un preset, y cambiarlo cambia la
+/// latencia de la pista: elegir un preset no debe hacerlo.
+/// Ver docs/decisiones/0012-modos-de-fase.md.
+inline constexpr std::array<std::size_t, 1> kParametersOutsidePresets{kPhaseMode};
+
+/// Lo que queda al cargar `preset` sobre `current`: los valores del preset,
+/// salvo los kParametersOutsidePresets, que conservan los de `current`.
+ParameterValues applyPreset(const ParameterValues& preset, const ParameterValues& current) noexcept;
+
 /// Texto de un preset: como serializeState(), pero solo con los parámetros
-/// que no tienen su valor por defecto. Al cargarlo, los que falten toman el
-/// valor por defecto: el resultado es el mismo y el archivo es legible.
+/// que no tienen su valor por defecto y sin los kParametersOutsidePresets.
+/// Al cargarlo, los que falten toman el valor por defecto: el resultado es el
+/// mismo y el archivo es legible.
 std::string serializePreset(const ParameterValues& values);
 
 /// Convierte lo que escribe el usuario en un nombre de preset que sirva

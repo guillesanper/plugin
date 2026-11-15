@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/state.h"
+#include "state_test_utils.h"
 
 #include "esceq/core/band_model.h"
 
@@ -22,6 +23,7 @@ std::string readFixture(const std::string& name)
     content << file.rdbuf();
     return content.str();
 }
+
 
 } // namespace
 
@@ -237,9 +239,15 @@ TEST_CASE("Estado v2: fixture con preferencias de la interfaz")
     CHECK(state->ui.windowHeight == 860);
     CHECK(state->ui.presetName == "Low-End Cleanup");
 
-    // Mientras kStateVersion sea 2, lo que se escribe a partir de el es identico.
+    // Mientras kStateVersion sea 2, lo que se escribe a partir de el es
+    // identico, salvo las lineas de los parametros que se han añadido despues
+    // (el fixture tiene los 338 de la fase 4).
     if (kStateVersion == 2)
-        CHECK(serializePluginState(*state) == readFixture("v2_ui.txt"));
+    {
+        const auto written = serializePluginState(*state);
+        CHECK(esceq::test::withoutParametersAddedAfter(written, esceq::test::kParametersInV2Fixtures) ==
+              readFixture("v2_ui.txt"));
+    }
 }
 
 TEST_CASE("Estado v2: migracion desde la version 1")
@@ -315,4 +323,22 @@ TEST_CASE("Estado v2: preferencias absurdas toman el valor por defecto")
     const auto restored = deserializePluginState(serializePluginState(evil));
     REQUIRE(restored.has_value());
     CHECK(restored->parameters == defaultValues());
+}
+
+TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
+{
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt"})
+    {
+        INFO(name);
+        const auto state = deserializePluginState(readFixture(name));
+        REQUIRE(state.has_value());
+        CHECK(state->parameters[kPhaseMode] == 0.0f);
+    }
+
+    // Y el modo se guarda y se lee como cualquier otro parametro.
+    auto values = defaultValues();
+    values[kPhaseMode] = 2.0f;
+    const auto restored = deserializeState(serializeState(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[kPhaseMode] == 2.0f);
 }

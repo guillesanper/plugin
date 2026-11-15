@@ -337,3 +337,4 @@ b21_chan choice linear 0 4 5
 b22_chan choice linear 0 4 5
 b23_chan choice linear 0 4 5
 b24_chan choice linear 0 4 5
+phase_mode choice linear 0 3 4

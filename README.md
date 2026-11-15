@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (natural y fase lineal en tres resoluciones), deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -33,10 +33,22 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Escribir un valor | Clic en el número bajo el potenciómetro ("1.2k", "-3", "350 Hz") |
 | Deshacer y rehacer | Flechas de la barra superior, o Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z. Un arrastre es una sola acción |
 | Cargar o guardar un preset | Nombre del preset en la barra superior; las flechas de los lados pasan al anterior o al siguiente |
+| Elegir el modo de fase | Desplegable de la barra superior (ver abajo); su ayuda dice la latencia |
 | Cambiar el tamaño de la ventana | Botones S, M, L de la barra superior, o arrastrar la esquina |
 | Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
 Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host.
+
+### Modos de fase
+
+| Modo | Qué es | Latencia a 48, 96 o 192 kHz (a 44,1 kHz, un 9 % más) | Para qué |
+|---|---|---|---|
+| **IIR** | Filtros IIR: la fase cambia con la frecuencia, como en un ecualizador analógico | 0 | Mezcla, grabación, tiempo real |
+| **Linear Low** | Fase lineal (FIR de 2048 coeficientes a 48 kHz) | 26,7 ms | Fase lineal con poca latencia; poca resolución en graves |
+| **Linear Medium** | FIR de 8192 coeficientes | 96 ms | Buses y mastering |
+| **Linear High** | FIR de 32768 coeficientes | 362,7 ms | Mastering y render: máxima resolución en graves |
+
+En fase lineal todas las frecuencias se retrasan lo mismo y la forma de onda no se deforma; a cambio hay latencia (el host la compensa) y algo de preeco. La curva es la misma en los cuatro modos, y la dinámica funciona en todos. Cambiar de modo silencia la salida un momento. Elegir un preset no cambia el modo. Detalles en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md).
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
 

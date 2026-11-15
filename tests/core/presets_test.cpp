@@ -184,3 +184,25 @@ TEST_CASE("Presets: nombres que sirven como nombre de archivo")
     CHECK(cut.size() % 2 == 0);
     CHECK(sanitizePresetName(std::string(63, 'a') + "\xC3\xB1").size() == 63);
 }
+
+TEST_CASE("Presets: cargar un preset no cambia el modo de fase")
+{
+    // Cambiarlo cambiaria la latencia de la pista al elegir un preset.
+    auto current = defaultValues();
+    current[kPhaseMode] = 3.0f;
+    auto preset = *loadFactoryPreset("Gentle Master");
+    const auto result = applyPreset(preset, current);
+    CHECK(result[kPhaseMode] == 3.0f);
+    preset[kPhaseMode] = current[kPhaseMode];
+    CHECK(result == preset); // el resto, el del preset
+}
+
+TEST_CASE("Presets: el modo de fase no se guarda en el preset")
+{
+    auto values = defaultValues();
+    values[kPhaseMode] = 2.0f;
+    values[kOutputGain] = 3.0f;
+    const auto text = serializePreset(values);
+    CHECK(text.find("phase_mode") == std::string::npos);
+    CHECK(text.find("output_gain 3") != std::string::npos);
+}

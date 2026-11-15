@@ -3,6 +3,9 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
+#include <optional>
+
 /// Sistema de diseño de esceQ: el único sitio donde se definen colores,
 /// tipografía, espaciado, radios y grosores. Ningún componente escribe un
 /// color o una medida "a mano": todo sale de aquí. Ver docs/ui.md.
@@ -96,5 +99,9 @@ juce::Typeface::Ptr defaultTypeface();
 /// Color de una banda: tonos repartidos por la proporción áurea para que
 /// bandas consecutivas se distingan bien.
 juce::Colour band(int index);
+
+/// Color del espectro de otra instancia de la sesión: el de su pista si el
+/// host lo dice (aclarado si es muy oscuro), o uno propio según su número.
+juce::Colour instance(int number, std::optional<std::uint32_t> trackArgb);
 
 } // namespace esceq::ui::theme

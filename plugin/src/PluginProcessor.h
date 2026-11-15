@@ -5,9 +5,11 @@
 #include "PresetManager.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/phase_design_thread.h"
+#include "esceq/core/spectrum_session.h"
 #include "esceq/core/state.h"
-#include "esceq/dsp/equalizer.h"
 #include "esceq/dsp/gain_ramp.h"
+#include "esceq/dsp/phase_equalizer.h"
 #include "esceq/dsp/spsc_fifo.h"
 
 #include <juce_audio_utils/juce_audio_utils.h>
@@ -25,6 +27,9 @@ class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     PluginProcessor();
+    /// Con una sesión de espectros concreta en lugar de la del proceso (tests).
+    explicit PluginProcessor(std::shared_ptr<core::SpectrumSession> session);
+    ~PluginProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
     void releaseResources() override {}
@@ -38,7 +43,8 @@ public:
     const juce::String getName() const override { return "esceQ"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
-    double getTailLengthSeconds() const override { return 0.0; }
+    /// En fase lineal, la latencia más la mitad del FIR; en IIR, 0.
+    double getTailLengthSeconds() const override;
     juce::AudioProcessorParameter* getBypassParameter() const override;
 
     int getNumPrograms() override { return 1; }
@@ -46,6 +52,9 @@ public:
     void setCurrentProgram(int) override {}
     const juce::String getProgramName(int) override { return {}; }
     void changeProgramName(int, const juce::String&) override {}
+
+    /// El host dice el nombre y el color de la pista: se publican en la sesión.
+    void updateTrackProperties(const TrackProperties& properties) override;
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -96,19 +105,54 @@ public:
     /// Canales de la salida principal (1 o 2).
     int outputChannelCount() const noexcept { return outputChannels_.load(std::memory_order_relaxed); }
 
+    /// Espectros de las instancias de esceQ de la sesión, para compararlos.
+    /// Ver esceq/core/spectrum_session.h.
+    core::SpectrumSession& spectrumSession() noexcept { return *session_; }
+    /// Identificador de esta instancia en la sesión.
+    core::InstanceId instanceId() const noexcept { return sessionMember_->id(); }
+
+    /// Qué instancias superpone la interfaz y si marca las colisiones. Vive
+    /// aquí y no en el editor para que sobreviva a cerrar y abrir la ventana;
+    /// no se guarda con el proyecto. Solo desde el hilo de mensajes.
+    core::CompareSelection& compareSelection() noexcept { return compare_; }
+
     /// true si el host tiene conectado el bus de sidechain.
     bool sidechainConnected() const noexcept { return sidechainConnected_.load(std::memory_order_relaxed); }
+
+    /// Latencia del modo de fase que suena, en muestras (cualquier hilo). El
+    /// host la conoce por getLatencySamples(), que se pone al día en
+    /// prepareToPlay() y, si cambia con el audio en marcha, desde el hilo de
+    /// mensajes, como mucho 1/kLatencyPollHz segundos después.
+    int engineLatencySamples() const noexcept { return equalizer_.latencySamples(); }
+
+    static constexpr int kLatencyPollHz = 20;
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
     /// Pasa los parámetros al ecualizador si han cambiado desde la última vez (o siempre, con `force`).
     void pushParametersToEngine(bool force = false) noexcept;
 
+    /// Avisa al host, desde el hilo de mensajes, cuando cambia la latencia del
+    /// motor (al cambiar de modo de fase con el audio en marcha).
+    class LatencyReporter final : private juce::Timer
+    {
+    public:
+        explicit LatencyReporter(PluginProcessor& owner);
+        ~LatencyReporter() override;
+
+    private:
+        void timerCallback() override;
+        PluginProcessor& owner_;
+    };
+
     juce::AudioProcessorValueTreeState apvts_;
     std::array<std::atomic<float>*, core::kNumParameters> raw_{};
     std::array<juce::RangedAudioParameter*, core::kNumParameters> params_{};
 
-    dsp::Equalizer equalizer_;
+    dsp::PhaseEqualizer equalizer_;
+    /// Diseña los FIR de fase lineal fuera del hilo de audio. Va después de
+    /// equalizer_ para destruirse antes.
+    core::PhaseDesignThread designer_{equalizer_};
     core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
     dsp::GainRamp outputGain_;
     dsp::SpscFifo preFifo_{1 << 15};
@@ -124,6 +168,13 @@ private:
     std::atomic<int> stateRevision_{0};
     std::unique_ptr<EditHistory> history_;
     PresetManager presets_{*this};
+
+    std::shared_ptr<core::SpectrumSession> session_;
+    std::unique_ptr<core::SpectrumSession::Member> sessionMember_;
+    core::CompareSelection compare_;
+
+    /// El último: su temporizador se para antes de destruir nada de lo que lee.
+    LatencyReporter latencyReporter_{*this};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };

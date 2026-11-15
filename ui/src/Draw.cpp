@@ -198,7 +198,8 @@ void pill(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& 
         focusRing(g, bounds, radius::control);
 }
 
-void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state, Corners corners)
+void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state, Corners corners,
+                bool on, const juce::String& badge)
 {
     const float alpha = alphaFor(state);
     g.setColour(body(state).withMultipliedAlpha(alpha));
@@ -219,6 +220,17 @@ void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, con
         path.lineTo(c.x - 2.0f * d, c.y + 4.0f);
         break;
     }
+    case Icon::Compare:
+    {
+        // Dos espectros que se cruzan.
+        path.startNewSubPath(c.x - 7.0f, c.y + 4.5f);
+        path.cubicTo(c.x - 4.5f, c.y + 4.5f, c.x - 3.5f, c.y - 4.5f, c.x - 0.5f, c.y - 4.5f);
+        path.cubicTo(c.x + 2.0f, c.y - 4.5f, c.x + 2.5f, c.y + 4.5f, c.x + 5.0f, c.y + 4.5f);
+        path.startNewSubPath(c.x - 5.0f, c.y + 4.5f);
+        path.cubicTo(c.x - 2.5f, c.y + 4.5f, c.x - 2.0f, c.y - 1.0f, c.x + 1.5f, c.y - 1.0f);
+        path.cubicTo(c.x + 4.5f, c.y - 1.0f, c.x + 4.5f, c.y + 4.5f, c.x + 7.0f, c.y + 4.5f);
+        break;
+    }
     case Icon::Undo:
     case Icon::Redo:
     {
@@ -232,8 +244,22 @@ void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, con
         break;
     }
     }
-    g.setColour((state.hover && state.enabled ? colour::text : colour::textMuted).withMultipliedAlpha(alpha));
+    const auto iconColour = on ? colour::accent : (state.hover && state.enabled ? colour::text : colour::textMuted);
+    g.setColour(iconColour.withMultipliedAlpha(alpha));
     g.strokePath(path, juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    if (badge.isNotEmpty())
+    {
+        const auto font = theme::font(type::caption, Weight::SemiBold, true);
+        const float h = 12.0f;
+        const float w = std::max(h, juce::GlyphArrangement::getStringWidth(font, badge) + 6.0f);
+        const juce::Rectangle<float> pill{bounds.getRight() - w - 1.0f, bounds.getY() + 1.0f, w, h};
+        g.setColour(colour::accent.withMultipliedAlpha(alpha));
+        g.fillRoundedRectangle(pill, 0.5f * h);
+        g.setColour(colour::plot);
+        g.setFont(font);
+        g.drawText(badge, pill, juce::Justification::centred, false);
+    }
 
     if (state.focused)
         focusRing(g, bounds, radius::control);

@@ -28,6 +28,13 @@ static_assert(static_cast<int>(dsp::ChannelMode::Right) == 2);
 static_assert(static_cast<int>(dsp::ChannelMode::Mid) == 3);
 static_assert(static_cast<int>(dsp::ChannelMode::Side) == 4);
 
+// Y con el del parámetro "phase_mode".
+static_assert(kPhaseModeChoices.size() == dsp::kNumPhaseModes);
+static_assert(static_cast<int>(dsp::PhaseMode::Iir) == 0);
+static_assert(static_cast<int>(dsp::PhaseMode::LinearLow) == 1);
+static_assert(static_cast<int>(dsp::PhaseMode::LinearMedium) == 2);
+static_assert(static_cast<int>(dsp::PhaseMode::LinearHigh) == 3);
+
 dsp::FilterType filterTypeFromChoice(float choice) noexcept
 {
     const auto& spec = parameters()[bandParameter(0, BandParam::Type)];
@@ -38,6 +45,11 @@ dsp::ChannelMode channelModeFromChoice(float choice) noexcept
 {
     const auto& spec = parameters()[channelParameter(0)];
     return static_cast<dsp::ChannelMode>(static_cast<int>(sanitize(spec, choice)));
+}
+
+dsp::PhaseMode phaseModeFromChoice(float choice) noexcept
+{
+    return static_cast<dsp::PhaseMode>(static_cast<int>(sanitize(parameters()[kPhaseMode], choice)));
 }
 
 int slopeFromChoice(float choice) noexcept

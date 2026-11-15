@@ -36,6 +36,11 @@ struct BandSettings
     friend bool operator==(const BandSettings&, const BandSettings&) = default;
 };
 
+/// Los ajustes tal y como los usa el ecualizador: los no finitos toman su
+/// valor por defecto y el resto se ajusta a los rangos de designBand().
+/// Seguro en tiempo real.
+BandSettings sanitizeBand(BandSettings settings) noexcept ESCEQ_NONBLOCKING;
+
 /// Ecualizador de hasta kMaxBands bandas en serie, con transiciones sin
 /// chasquidos.
 ///
@@ -90,6 +95,18 @@ public:
 
     void setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING;
 
+    /// Modo "solo dinámica", para la fase lineal (ver docs/dsp/fase-lineal.md):
+    /// la parte estática de las bandas la aplica otro filtro, y aquí cada banda
+    /// aplica solo el cambio que añade su dinámica,
+    ///
+    ///     H(g + d) · H(−g)      (g: ganancia estática, d: dinámica)
+    ///
+    /// que es exactamente la unidad cuando d = 0, porque en los tipos con
+    /// ganancia H(−g) = 1/H(g). Las bandas sin dinámica activa no se procesan.
+    /// Cambiarlo salta sin transición a los ajustes nuevos, como reset().
+    void setDynamicsOnly(bool dynamicsOnly) noexcept ESCEQ_NONBLOCKING;
+    bool dynamicsOnly() const noexcept { return dynamicsOnly_; }
+
     /// Borra la memoria de los filtros y salta sin transición a los ajustes objetivo.
     void reset() noexcept ESCEQ_NONBLOCKING;
 
@@ -100,14 +117,21 @@ public:
     /// `numSamples` muestras. Sin sidechain, esas bandas no reciben señal y su
     /// ganancia dinámica vuelve a 0 dB.
     ///
+    /// `detectorInput` (opcional, solo lectura, `numChannels` canales) es lo que
+    /// escuchan los detectores internos en lugar de `channels`. La fase lineal
+    /// lo usa para que escuchen la entrada del ecualizador completo, retrasada
+    /// como el audio.
+    ///
     /// Valores no finitos: si la salida tiene algún NaN o infinito (porque lo
     /// traía la entrada), el bloque sale en silencio y todos los filtros se
     /// reinician, como tras reset(). Si lo trae el sidechain, se reinicia el
     /// detector de las bandas afectadas. Con entrada finita no hace nada.
     void process(float* const* channels, int numChannels, int numSamples,
-                 const float* const* sidechain = nullptr, int numSidechainChannels = 0) noexcept ESCEQ_NONBLOCKING;
+                 const float* const* sidechain = nullptr, int numSidechainChannels = 0,
+                 const float* const* detectorInput = nullptr) noexcept ESCEQ_NONBLOCKING;
 
-    /// Ajustes objetivo (los últimos recibidos, ya saneados).
+    /// Ajustes objetivo (los últimos recibidos, ya saneados; en el modo solo
+    /// dinámica, desactivados si la banda no tiene la dinámica activa).
     const BandSettings& target(int index) const noexcept;
 
     /// true si no hay ningún suavizado ni fundido en curso. La ganancia
@@ -122,6 +146,7 @@ public:
 private:
     struct Band
     {
+        BandSettings requested{}; ///< Lo último recibido en setBand(), saneado.
         BandSettings target{};
         BandSettings current{}; ///< Valores que suenan ahora mismo.
         BandFilter active;
@@ -134,6 +159,7 @@ private:
 
         // Dinámica
         FilterParams designed{};  ///< Parámetros efectivos (con la ganancia dinámica) del diseño activo.
+        double designedStaticGain = 0.0; ///< Ganancia estática del diseño activo (modo solo dinámica).
         double prewarpedFor = -1.0; ///< Frecuencia para la que se calculó `prewarped` (-1: ninguna).
         double prewarped = 0.0;     ///< prewarpedG() de esa frecuencia: la dinámica solo cambia la ganancia.
         BandFilter detector;      ///< Filtro del detector.
@@ -145,22 +171,24 @@ private:
         double kneeStartLinear = 0.0; ///< Nivel lineal donde empieza la rodilla: por debajo, ganancia 0.
     };
 
-    struct Sidechain
+    /// Señales que escuchan los detectores, y posición del tramo en ellas.
+    struct Sources
     {
-        const float* const* channels = nullptr;
-        int numChannels = 0;
+        const float* const* sidechain = nullptr;
+        int numSidechainChannels = 0;
+        const float* const* detector = nullptr; ///< nullptr: la entrada de cada tramo.
         int offset = 0;
     };
 
     void processChunk(float* const* channels, int numChannels, int offset, int length,
-                      const Sidechain& sidechain) noexcept;
+                      const Sources& sources) noexcept;
     void processBand(Band& band, float* const* channels, int numChannels, int length,
-                     const Sidechain& sidechain) noexcept;
+                     const Sources& sources) noexcept;
     void processSegment(Band& band, float* const* channels, int numChannels, int length) noexcept;
     /// Aplica `filter` a la parte de la señal que indica `mode`.
     void processRouted(BandFilter& filter, ChannelMode mode, float* const* channels, int numChannels,
                        int length) noexcept;
-    void runDetector(Band& band, int numChannels, int length, const Sidechain& sidechain) noexcept;
+    void runDetector(Band& band, int numChannels, int length, const Sources& sources) noexcept;
     /// Avanza la ganancia dinámica una muestra. true si hay que recalcular el diseño.
     bool updateDynamicGain(Band& band, double envelope) noexcept;
     static void updateKneeStart(Band& band) noexcept;
@@ -170,6 +198,8 @@ private:
     void beginStructuralChange(Band& band) noexcept;
     void snapBand(Band& band) noexcept;
     static bool isDynamic(const Band& band) noexcept;
+    /// Lo que debe sonar en la banda con estos ajustes, según el modo.
+    BandSettings targetFor(const BandSettings& requested) const noexcept;
 
     std::array<Band, kMaxBands> bands_{};
     double sampleRate_ = 48000.0;
@@ -179,6 +209,7 @@ private:
     int chunkPhase_ = 0;
 
     bool bypassed_ = false;
+    bool dynamicsOnly_ = false;
     float wet_ = 1.0f;
 
     std::array<std::array<float, kChunkSize>, kMaxChannels> scratch_{};

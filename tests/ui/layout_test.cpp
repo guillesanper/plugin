@@ -73,7 +73,7 @@ TEST_CASE("Disposicion: tamanos predefinidos dentro de los limites y distintos")
     CHECK_FALSE(matchingPreset({1001, 601}).has_value());
     CHECK(clampWindow({10, 10}) == kMinWindow);
     CHECK(clampWindow({99999, 99999}) == kMaxWindow);
-    CHECK(clampWindow({1000, 99999}) == WindowSize{1000, kMaxWindow.height});
+    CHECK(clampWindow({1100, 99999}) == WindowSize{1100, kMaxWindow.height});
 }
 
 TEST_CASE("Disposicion: las zonas de la ventana no se solapan en ningun tamano")
@@ -102,6 +102,8 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"presets", bar.presets},
                              {"deshacer", bar.undo},
                              {"rehacer", bar.redo},
+                             {"comparar", bar.compare},
+                             {"fase", bar.phase},
                              {"analizador", bar.analyzer},
                              {"rango", bar.range},
                              {"tamano", bar.size},
@@ -111,6 +113,9 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                             editor.topBar);
         CHECK(bar.presets.width >= 140.0f); // sitio para el nombre de un preset
         CHECK(bar.presets.width <= 320.0f);
+        // Los botones de icono son cuadrados y del mismo tamaño.
+        CHECK(bar.compare.width == bar.undo.width);
+        CHECK(bar.compare.width == bar.compare.height);
     }
 }
 
@@ -184,7 +189,7 @@ TEST_CASE("Disposicion: tamanos absurdos no producen medidas negativas")
         const auto bar = topBarLayout(editor.topBar);
         for (const Rect& r : {editor.topBar, editor.curve, editor.meter, editor.panel, panel.bandCard, panel.eqCard,
                               panel.dynamicsCard, panel.type, panel.eqKnobs[0], panel.dynamicKnobs[4], panel.dynamicsMeter,
-                              bar.logo, bar.presets, bar.bypass})
+                              bar.logo, bar.presets, bar.phase, bar.bypass})
         {
             CHECK(r.width >= 0.0f);
             CHECK(r.height >= 0.0f);

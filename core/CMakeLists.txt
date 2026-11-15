@@ -7,12 +7,16 @@ add_library(esceq_core STATIC
     src/band_model.cpp
     src/history.cpp
     src/parameters.cpp
+    src/phase_design_thread.cpp
     src/presets.cpp
+    src/spectrum_session.cpp
     src/state.cpp)
 
 # Quien use la biblioteca necesita C++20 para sus cabeceras.
 target_compile_features(esceq_core PUBLIC cxx_std_20)
 target_include_directories(esceq_core PUBLIC include)
+# spectrum_session y phase_design_thread usan un hilo propio.
+find_package(Threads REQUIRED)
 target_link_libraries(esceq_core
-    PUBLIC esceq_dsp
+    PUBLIC esceq_dsp Threads::Threads
     PRIVATE esceq_warnings)

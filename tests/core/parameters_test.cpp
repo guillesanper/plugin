@@ -119,7 +119,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 1);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -140,10 +140,26 @@ TEST_CASE("Parametros: indices de canal, despues de la dinamica")
 {
     CHECK(parameters()[channelParameter(0)].id == "b01_chan");
     CHECK(parameters()[channelParameter(23)].id == "b24_chan");
-    CHECK(channelParameter(23) == kNumParameters - 1);
+    CHECK(channelParameter(23) + 1 == kPhaseMode);
     CHECK(parameters()[channelParameter(0)].defaultValue == 0.0f); // Stereo: lo que hacian los estados anteriores
     CHECK(formatValue(parameters()[channelParameter(3)], 3.0f) == "Mid");
     CHECK(parseValue(parameters()[channelParameter(3)], "side") == 4.0f);
+}
+
+TEST_CASE("Parametros: modo de fase, el ultimo y global")
+{
+    const auto& spec = parameters()[kPhaseMode];
+    CHECK(kPhaseMode == kNumParameters - 1);
+    CHECK(spec.id == "phase_mode");
+    CHECK(spec.kind == ParameterKind::Choice);
+    CHECK(spec.choices.size() == 4);
+    CHECK(spec.defaultValue == 0.0f); // IIR: latencia cero, lo que hacian los estados anteriores
+    CHECK(formatValue(spec, 0.0f) == "IIR");
+    CHECK(formatValue(spec, 1.0f) == "Linear Low");
+    CHECK(formatValue(spec, 2.0f) == "Linear Medium");
+    CHECK(formatValue(spec, 3.0f) == "Linear High");
+    CHECK(parseValue(spec, "linear high") == 3.0f);
+    CHECK(findParameter("phase_mode") == kPhaseMode);
 }
 
 TEST_CASE("Parametros: findParameter")

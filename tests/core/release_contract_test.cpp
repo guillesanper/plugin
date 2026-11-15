@@ -9,6 +9,7 @@
 #include "esceq/core/band_model.h"
 #include "esceq/core/presets.h"
 #include "esceq/core/state.h"
+#include "state_test_utils.h"
 #include "esceq/dsp/equalizer.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -144,10 +145,13 @@ TEST_CASE("Contrato 0.1: un proyecto guardado con la 0.1 carga con todos sus val
     CHECK(state->ui.windowWidth == 960);
     CHECK(state->ui.windowHeight == 580);
     CHECK(state->ui.presetName == "Vocal");
+    // La 0.1 no tenia modo de fase: el proyecto abre en IIR, sin latencia.
+    CHECK(state->parameters[kPhaseMode] == 0.0f);
 
-    // Mientras el formato siga en la version 2, se vuelve a escribir identico.
-    if (kStateVersion == 2 && kNumParameters == 338)
-        CHECK(serializePluginState(*state) == text);
+    // Mientras el formato siga en la version 2, se vuelve a escribir identico
+    // (sin las lineas de los parametros añadidos despues de la 0.1, que tenia 338).
+    if (kStateVersion == 2)
+        CHECK(test::withoutParametersAddedAfter(serializePluginState(*state), test::kParametersInV2Fixtures) == text);
 }
 
 TEST_CASE("Contrato 0.1: los presets de fabrica publicados no cambian")
