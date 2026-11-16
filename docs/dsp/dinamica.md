@@ -93,7 +93,7 @@ Al arrancar la dinámica (activarla, salir del bypass, `reset()`), el detector y
 - Sin umbral automático.
 - Coste, con 24 bandas dinámicas en estéreo a 48 kHz (un núcleo de un portátil, GCC -O3): un 3 % si la señal no llega al umbral, un 4 % con el rango agotado (la ganancia fija en su límite) y un 8,5 % en el caso habitual, con la ganancia moviéndose sin parar, porque la banda se rediseña en cada muestra. Con ataque y relajación mínimos, hasta un 10 %. Con unas pocas bandas dinámicas es despreciable. La ADR 0006 daba un 5 %, medido con el rango agotado.
 
-  Para que el rediseño por muestra sea barato, la banda guarda la tangente de su frecuencia (`prewarpedG`) y solo recalcula la ganancia (`designBandPrewarped`), y `BandFilter::setDesign` copia solo las secciones en uso. El resultado es idéntico bit a bit al de `designBand`.
+  Para que el rediseño por muestra sea barato, la banda guarda lo que solo depende de su frecuencia (`prepareFrequency`) y solo recalcula la ganancia (`designBandPrepared`), y `BandFilter::setDesign` copia solo las secciones en uso. El resultado es idéntico bit a bit al de `designBand`.
 
 ## Referencias
 

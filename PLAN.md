@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal y, adelantada de la fase 6, la detección de colisiones entre instancias. Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal y, adelantada de la fase 6, la detección de colisiones entre instancias. La corrección en agudos va por la mitad: el algoritmo Matched está hecho y probado en `dsp`, y falta guardarlo en el estado y elegirlo desde la interfaz (sección 4.1). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -154,6 +154,8 @@ Los hosts exigen una lista de parámetros fija. Se declaran las 24 bandas desde 
 - **Tipos:** bell, low/high shelf, low/high cut, notch, band-pass, tilt, all-pass.
 - **Pendientes:** de 6 a 96 dB/oct encadenando secciones de primer y segundo orden (Butterworth para los cortes).
 - **Deformación cerca de Nyquist ("cramping"):** la transformada bilineal estrecha las campanas en agudos. Opciones: coeficientes ajustados a la respuesta analógica (Vicanek, Orfanidis) o sobremuestreo ×2. Empezar sin corrección, medir, y añadir la de Vicanek en la fase 5.
+
+**En curso.** Hecho en `dsp`: el algoritmo Matched (Vicanek, con atenuaciones como inversa del realce, el high shelf a partir del low shelf y los shelves resonantes en dos secciones), junto al Classic de la 0.1, que no cambia ni un bit. Mejora el error frente al analógico de 10,7 a 1,75 dB en campanas a 44,1 kHz y de 87 a 3,8 dB en cortes de agudos. Falta la versión en el estado (versión 3: lo guardado carga en Classic y las instancias nuevas arrancan en Matched, sin que los presets la cambien) y el menú para elegirla. Decisiones en la [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md); derivación y medidas en [docs/dsp/filtros.md](docs/dsp/filtros.md).
 - **Curva dibujada:** se calcula analíticamente a partir de los coeficientes, no midiendo el audio.
 
 ### 4.2 Banda dinámica

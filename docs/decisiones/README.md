@@ -19,3 +19,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0010](0010-distribucion.md) | Distribución: CLAP con clap-juce-extensions, instalador de Windows y releases desde el CI | Aceptada |
 | [0011](0011-espectros-compartidos.md) | Espectros compartidos entre instancias del mismo proceso y colisiones como enmascaramiento direccional | Aceptada |
 | [0012](0012-modos-de-fase.md) | Modos de fase: IIR y fase lineal (FIR por muestreo en frecuencia, convolución particionada, dinámica como diferencia sobre el FIR, diseño en otro hilo) | Aceptada |
+| [0013](0013-correccion-en-agudos.md) | Corrección en agudos: algoritmo de filtro Matched (Vicanek), con Classic intacto y la versión guardada por instancia | Aceptada |
