@@ -213,6 +213,78 @@ TEST_CASE("Equalizer: activar, desactivar y cambiar de tipo hace un fundido sin 
     CHECK(eq.isSettled());
 }
 
+TEST_CASE("Equalizer: cambiar de algoritmo de filtro hace un fundido sin saltos")
+{
+    // Un realce fuerte cerca de Nyquist, donde Classic y Matched más difieren:
+    // el cambio no se suaviza, hace el fundido de un cambio de tipo. Sin él,
+    // el paso máximo crece un 20 %.
+    const auto input = sine(24000, 220.0);
+    const BandSettings classic = bell(15000.0, 18.0, 4.0);
+    BandSettings matchedBand = classic;
+    matchedBand.filter.algorithm = FilterAlgorithm::Matched;
+
+    Equalizer reference;
+    reference.setBand(0, classic);
+    reference.prepare(kFs);
+    const auto unchanged = run(reference, input, 6000);
+
+    Equalizer eq;
+    eq.setBand(0, classic);
+    eq.prepare(kFs);
+    auto signal = input;
+    float* ch = signal.data();
+    eq.process(&ch, 1, 6000);
+    eq.setBand(0, matchedBand);
+    ch += 6000;
+    eq.process(&ch, 1, 6000);
+    CHECK(eq.isSettled());
+    eq.setBand(0, classic);
+    ch += 6000;
+    eq.process(&ch, 1, 12000);
+
+    // Desde la muestra 1000: el transitorio de arranque del realce es mayor que todo lo demás.
+    const std::vector<float> after(signal.begin() + 1000, signal.end());
+    const std::vector<float> before(unchanged.begin() + 1000, unchanged.end());
+    INFO("paso sin cambios " << maxStep(before) << ", paso con cambios " << maxStep(after));
+    CHECK(maxStep(after) < maxStep(before) * 1.01f);
+    CHECK(eq.isSettled());
+
+    // Lo que suena tras el cambio es Matched: a 19 kHz los dos difieren en dB.
+    eq.setBand(0, matchedBand);
+    auto high = sine(24000, 19000.0);
+    run(eq, high, 512);
+    high = sine(24000, 19000.0);
+    const auto out = run(eq, high, 512);
+    float peakIn = 0.0f, peakOut = 0.0f;
+    for (std::size_t i = 12000; i < out.size(); ++i)
+    {
+        peakIn = std::max(peakIn, std::abs(high[i]));
+        peakOut = std::max(peakOut, std::abs(out[i]));
+    }
+    const double expected = magnitudeDb(designBand(matchedBand.filter, kFs), 19000.0, kFs);
+    REQUIRE(std::abs(expected - magnitudeDb(designBand(classic.filter, kFs), 19000.0, kFs)) > 1.0);
+    CHECK_THAT(20.0 * std::log10(peakOut / peakIn), WithinAbs(expected, 0.1));
+}
+
+TEST_CASE("Equalizer: con Matched, una banda asentada suena igual que BandFilter")
+{
+    for (auto type : kAllTypes)
+    {
+        BandSettings settings{true, {type, 17000.0, -6.0, 3.0, 36, FilterAlgorithm::Matched}};
+        Equalizer eq;
+        eq.setBand(0, settings);
+        eq.prepare(kFs);
+        BandFilter reference;
+        reference.setDesign(designBand(settings.filter, kFs));
+
+        auto expected = noise(4096);
+        float* channel = expected.data();
+        reference.process(&channel, 1, 4096);
+        INFO(typeName(type));
+        CHECK(run(eq, noise(4096), 256) == expected);
+    }
+}
+
 TEST_CASE("Equalizer: bypass hace un fundido y, completo, deja pasar el audio bit a bit")
 {
     Equalizer eq;

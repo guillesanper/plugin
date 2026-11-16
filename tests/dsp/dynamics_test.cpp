@@ -368,17 +368,23 @@ TEST_CASE("Dinamica: modulacion rapida sin chasquidos")
         if ((i / 240) % 2 == 0)
             sc[i] = burst[i];
 
-    Equalizer eq;
-    eq.setBand(0, dynamicBell(3000.0, 1.0, -30.0, -24.0, 0.0, kMinAttackMs, 2.0, true));
-    eq.prepare(kFs);
-    const auto out = run(eq, input, 128, &sc);
+    for (const auto algorithm : {FilterAlgorithm::Classic, FilterAlgorithm::Matched})
+    {
+        Equalizer eq;
+        BandSettings band = dynamicBell(3000.0, 1.0, -30.0, -24.0, 0.0, kMinAttackMs, 2.0, true);
+        band.filter.algorithm = algorithm;
+        eq.setBand(0, band);
+        eq.prepare(kFs);
+        const auto out = run(eq, input, 128, &sc);
 
-    // El paso máximo de un seno es 2π·f/fs·A: lo que sea mucho mayor es un chasquido.
-    const float clean = maxStep(input);
-    INFO("paso limpio " << clean << ", paso con modulacion " << maxStep(out));
-    CHECK(maxStep(out) < clean * 1.25f);
-    CHECK(peakDb(out, 0) < peakDb(input, 0) + 0.5); // tampoco sobrepasa la entrada
-    CHECK(std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); }));
+        // El paso máximo de un seno es 2π·f/fs·A: lo que sea mucho mayor es un chasquido.
+        const float clean = maxStep(input);
+        INFO("algoritmo " << static_cast<int>(algorithm) << ", paso limpio " << clean << ", paso con modulacion "
+                          << maxStep(out));
+        CHECK(maxStep(out) < clean * 1.25f);
+        CHECK(peakDb(out, 0) < peakDb(input, 0) + 0.5); // tampoco sobrepasa la entrada
+        CHECK(std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); }));
+    }
 }
 
 TEST_CASE("Dinamica: desactivarla con la ganancia reducida hace un fundido")
@@ -545,28 +551,33 @@ TEST_CASE("Dinamica: en modo solo dinamica, parte estatica aparte + dinamica = l
     // H(g)·H(-g)·H(g+d) = H(g+d), y como H(-g) va antes que la sección que
     // cambia, esta oye la misma señal que en el modo normal: el resultado es
     // el mismo también mientras la ganancia se mueve, salvo el redondeo.
-    for (const auto type : {FilterType::Bell, FilterType::LowShelf, FilterType::HighShelf, FilterType::Tilt})
-        for (const double staticGain : {5.0, -7.0})
-        {
-            INFO(typeName(type) << ", ganancia estatica " << staticGain);
-            BandSettings band = dynamicBell(2000.0, 1.5, -30.0, -9.0, 6.0, 1.0, 80.0);
-            band.filter.type = type;
-            band.filter.gainDb = staticGain;
-            Equalizer whole;
-            whole.setBand(0, band);
-            whole.prepare(kFs);
+    // También con Matched, que diseña H(−g) como la inversa de H(g) (y los
+    // shelves con Q > 0,7071 tienen dos secciones).
+    for (const auto algorithm : {FilterAlgorithm::Classic, FilterAlgorithm::Matched})
+        for (const auto type : {FilterType::Bell, FilterType::LowShelf, FilterType::HighShelf, FilterType::Tilt})
+            for (const double staticGain : {5.0, -7.0})
+            {
+                INFO(typeName(type) << ", ganancia estatica " << staticGain << ", algoritmo "
+                                    << static_cast<int>(algorithm));
+                BandSettings band = dynamicBell(2000.0, 1.5, -30.0, -9.0, 6.0, 1.0, 80.0);
+                band.filter.type = type;
+                band.filter.gainDb = staticGain;
+                band.filter.algorithm = algorithm;
+                Equalizer whole;
+                whole.setBand(0, band);
+                whole.prepare(kFs);
 
-            auto input = sine(20000, 1500.0, 0.5);
-            for (std::size_t i = 10000; i < input.size(); ++i)
-                input[i] *= 0.02f; // la dinámica entra y sale
-            const auto expected = run(whole, input, 80);
-            const auto split = runSplit(band, input, 80);
+                auto input = sine(20000, 1500.0, 0.5);
+                for (std::size_t i = 10000; i < input.size(); ++i)
+                    input[i] *= 0.02f; // la dinámica entra y sale
+                const auto expected = run(whole, input, 80);
+                const auto split = runSplit(band, input, 80);
 
-            double worst = 0.0;
-            for (std::size_t i = 0; i < expected.size(); ++i)
-                worst = std::max(worst, static_cast<double>(std::abs(split[i] - expected[i])));
-            CHECK(worst < 1e-5);
-        }
+                double worst = 0.0;
+                for (std::size_t i = 0; i < expected.size(); ++i)
+                    worst = std::max(worst, static_cast<double>(std::abs(split[i] - expected[i])));
+                CHECK(worst < 1e-5);
+            }
 }
 
 TEST_CASE("Dinamica: en modo solo dinamica, la modulacion rapida tampoco produce chasquidos")
@@ -580,22 +591,24 @@ TEST_CASE("Dinamica: en modo solo dinamica, la modulacion rapida tampoco produce
         if ((i / 240) % 2 == 0)
             sc[i] = burst[i];
 
-    for (const double staticGain : {0.0, 6.0, -6.0})
-    {
-        INFO("ganancia estatica " << staticGain);
-        BandSettings band = dynamicBell(3000.0, 1.0, -30.0, -24.0, 0.0, kMinAttackMs, 2.0, true);
-        band.filter.gainDb = staticGain;
-        const auto out = runSplit(band, input, 128, &sc);
-        Equalizer whole;
-        whole.setBand(0, band);
-        whole.prepare(kFs);
-        const auto reference = run(whole, input, 128, &sc);
+    for (const auto algorithm : {FilterAlgorithm::Classic, FilterAlgorithm::Matched})
+        for (const double staticGain : {0.0, 6.0, -6.0})
+        {
+            INFO("ganancia estatica " << staticGain << ", algoritmo " << static_cast<int>(algorithm));
+            BandSettings band = dynamicBell(3000.0, 1.0, -30.0, -24.0, 0.0, kMinAttackMs, 2.0, true);
+            band.filter.gainDb = staticGain;
+            band.filter.algorithm = algorithm;
+            const auto out = runSplit(band, input, 128, &sc);
+            Equalizer whole;
+            whole.setBand(0, band);
+            whole.prepare(kFs);
+            const auto reference = run(whole, input, 128, &sc);
 
-        CHECK(maxStep(out) < maxStep(reference) * 1.01f);
-        CHECK(clickDb(out, 1000) < clickDb(reference, 1000) + 0.5);
-        CHECK(peakDb(out, 0) < peakDb(reference, 0) + 0.1);
-        CHECK(std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); }));
-    }
+            CHECK(maxStep(out) < maxStep(reference) * 1.01f);
+            CHECK(clickDb(out, 1000) < clickDb(reference, 1000) + 0.5);
+            CHECK(peakDb(out, 0) < peakDb(reference, 0) + 0.1);
+            CHECK(std::all_of(out.begin(), out.end(), [](float v) { return std::isfinite(v); }));
+        }
 }
 
 TEST_CASE("Dinamica: en modo solo dinamica, una banda sin dinamica no hace nada")

@@ -27,6 +27,22 @@ enum class FilterType
     Tilt,      ///< Inclina el espectro: -gainDb en graves, +gainDb en agudos.
 };
 
+/// Cómo se pasa del prototipo analógico de cada tipo al filtro digital.
+/// Ver docs/dsp/filtros.md y docs/decisiones/0013-correccion-en-agudos.md.
+///
+/// CONTRATO: los valores numéricos se guardan en el estado. Los algoritmos
+/// nuevos se añaden al final, y los que hay no cambian de sonido.
+enum class FilterAlgorithm
+{
+    /// Transformada bilineal con la frecuencia predeformada: el de la 0.1.
+    /// Cerca de Nyquist estrecha campanas y shelves y hunde los cortes.
+    Classic,
+    /// Magnitud ajustada a la del prototipo analógico (M. Vicanek): polos
+    /// por invariancia al impulso y magnitud igual a la analógica en
+    /// continua, en Nyquist y en la frecuencia de cada sección.
+    Matched,
+};
+
 inline constexpr double kButterworthQ = 0.70710678118654752440;
 inline constexpr double kMinFrequencyHz = 1.0;
 inline constexpr double kMaxFrequencyRatio = 0.49; ///< Fracción máxima de la frecuencia de muestreo.
@@ -59,9 +75,10 @@ struct FilterParams
 {
     FilterType type = FilterType::Bell;
     double frequencyHz = 1000.0;
-    double gainDb = 0.0;        ///< Bell, shelves y Tilt. Ignorada en el resto.
-    double q = kButterworthQ;   ///< En LowCut/HighCut controla la resonancia en el corte.
-    int slopeDbPerOct = 12;     ///< Solo LowCut/HighCut: 6, 12, ..., 96.
+    double gainDb = 0.0;      ///< Bell, shelves y Tilt. Ignorada en el resto.
+    double q = kButterworthQ; ///< En LowCut/HighCut controla la resonancia en el corte.
+    int slopeDbPerOct = 12;   ///< Solo LowCut/HighCut: 6, 12, ..., 96.
+    FilterAlgorithm algorithm = FilterAlgorithm::Classic;
 
     friend bool operator==(const FilterParams&, const FilterParams&) = default;
 };
@@ -90,25 +107,35 @@ struct BandDesign
     int numSections = 0;
 };
 
-/// Calcula los coeficientes de una banda.
-/// Segura en tiempo real (no asigna memoria). Usa tan() y pow(): unos 40 ns.
-/// El ecualizador la llama una vez por tramo de 32 muestras, y en las bandas
-/// dinámicas hasta una vez por muestra (con designBandPrewarped()).
+/// Calcula los coeficientes de una banda con el algoritmo de `params`.
+/// Segura en tiempo real (no asigna memoria). Classic usa tan() y pow(), unos
+/// 40 ns; Matched añade exp(), expm1(), sin() y sqrt() (coste medido en
+/// docs/dsp/filtros.md). El ecualizador la llama una vez por tramo de 32
+/// muestras, y en las bandas dinámicas hasta una vez por muestra (con
+/// designBandPrepared()).
 BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
-/// g = tan(π·f/fs) de una banda, con la frecuencia ajustada al mismo rango que
-/// en designBand(). Solo depende de la frecuencia y de la frecuencia de muestreo.
-double prewarpedG(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
+/// Lo que solo depende de la frecuencia de una banda y de la de muestreo,
+/// con la frecuencia ajustada al mismo rango que en designBand().
+struct PreparedFrequency
+{
+    double g = 0.0;     ///< tan(π·f/fs): Classic.
+    double omega = 0.0; ///< 2π·f/fs, en rad/muestra: Matched.
+};
 
-/// Como designBand(), pero con `g` ya calculada con prewarpedG() para la
-/// frecuencia de `params`. El resultado es idéntico bit a bit; sirve para no
-/// recalcular la tangente cuando solo cambia la ganancia (la dinámica).
-BandDesign designBandPrewarped(const FilterParams& params, double g) noexcept ESCEQ_NONBLOCKING;
+PreparedFrequency prepareFrequency(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
-/// Respuesta compleja exacta del filtro digital en `frequencyHz`.
-/// Coincide con lo que mide BandFilter, incluida la deformación de la
-/// transformada bilineal cerca de Nyquist. Segura en tiempo real.
-std::complex<double> response(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;
+/// Como designBand(), pero con `frequency` ya calculada con prepareFrequency()
+/// para la frecuencia de `params`. El resultado es idéntico bit a bit; sirve
+/// para no recalcular la tangente cuando solo cambia la ganancia (la dinámica).
+BandDesign designBandPrepared(const FilterParams& params,
+                              const PreparedFrequency& frequency) noexcept ESCEQ_NONBLOCKING;
+
+/// Respuesta compleja exacta del filtro digital en `frequencyHz`, con
+/// cualquier algoritmo. Coincide con lo que mide BandFilter, incluida la
+/// deformación cerca de Nyquist de Classic. Segura en tiempo real.
+std::complex<double> response(const BandDesign& design, double frequencyHz,
+                              double sampleRate) noexcept ESCEQ_NONBLOCKING;
 
 /// Magnitud de response() en decibelios.
 double magnitudeDb(const BandDesign& design, double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING;

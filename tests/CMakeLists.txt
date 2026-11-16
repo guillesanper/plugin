@@ -14,6 +14,7 @@ add_executable(esceq_tests
     dsp/dynamics_test.cpp
     dsp/equalizer_channel_test.cpp
     dsp/equalizer_test.cpp
+    dsp/filter_algorithm_test.cpp
     dsp/filter_design_test.cpp
     dsp/filter_golden_test.cpp
     dsp/gain_ramp_test.cpp

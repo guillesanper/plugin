@@ -50,7 +50,8 @@ bool isStructuralChange(const BandSettings& from, const BandSettings& to) noexce
         return true;
     if (!to.enabled)
         return false;
-    if (from.filter.type != to.filter.type || from.channel != to.channel)
+    if (from.filter.type != to.filter.type || from.channel != to.channel ||
+        from.filter.algorithm != to.filter.algorithm)
         return true;
     return isCut(to.filter.type) && from.filter.slopeDbPerOct != to.filter.slopeDbPerOct;
 }
@@ -92,7 +93,7 @@ void Equalizer::prepare(double sampleRate) noexcept
     for (auto& band : bands_)
     {
         band.envelope.prepare(sampleRate_);
-        band.prewarpedFor = -1.0; // la tangente depende de la frecuencia de muestreo
+        band.preparedFor = -1.0; // la tangente depende de la frecuencia de muestreo
     }
     reset();
 }
@@ -281,12 +282,12 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
     band.designedStaticGain = staticGain;
     // La dinámica rediseña la banda hasta una vez por muestra cambiando solo la
     // ganancia: la tangente de la frecuencia se guarda y no se recalcula.
-    if (effective.frequencyHz != band.prewarpedFor)
+    if (effective.frequencyHz != band.preparedFor)
     {
-        band.prewarpedFor = effective.frequencyHz;
-        band.prewarped = prewarpedG(effective.frequencyHz, sampleRate_);
+        band.preparedFor = effective.frequencyHz;
+        band.prepared = prepareFrequency(effective.frequencyHz, sampleRate_);
     }
-    const BandDesign full = designBandPrewarped(effective, band.prewarped);
+    const BandDesign full = designBandPrepared(effective, band.prepared);
     if (!dynamicsOnly_)
     {
         band.active.setDesign(full);
@@ -296,11 +297,13 @@ void Equalizer::applyDesign(Band& band, bool force) noexcept
     // Solo el cambio dinámico: primero H(−g) = 1/H(g), que deshace la parte
     // estática, y después la banda entera, H(g + d). En ese orden, la sección
     // que cambia con la dinámica oye la misma señal que en el modo normal, y
-    // sus transitorios son los mismos. Los tipos con ganancia usan una
-    // sección, así que caben las dos.
+    // sus transitorios son los mismos. Con los dos algoritmos, H(−g) es
+    // exactamente la inversa (Matched diseña las atenuaciones así), y los
+    // tipos con ganancia usan como mucho la mitad de las secciones, así que
+    // caben las dos.
     FilterParams inverse = band.current.filter;
     inverse.gainDb = -staticGain;
-    BandDesign design = designBandPrewarped(inverse, band.prewarped);
+    BandDesign design = designBandPrepared(inverse, band.prepared);
     for (int i = 0; i < full.numSections && design.numSections < kMaxSections; ++i)
         design.sections[static_cast<std::size_t>(design.numSections++)] = full.sections[static_cast<std::size_t>(i)];
     band.active.setDesign(design);

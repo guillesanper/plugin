@@ -284,16 +284,21 @@ TEST_CASE("Fase lineal: la magnitud reproduce la de las bandas en todos los tipo
     };
     // Tolerancia por modo: más coeficientes, más precisión. El peor caso de
     // Low es el codo del corte de 48 dB/oct (0,10 dB medidos).
+    // Con Matched, la misma magnitud que su IIR (la curva sigue siendo lo que suena).
     const double tolerance[] = {0.15, 0.02, 0.005};
-    for (int m = 0; m < 3; ++m)
-        for (const auto& c : cases)
-        {
-            const auto mode = kLinearModes[m];
-            INFO("modo " << static_cast<int>(mode) << ", " << typeName(c.band.filter.type));
-            const BandSettings bands[] = {c.band};
-            const auto fir = designer.design(bands, mode, kFs, 2);
-            CHECK(worstErrorDb(fir.ll, bands, c.fromHz, 20000.0) < tolerance[m]);
-        }
+    for (const auto algorithm : {FilterAlgorithm::Classic, FilterAlgorithm::Matched})
+        for (int m = 0; m < 3; ++m)
+            for (const auto& c : cases)
+            {
+                const auto mode = kLinearModes[m];
+                INFO("modo " << static_cast<int>(mode) << ", " << typeName(c.band.filter.type) << ", algoritmo "
+                             << static_cast<int>(algorithm));
+                BandSettings band = c.band;
+                band.filter.algorithm = algorithm;
+                const BandSettings bands[] = {band};
+                const auto fir = designer.design(bands, mode, kFs, 2);
+                CHECK(worstErrorDb(fir.ll, bands, c.fromHz, 20000.0) < tolerance[m]);
+            }
 }
 
 TEST_CASE("Fase lineal: mas coeficientes, mas resolucion en graves")

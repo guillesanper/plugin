@@ -53,6 +53,7 @@ double dynamicGainDb(double levelDb, double thresholdDb, double rangeDb, double 
 ///  - Shelf de graves: paso bajo de 12 dB/oct en la frecuencia de la banda.
 ///  - Shelf de agudos: paso alto de 12 dB/oct.
 ///  - Tilt y el resto: sin filtro (banda completa).
+/// Con el algoritmo de filtro de la banda (`params.algorithm`).
 /// Segura en tiempo real.
 BandDesign designDetector(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING;
 

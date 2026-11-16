@@ -49,7 +49,8 @@ BandSettings sanitizeBand(BandSettings settings) noexcept ESCEQ_NONBLOCKING;
 ///    y los coeficientes se recalculan cada kChunkSize muestras.
 ///  - Activar o desactivar una banda, o cambiar su tipo o su pendiente, hace
 ///    un fundido de kCrossfadeSeconds entre el filtro anterior y el nuevo.
-///  - Cambiar el canal de una banda (ChannelMode) hace el mismo fundido.
+///  - Cambiar el canal de una banda (ChannelMode) o su algoritmo de filtro
+///    (FilterAlgorithm) hace el mismo fundido.
 ///  - Un cambio de esos que llega durante un fundido espera a que termine.
 ///  - El bypass hace un fundido entre la señal seca y la procesada.
 ///  - Umbral, rango y rodilla de la dinámica se suavizan con la misma
@@ -160,9 +161,9 @@ private:
         // Dinámica
         FilterParams designed{};  ///< Parámetros efectivos (con la ganancia dinámica) del diseño activo.
         double designedStaticGain = 0.0; ///< Ganancia estática del diseño activo (modo solo dinámica).
-        double prewarpedFor = -1.0; ///< Frecuencia para la que se calculó `prewarped` (-1: ninguna).
-        double prewarped = 0.0;     ///< prewarpedG() de esa frecuencia: la dinámica solo cambia la ganancia.
-        BandFilter detector;      ///< Filtro del detector.
+        double preparedFor = -1.0;       ///< Frecuencia para la que se calculó `prepared` (-1: ninguna).
+        PreparedFrequency prepared{};    ///< De esa frecuencia: la dinámica solo cambia la ganancia.
+        BandFilter detector;             ///< Filtro del detector.
         FilterParams detectorFor{};
         EnvelopeFollower envelope;
         bool dynamicRunning = false;
