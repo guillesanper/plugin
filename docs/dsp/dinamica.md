@@ -41,6 +41,26 @@ señal de la banda ────────────────────�
    ```
 
    Ante un escalón, alcanza el 63 % en un tiempo de ataque y cae al 37 % en un tiempo de relajación. Con ataques lentos, la envolvente de un seno queda algo por debajo de su pico (con 1 ms a 1 kHz, unas décimas de dB).
+
+   Con los **tiempos automáticos** (`bNN_autotime`, [ADR 0016](../decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), los tiempos salen de la frecuencia `f` de la banda (`autoEnvelopeTimes`), y una segunda etapa, lenta, promedia la envolvente:
+
+   ```
+   ataque   = clamp(2/f, 0,5 ms, 50 ms)
+   rápida   = max(8/f, 20 ms)
+   lenta    = max(rápida, min(10 · rápida, 1 s))
+
+   env      = detector de pico de arriba, con ataque y relajación rápida
+   envLenta = env + e^(−1/(lenta·fs)) · (envLenta − env)      (igual al subir y al bajar)
+   nivel    = max(env, envLenta)
+   ```
+
+   | Frecuencia | Ataque | Relajación rápida | Relajación lenta |
+   |---|---|---|---|
+   | 80 Hz | 25 ms | 100 ms | 1 s |
+   | 1 kHz | 2 ms | 20 ms | 200 ms |
+   | 7 kHz | 0,5 ms | 20 ms | 200 ms |
+
+   El ataque de dos periodos deja la ganancia quieta en un tono grave (no sigue la forma de onda) y es inmediato en agudos. Un transitorio apenas carga la etapa lenta y se suelta con la relajación rápida; una señal sostenida la carga y, al parar, la reducción cae despacio (no bombea). La frecuencia es la de la banda, ya suavizada, sin la ganancia dinámica; los tiempos se recalculan en cada tramo de 32 muestras, sin asignar memoria. Los parámetros de ataque y relajación se conservan y vuelven a mandar al apagar el interruptor. Apagado, el cálculo es exactamente el de arriba.
 5. **Curva de ganancia** (`dynamicGainDb`), con nivel `L`, umbral `T`, rodilla `W` y rango `R`, todo en dB:
 
    ```
@@ -61,6 +81,7 @@ señal de la banda ────────────────────�
 | Ganancia dinámica | Se evalúa en cada muestra; los coeficientes se recalculan cuando cambia ≥ 0,001 dB, o al volver a 0 dB exactos | Recalcular cada 8 muestras daba saltos de hasta 2,5 veces el paso de un seno limpio con ataques de 1 ms |
 | Umbral, rango, rodilla | Suavizado de un polo **por muestra**, 15 ms | La ganancia los sigue 1:1: en escalones cada 32 muestras se oía un "zipper" |
 | Ataque, relajación, fuente | Inmediatos | La envolvente es continua: cambiar sus constantes no produce saltos |
+| Tiempos automáticos | Inmediatos. Al encenderlos, la etapa lenta empieza en el nivel actual; al apagarlos, la envolvente sigue desde el mayor de los dos niveles | Con la banda comprimiendo, −90 dB de agudos espurios; tomar solo la rápida al apagar da −42 dB |
 | Activar o desactivar la dinámica | Fundido lineal de la mezcla, 10 ms | Volver de −24 dB a 0 dB de golpe es un chasquido |
 | Cambiar a un tipo sin ganancia | El fundido de tipo de la fase 2 (ver [ecualizador.md](ecualizador.md)) | |
 | Por debajo de la rodilla | Ganancia 0 sin calcular el logaritmo | Ahorra CPU en el caso habitual |
@@ -81,6 +102,13 @@ Al arrancar la dinámica (activarla, salir del bypass, `reset()`), el detector y
 - Un de-esser sobre un tono grave con ráfagas a 7 kHz: las ráfagas bajan más de 10 dB; el grave, menos de 0,1 dB.
 - Sidechain externo: controla la banda; sin sidechain conectado no actúa; con detección interna se ignora.
 - Mismo resultado bit a bit con bloques de 1, 7, 32, 100 y 4096 muestras.
+- **Tiempos automáticos** (criterios de aceptación de PLAN.md 5.4):
+  - Los tiempos de cada frecuencia, con sus límites, y la etapa lenta: retiene una señal sostenida y suelta un transitorio, y quitarla no hace saltar el nivel.
+  - Sin la etapa lenta, la envolvente es bit a bit la fórmula de siempre.
+  - Un tono sostenido de 80 Hz, 14 dB por encima del umbral: rizado de la ganancia de 0,15 dB (límite 0,5). Con el ataque fijo mínimo y 20 ms de relajación, 0,91 dB: el test falla, como debe.
+  - Ráfagas de 7 kHz: el 90 % de la reducción en 2,5 ms (límite 5).
+  - Tras una ráfaga aislada de 50 ms, recuperación al 90 % en 24 ms a 7 kHz, 23 ms a 1 kHz y 71 ms a 100 Hz (límite 150). Tras 2 s de señal, 100 ms después de parar queda el 68 % de la reducción.
+  - Encendidos, el ataque y la relajación fijos no cambian nada; con la frecuencia automatizada, el resultado no depende del tamaño de bloque; encenderlos y apagarlos con la banda comprimiendo no produce chasquidos.
 - La detección sigue al canal de la banda (`tests/dsp/equalizer_channel_test.cpp`): un tono solo en el canal derecho no mueve una banda Left, ni uno centrado una banda Side.
 - **Sin chasquidos:**
   - Con modulación rápida (24 dB arriba y abajo 100 veces por segundo, con el ataque mínimo), el paso máximo entre muestras no supera 1,25 veces el de la entrada.
@@ -90,11 +118,13 @@ Al arrancar la dinámica (activarla, salir del bypass, `reset()`), el detector y
 
 - Sin ratio: la reducción sigue al exceso 1:1 hasta el rango. Ver la ADR 0006.
 - Sin anticipación (lookahead): con ataques muy cortos se recorta algo de transitorio.
-- Sin umbral automático.
+- Sin umbral automático (sigue pendiente, ver la ADR 0016).
 - Coste, con 24 bandas dinámicas en estéreo a 48 kHz (un núcleo de un portátil, GCC -O3): un 3 % si la señal no llega al umbral, un 4 % con el rango agotado (la ganancia fija en su límite) y un 8,5 % en el caso habitual, con la ganancia moviéndose sin parar, porque la banda se rediseña en cada muestra. Con ataque y relajación mínimos, hasta un 10 %. Con unas pocas bandas dinámicas es despreciable. La ADR 0006 daba un 5 %, medido con el rango agotado.
+
+  Los tiempos automáticos no lo encarecen: su etapa lenta cuesta una multiplicación, una suma y un máximo por muestra, y alisa la envolvente, así que la banda se rediseña menos. Con las 24 bandas, del 5,9 al 5,1 % frente a los mismos tiempos sin ella (ADR 0016).
 
   Para que el rediseño por muestra sea barato, la banda guarda lo que solo depende de su frecuencia (`prepareFrequency`) y solo recalcula la ganancia (`designBandPrepared`), y `BandFilter::setDesign` copia solo las secciones en uso. El resultado es idéntico bit a bit al de `designBand`.
 
 ## Referencias
 
-- D. Giannoulis, M. Massberg, J. Reiss, *Digital Dynamic Range Compressor Design — A Tutorial and Analysis*, JAES 60(6), 2012. Detector de pico con ataque y relajación, y rodilla suave.
+- D. Giannoulis, M. Massberg, J. Reiss, *Digital Dynamic Range Compressor Design — A Tutorial and Analysis*, JAES 60(6), 2012. Detector de pico con ataque y relajación, y rodilla suave. La etapa lenta de los tiempos automáticos se añade a ese detector.

@@ -56,6 +56,15 @@ bool isStructuralChange(const BandSettings& from, const BandSettings& to) noexce
     return isCut(to.filter.type) && from.filter.slopeDbPerOct != to.filter.slopeDbPerOct;
 }
 
+/// Tiempos de la envolvente de la banda: los fijos o, con los tiempos
+/// automáticos, los de su frecuencia (la que suena, ya suavizada).
+EnvelopeTimes envelopeTimes(const BandSettings& s) noexcept
+{
+    if (s.dynamics.autoTiming)
+        return autoEnvelopeTimes(s.filter.frequencyHz);
+    return {s.dynamics.attackMs, s.dynamics.releaseMs};
+}
+
 /// La dinámica de la banda está pedida y tiene efecto con su tipo.
 bool wantsDynamics(const BandSettings& s) noexcept
 {
@@ -220,7 +229,7 @@ void Equalizer::snapBand(Band& band) noexcept
     band.previous.reset();
     band.detector.reset();
     band.envelope.reset();
-    band.envelope.setTimes(band.current.dynamics.attackMs, band.current.dynamics.releaseMs);
+    band.envelope.setTimes(envelopeTimes(band.current));
     band.dynamicRunning = wantsDynamics(band.current);
     band.dynamicMix = band.dynamicRunning ? 1.0 : 0.0;
     band.dynamicGain = 0.0;
@@ -666,17 +675,20 @@ void Equalizer::smoothBand(Band& band) noexcept
     now.slopeDbPerOct = goal.slopeDbPerOct;
 
     // Dinámica: los interruptores y los tiempos se aplican al momento (el
-    // fundido de la mezcla y la envolvente evitan los saltos). Umbral, rango y
-    // rodilla se suavizan muestra a muestra en updateDynamicGain(), porque la
-    // ganancia dinámica los sigue 1:1 y unos escalones cada kChunkSize
-    // muestras se oirían. Si la dinámica no está sonando, saltan al objetivo.
+    // fundido de la mezcla y la envolvente evitan los saltos). Los tiempos
+    // automáticos siguen a la frecuencia que suena, una vez por tramo. Umbral,
+    // rango y rodilla se suavizan muestra a muestra en updateDynamicGain(),
+    // porque la ganancia dinámica los sigue 1:1 y unos escalones cada
+    // kChunkSize muestras se oirían. Si la dinámica no está sonando, saltan al
+    // objetivo.
     DynamicSettings& dynNow = band.current.dynamics;
     const DynamicSettings& dynGoal = band.target.dynamics;
     dynNow.enabled = dynGoal.enabled;
     dynNow.external = dynGoal.external;
     dynNow.attackMs = dynGoal.attackMs;
     dynNow.releaseMs = dynGoal.releaseMs;
-    band.envelope.setTimes(dynNow.attackMs, dynNow.releaseMs);
+    dynNow.autoTiming = dynGoal.autoTiming;
+    band.envelope.setTimes(envelopeTimes(band.current));
     if (!isDynamic(band) && !(dynNow == dynGoal))
     {
         dynNow = dynGoal;

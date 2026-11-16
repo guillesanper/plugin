@@ -138,7 +138,7 @@ TEST_CASE("Dinamica: la envolvente sigue ataque y relajacion con sus constantes 
 {
     EnvelopeFollower env;
     env.prepare(kFs);
-    env.setTimes(10.0, 100.0);
+    env.setTimes({10.0, 100.0});
 
     // Tras una constante de tiempo, 1 - 1/e del escalón.
     for (int i = 0; i < 480; ++i)
@@ -154,7 +154,7 @@ TEST_CASE("Dinamica: la envolvente sigue ataque y relajacion con sus constantes 
 
     // Cambiar los tiempos no altera el nivel.
     const double before = env.value();
-    env.setTimes(1.0, 5.0);
+    env.setTimes({1.0, 5.0});
     CHECK(env.value() == before);
 }
 
@@ -645,4 +645,340 @@ TEST_CASE("Dinamica: los detectores internos escuchan la entrada del detector si
     // El detector no oye nada: la banda (0 dB) no actúa.
     CHECK(eq.dynamicGainDb(0) == 0.0);
     CHECK(signal == loud);
+}
+
+// ---------------------------------------------------------------------------
+// Tiempos automáticos (PLAN.md 5.4, ADR 0016)
+
+namespace {
+
+BandSettings autoBell(double hz, double q, double thresholdDb, double rangeDb)
+{
+    BandSettings s = dynamicBell(hz, q, thresholdDb, rangeDb);
+    s.dynamics.autoTiming = true;
+    return s;
+}
+
+/// Procesa `signal` muestra a muestra y devuelve la ganancia dinámica de la
+/// banda 0 tras cada muestra.
+std::vector<double> gainTrace(Equalizer& eq, std::vector<float> signal)
+{
+    std::vector<double> gains(signal.size());
+    for (std::size_t i = 0; i < signal.size(); ++i)
+    {
+        float* channel = signal.data() + i;
+        eq.process(&channel, 1, 1);
+        gains[i] = eq.dynamicGainDb(0);
+    }
+    return gains;
+}
+
+/// Rizado (máximo menos mínimo) de la ganancia desde la muestra `from`.
+double ripple(const std::vector<double>& gains, std::size_t from)
+{
+    const auto [low, high] = std::minmax_element(gains.begin() + static_cast<std::ptrdiff_t>(from), gains.end());
+    return *high - *low;
+}
+
+/// Seno de `hz` que suena entre las muestras `from` y `to`, y silencio el resto.
+std::vector<float> burst(int numSamples, double hz, double amplitude, int from, int to)
+{
+    auto out = sine(numSamples, hz, amplitude);
+    for (int i = 0; i < numSamples; ++i)
+        if (i < from || i >= to)
+            out[static_cast<std::size_t>(i)] = 0.0f;
+    return out;
+}
+
+/// Milisegundos desde `from` hasta que la ganancia se queda (para siempre)
+/// dentro del 10 % de 0 dB respecto a `reference`.
+double recoveryMs(const std::vector<double>& gains, std::size_t from, double reference)
+{
+    std::size_t last = from;
+    for (std::size_t i = from; i < gains.size(); ++i)
+        if (std::abs(gains[i]) > 0.1 * std::abs(reference))
+            last = i + 1;
+    return 1000.0 * static_cast<double>(last - from) / kFs;
+}
+
+} // namespace
+
+TEST_CASE("Dinamica: tiempos automaticos segun la frecuencia de la banda")
+{
+    // Ataque de 2 periodos (0,5..50 ms); relajación rápida de 8 periodos
+    // (20 ms como mínimo) y lenta de 10 veces la rápida (1 s como máximo).
+    auto check = [](double hz, double attack, double release, double slow)
+    {
+        INFO(hz << " Hz");
+        const EnvelopeTimes t = autoEnvelopeTimes(hz);
+        CHECK_THAT(t.attackMs, WithinAbs(attack, 1e-9));
+        CHECK_THAT(t.releaseMs, WithinAbs(release, 1e-9));
+        CHECK_THAT(t.slowReleaseMs, WithinAbs(slow, 1e-9));
+    };
+    check(100.0, 20.0, 80.0, 800.0);
+    check(1000.0, 2.0, 20.0, 200.0);
+    check(5000.0, 0.5, 20.0, 200.0);
+    check(20000.0, 0.5, 20.0, 200.0);
+    check(80.0, 25.0, 100.0, 1000.0);
+    check(20.0, 50.0, 400.0, 1000.0);
+    check(kMinFrequencyHz, 50.0, 8000.0, 8000.0);                      // la lenta nunca es más rápida que la rápida
+    check(std::numeric_limits<double>::quiet_NaN(), 2.0, 20.0, 200.0); // como a 1 kHz
+}
+
+TEST_CASE("Dinamica: la relajacion lenta retiene una senal sostenida y suelta un transitorio")
+{
+    auto settle = [](EnvelopeFollower& env, int samples, double level)
+    {
+        for (int i = 0; i < samples; ++i)
+            env.process(level);
+    };
+    EnvelopeFollower env;
+    env.prepare(kFs);
+    env.setTimes({1.0, 20.0, 200.0});
+
+    // Transitorio de 5 ms: la envolvente lenta apenas se carga y, 100 ms
+    // después, queda menos de una décima (-20 dB).
+    settle(env, 240, 1.0);
+    settle(env, 4800, 0.0);
+    const double afterTransient = env.value();
+    CHECK(afterTransient < 0.1);
+
+    // Señal sostenida de 2 s: la lenta se carga del todo y, tras los mismos
+    // 100 ms, retiene lo que dice su ecuación (un polo de 200 ms alimentado
+    // por la rápida, que cae con 20 ms).
+    env.reset();
+    settle(env, 96000, 1.0);
+    CHECK_THAT(env.value(), WithinAbs(1.0, 1e-9));
+    settle(env, 4800, 0.0);
+    const double held = (200.0 * std::exp(-100.0 / 200.0) - 20.0 * std::exp(-100.0 / 20.0)) / 180.0;
+    CHECK_THAT(env.value(), WithinAbs(held, 1e-3));
+    CHECK(env.value() > 6.0 * afterTransient);
+
+    // Quitar la etapa lenta no hace saltar el nivel: la envolvente sigue
+    // desde el mayor de los dos y cae con la relajación fija.
+    const double before = env.value();
+    env.setTimes({1.0, 20.0});
+    CHECK(env.value() == before);
+    env.process(0.0);
+    CHECK_THAT(env.value(), WithinAbs(before * std::exp(-1.0 / (0.020 * kFs)), 1e-12));
+}
+
+TEST_CASE("Dinamica: sin la etapa lenta la envolvente es la de siempre, bit a bit")
+{
+    // La fórmula de la envolvente antes de los tiempos automáticos: con el
+    // interruptor apagado no cambia ni una operación.
+    const double attack = std::exp(-1000.0 / (3.0 * kFs));
+    const double release = std::exp(-1000.0 / (70.0 * kFs));
+    EnvelopeFollower env;
+    env.prepare(kFs);
+    env.setTimes({3.0, 70.0});
+    double expected = 0.0;
+    const auto input = sine(20000, 437.0, 0.8);
+    for (const float sample : input)
+    {
+        const double level = std::abs(static_cast<double>(sample));
+        expected = level + (level > expected ? attack : release) * (expected - level);
+        REQUIRE(env.process(level) == expected);
+    }
+}
+
+TEST_CASE("Dinamica: tiempos automaticos, un tono grave sostenido no hace rizado")
+{
+    // 80 Hz a -6 dBFS, 14 dB por encima del umbral: la ganancia debe quedarse
+    // quieta, no seguir la forma de onda (distorsión).
+    const auto input = sine(96000, 80.0, 0.5);
+    const auto settings = autoBell(80.0, 1.0, -20.0, -24.0);
+    {
+        Equalizer eq;
+        eq.setBand(0, settings);
+        eq.prepare(kFs);
+        const auto gains = gainTrace(eq, input);
+        INFO("rizado con tiempos automaticos: " << ripple(gains, 72000) << " dB");
+        CHECK(gains.back() < -10.0);
+        CHECK(ripple(gains, 72000) < 0.5);
+    }
+    {
+        // Comprobación del test: con el ataque fijo mínimo y una relajación
+        // que va bien en agudos, la ganancia sigue la forma de onda. (Con
+        // 100 ms de relajación el rizado ya baja a 0,19 dB: la relajación
+        // larga lo tapa, pero entonces los agudos no se recuperan a tiempo.)
+        auto fixed = settings;
+        fixed.dynamics.autoTiming = false;
+        fixed.dynamics.attackMs = 0.1;   // el mínimo del parámetro
+        fixed.dynamics.releaseMs = 20.0; // la que eligen los automáticos en agudos
+        Equalizer eq;
+        eq.setBand(0, fixed);
+        eq.prepare(kFs);
+        const auto gains = gainTrace(eq, input);
+        INFO("rizado con el ataque fijo minimo: " << ripple(gains, 72000) << " dB");
+        CHECK(ripple(gains, 72000) > 0.5);
+    }
+}
+
+TEST_CASE("Dinamica: tiempos automaticos, las rafagas agudas se reducen en menos de 5 ms")
+{
+    // Ráfagas de 50 ms a 7 kHz, 12 dB por encima del umbral, cada 150 ms.
+    constexpr int kBurst = 2400;
+    constexpr int kPeriod = 7200;
+    auto input = sine(5 * kPeriod, 7000.0, 0.25);
+    for (std::size_t i = 0; i < input.size(); ++i)
+        if (static_cast<int>(i) % kPeriod >= kBurst)
+            input[i] = 0.0f;
+
+    Equalizer eq;
+    eq.setBand(0, autoBell(7000.0, 1.5, -24.0, -24.0));
+    eq.prepare(kFs);
+    const auto gains = gainTrace(eq, input);
+
+    for (int start = 0; start < static_cast<int>(input.size()); start += kPeriod)
+    {
+        // La reducción objetivo: la de la ráfaga ya asentada, al final.
+        const double target = gains[static_cast<std::size_t>(start + kBurst - 1)];
+        REQUIRE(target < -10.0);
+        int reached = start;
+        while (gains[static_cast<std::size_t>(reached)] > 0.9 * target)
+            ++reached;
+        const double ms = 1000.0 * (reached - start) / kFs;
+        INFO("rafaga en " << start << ": 90 % de " << target << " dB en " << ms << " ms");
+        CHECK(ms < 5.0);
+    }
+}
+
+TEST_CASE("Dinamica: tiempos automaticos, tras una rafaga aislada se recupera en menos de 150 ms")
+{
+    // Ráfaga de 50 ms, 12 dB por encima del umbral, en varias zonas del espectro.
+    for (const double hz : {100.0, 1000.0, 7000.0})
+    {
+        const auto input = burst(24000, hz, 0.25, 2400, 4800);
+        Equalizer eq;
+        eq.setBand(0, autoBell(hz, 1.5, -24.0, -24.0));
+        eq.prepare(kFs);
+        const auto gains = gainTrace(eq, input);
+        const double reduction = *std::min_element(gains.begin(), gains.end());
+        const double ms = recoveryMs(gains, 4800, reduction);
+        INFO(hz << " Hz: reduccion " << reduction << " dB, recuperacion al 90 % en " << ms << " ms");
+        CHECK(reduction < -6.0);
+        CHECK(ms < 150.0);
+    }
+}
+
+TEST_CASE("Dinamica: tiempos automaticos, una senal sostenida no bombea al parar")
+{
+    // Tras 2 s de señal, la reducción se retiene: 100 ms después de parar
+    // queda más de la mitad (con una ráfaga aislada, casi nada).
+    const auto input = burst(120000, 1000.0, 0.25, 0, 96000);
+    Equalizer eq;
+    eq.setBand(0, autoBell(1000.0, 1.5, -24.0, -24.0));
+    eq.prepare(kFs);
+    const auto gains = gainTrace(eq, input);
+    const double held = gains[96000 - 1];
+    REQUIRE(held < -10.0);
+    INFO("reduccion al parar " << held << " dB; 100 ms despues " << gains[96000 + 4800] << " dB");
+    CHECK(gains[96000 + 4800] < 0.5 * held);
+}
+
+TEST_CASE("Dinamica: con tiempos automaticos el ataque y la relajacion no mandan")
+{
+    auto input = sine(24000, 2000.0, 0.5);
+    for (std::size_t i = 12000; i < input.size(); ++i)
+        input[i] *= 0.05f;
+
+    auto settings = autoBell(2000.0, 1.0, -30.0, -12.0);
+    Equalizer reference;
+    reference.setBand(0, settings);
+    reference.prepare(kFs);
+    const auto expected = run(reference, input, 64);
+
+    settings.dynamics.attackMs = 150.0;
+    settings.dynamics.releaseMs = 3000.0;
+    Equalizer eq;
+    eq.setBand(0, settings);
+    eq.prepare(kFs);
+    CHECK(run(eq, input, 64) == expected);
+
+    // Y al apagarlos vuelven a mandar los fijos.
+    settings.dynamics.autoTiming = false;
+    Equalizer manual;
+    manual.setBand(0, settings);
+    manual.prepare(kFs);
+    CHECK(run(manual, input, 64) != expected);
+}
+
+TEST_CASE("Dinamica: tiempos automaticos, no depende del tamano de bloque")
+{
+    // Con la frecuencia automatizada: los tiempos se recalculan por tramo.
+    std::vector<float> input = sine(16384, 900.0, 0.6);
+    for (std::size_t i = 0; i < input.size(); ++i)
+        input[i] *= (i / 1000) % 2 == 0 ? 1.0f : 0.1f;
+
+    auto render = [&](int blockSize)
+    {
+        Equalizer eq;
+        auto settings = autoBell(900.0, 1.5, -18.0, -12.0);
+        eq.setBand(0, settings);
+        eq.setBand(1, autoBell(150.0, 1.0, -30.0, 6.0));
+        eq.prepare(kFs);
+        auto signal = input;
+        for (int pos = 0; pos < 16384;)
+        {
+            // Automatización a saltos cada 512 muestras, igual con cualquier bloque.
+            const int size = std::min(blockSize, 512 - pos % 512);
+            if (pos % 512 == 0)
+            {
+                settings.filter.frequencyHz = 900.0 * std::pow(2.0, (pos / 512) % 4);
+                eq.setBand(0, settings);
+            }
+            float* channel = signal.data() + pos;
+            eq.process(&channel, 1, size);
+            pos += size;
+        }
+        return signal;
+    };
+
+    const auto expected = render(512);
+    for (int blockSize : {1, 7, 32, 100})
+    {
+        INFO("bloque " << blockSize);
+        CHECK(render(blockSize) == expected);
+    }
+}
+
+TEST_CASE("Dinamica: activar o quitar los tiempos automaticos no produce saltos")
+{
+    // Seno de 1300 Hz que baja 14 dB en 10 ms; la banda lo comprime sin
+    // agotar el rango, con una relajación fija lenta. Los tiempos automáticos
+    // se encienden y se apagan mientras la envolvente está cayendo: con
+    // relajaciones tan distintas, un salto del nivel sería un salto de ganancia.
+    auto input = sine(24000, 1300.0, 0.5);
+    for (std::size_t i = 4800; i < input.size(); ++i)
+        input[i] *= static_cast<float>(i < 5280 ? 1.0 - 0.8 * static_cast<double>(i - 4800) / 480.0 : 0.2);
+    auto settings = dynamicBell(1300.0, 1.0, -30.0, -30.0, 0.0, 30.0, 2000.0);
+
+    Equalizer eq;
+    eq.setBand(0, settings);
+    eq.prepare(kFs);
+    auto out = input;
+    auto process = [&](int from, int to)
+    {
+        float* ch = out.data() + from;
+        eq.process(&ch, 1, to - from);
+    };
+    process(0, 9000);
+    const double before = eq.dynamicGainDb(0);
+
+    settings.dynamics.autoTiming = true;
+    eq.setBand(0, settings);
+    process(9000, 14000);
+    const double during = eq.dynamicGainDb(0);
+
+    settings.dynamics.autoTiming = false;
+    eq.setBand(0, settings);
+    process(14000, 24000);
+
+    // La ganancia de verdad se mueve (no está en el límite del rango).
+    INFO("ganancia antes " << before << " dB, con automaticos " << during << " dB");
+    CHECK(before < -10.0);
+    CHECK(during > before + 2.0);
+    INFO("agudos por los cambios: " << clickDb(out, 2000) << " dB");
+    CHECK(clickDb(out, 2000) < -60.0);
 }

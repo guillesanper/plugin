@@ -62,7 +62,10 @@ BandSettings sanitizeBand(BandSettings settings) noexcept ESCEQ_NONBLOCKING;
 /// externo) a través de un filtro centrado en la banda, y la ganancia
 /// dinámica resultante se suma a la ganancia estática. Se evalúa en cada
 /// muestra; los coeficientes se recalculan cuando cambia al menos
-/// kDynamicGainResolutionDb.
+/// kDynamicGainResolutionDb. Con los tiempos automáticos
+/// (DynamicSettings::autoTiming), ataque y relajación salen de la frecuencia
+/// de la banda que suena (autoEnvelopeTimes()) y se recalculan en cada tramo
+/// de kChunkSize muestras.
 ///
 /// Canal (ver docs/dsp/ecualizador.md): cada banda procesa los dos canales,
 /// solo el izquierdo, solo el derecho, solo la suma (Mid) o solo la

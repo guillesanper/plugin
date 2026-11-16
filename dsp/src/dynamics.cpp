@@ -58,26 +58,50 @@ BandDesign designDetector(const FilterParams& params, double sampleRate) noexcep
     return designBand(detector, sampleRate);
 }
 
+EnvelopeTimes autoEnvelopeTimes(double frequencyHz) noexcept ESCEQ_NONBLOCKING
+{
+    if (!std::isfinite(frequencyHz) || frequencyHz <= 0.0)
+        frequencyHz = 1000.0;
+    const double periodMs = 1000.0 / frequencyHz;
+
+    EnvelopeTimes times;
+    times.attackMs = std::clamp(kAutoAttackPeriods * periodMs, kAutoMinAttackMs, kAutoMaxAttackMs);
+    times.releaseMs = std::max(kAutoReleasePeriods * periodMs, kAutoMinReleaseMs);
+    times.slowReleaseMs =
+        std::max(times.releaseMs, std::min(kAutoSlowReleaseFactor * times.releaseMs, kAutoMaxSlowReleaseMs));
+    return times;
+}
+
 void EnvelopeFollower::prepare(double sampleRate) noexcept
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 48000.0;
-    attack_ = coefficient(std::max(attackMs_, kMinAttackMs));
-    release_ = coefficient(std::max(releaseMs_, kMinReleaseMs));
+    attack_ = coefficient(std::max(times_.attackMs, kMinAttackMs));
+    release_ = coefficient(std::max(times_.releaseMs, kMinReleaseMs));
+    slowRelease_ = slowStage_ ? coefficient(std::max(times_.slowReleaseMs, kMinReleaseMs)) : 0.0;
 }
 
-void EnvelopeFollower::setTimes(double attackMs, double releaseMs) noexcept
+void EnvelopeFollower::setTimes(const EnvelopeTimes& requested) noexcept ESCEQ_NONBLOCKING
 {
-    if (!std::isfinite(attackMs))
-        attackMs = 5.0;
-    if (!std::isfinite(releaseMs))
-        releaseMs = 100.0;
-    if (attackMs == attackMs_ && releaseMs == releaseMs_)
+    const EnvelopeTimes defaults{};
+    EnvelopeTimes times = requested;
+    if (!std::isfinite(times.attackMs))
+        times.attackMs = defaults.attackMs;
+    if (!std::isfinite(times.releaseMs))
+        times.releaseMs = defaults.releaseMs;
+    if (!std::isfinite(times.slowReleaseMs) || times.slowReleaseMs < 0.0)
+        times.slowReleaseMs = 0.0;
+    if (times == times_)
         return;
 
-    attackMs_ = attackMs;
-    releaseMs_ = releaseMs;
-    attack_ = coefficient(std::max(attackMs_, kMinAttackMs));
-    release_ = coefficient(std::max(releaseMs_, kMinReleaseMs));
+    const bool slowStage = times.slowReleaseMs > 0.0;
+    if (slowStage && !slowStage_)
+        slowEnvelope_ = envelope_; // empieza donde está: la salida no cambia
+    else if (!slowStage && slowStage_)
+        envelope_ = std::max(envelope_, slowEnvelope_); // sigue desde lo que sonaba
+
+    times_ = times;
+    slowStage_ = slowStage;
+    prepare(sampleRate_);
 }
 
 double EnvelopeFollower::coefficient(double ms) const noexcept

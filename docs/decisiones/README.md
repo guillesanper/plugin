@@ -22,3 +22,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0013](0013-correccion-en-agudos.md) | Corrección en agudos: algoritmo de filtro Matched (Vicanek), con Classic intacto y la versión guardada por instancia | Aceptada |
 | [0014](0014-estado-v3-algoritmo-de-filtro.md) | Estado versión 3: el algoritmo de filtro de la instancia, una línea del estado (no un parámetro) que se deshace y que los presets no cambian | Aceptada |
 | [0015](0015-compensacion-automatica-de-ganancia.md) | Compensación automática de ganancia: curva estática ponderada con una rejilla refinada, calculada en un hilo de control, y un parámetro fuera de los presets | Aceptada |
+| [0016](0016-tiempos-automaticos-en-la-dinamica.md) | Tiempos automáticos en la dinámica: ataque ligado al periodo, relajación de dos etapas (una lenta que promedia la rápida) y un interruptor por banda dentro de los presets | Aceptada |
