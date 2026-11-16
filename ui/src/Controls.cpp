@@ -110,8 +110,18 @@ void ParamControl::setDimmed(bool dimmed)
     repaint();
 }
 
+void ParamControl::setValueOverride(const juce::String& text)
+{
+    if (valueOverride_ == text)
+        return;
+    valueOverride_ = text;
+    repaint();
+}
+
 juce::String ParamControl::valueText() const
 {
+    if (valueOverride_.isNotEmpty())
+        return valueOverride_;
     return spec_ != nullptr ? toJuce(core::formatValue(*spec_, value_)) : juce::String();
 }
 

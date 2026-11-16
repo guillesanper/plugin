@@ -7,6 +7,7 @@
 
 #include "esceq/core/band_model.h"
 #include "esceq/core/parameters.h"
+#include "esceq/ui/control_logic.h"
 #include "esceq/ui/meter_logic.h"
 
 #include <cmath>
@@ -38,15 +39,15 @@ BandPanel::BandPanel(PluginProcessor& processor)
     static_assert(core::kChannelChoices.size() == 5);
 
     for (juce::Component* c : std::initializer_list<juce::Component*>{&enabled_, &type_, &slope_, &channel_, &frequency_,
-                                                                      &gain_, &q_, &dynamic_, &source_, &threshold_, &range_,
-                                                                      &attack_, &release_, &knee_})
+                                                                      &gain_, &q_, &dynamic_, &source_, &autoTiming_,
+                                                                      &threshold_, &range_, &attack_, &release_, &knee_})
         addChildComponent(*c);
 
     // Orden de tabulación: de izquierda a derecha, tarjeta a tarjeta.
     int order = 1;
     for (juce::Component* c : std::initializer_list<juce::Component*>{&enabled_, &type_, &slope_, &channel_, &frequency_,
-                                                                      &gain_, &q_, &dynamic_, &source_, &threshold_, &range_,
-                                                                      &attack_, &release_, &knee_})
+                                                                      &gain_, &q_, &dynamic_, &source_, &autoTiming_,
+                                                                      &threshold_, &range_, &attack_, &release_, &knee_})
         c->setExplicitFocusOrder(order++);
 
     setTitle("Band");
@@ -68,6 +69,7 @@ void BandPanel::setBand(int band)
     channel_.detach();
     dynamic_.detach();
     source_.detach();
+    autoTiming_.detach();
     for (ParamControl* c : {&frequency_, &gain_, &q_, &threshold_, &range_, &attack_, &release_, &knee_})
         c->detach();
 
@@ -97,6 +99,7 @@ void BandPanel::setBand(int band)
 
         dynamic_.attach(processor_.parameter(dynIndex(DynParam::Enabled)));
         source_.attach(processor_.parameter(dynIndex(DynParam::Source)), specs[dynIndex(DynParam::Source)]);
+        autoTiming_.attach(processor_.parameter(core::autoTimingParameter(band)));
         knob(threshold_, dynIndex(DynParam::Threshold));
         knob(range_, dynIndex(DynParam::Range));
         knob(attack_, dynIndex(DynParam::Attack));
@@ -107,6 +110,7 @@ void BandPanel::setBand(int band)
         const auto colour = theme::band(band);
         enabled_.setAccent(colour);
         dynamic_.setAccent(colour);
+        autoTiming_.setAccent(colour);
         channel_.setAccent(colour);
         for (ParamControl* c : {&frequency_, &gain_, &q_, &threshold_, &range_, &attack_, &release_, &knee_})
             c->setAccent(colour);
@@ -137,11 +141,20 @@ void BandPanel::refresh()
     const bool active = supported && settings.dynamics.enabled;
     dynamic_.setEnabled(supported);
     source_.setEnabled(supported);
+    autoTiming_.setEnabled(supported);
+    // Con los tiempos automáticos, ataque y relajación no mandan: se atenúan y
+    // dicen "Auto", pero conservan su valor (y se pueden editar) para cuando se apaguen.
+    const bool autoTiming = settings.dynamics.autoTiming;
+    const auto timeText = toJuce(dynamicTimeValueText(autoTiming));
     for (ParamControl* c : {&threshold_, &range_, &attack_, &release_, &knee_})
     {
+        const bool isTime = c == &attack_ || c == &release_;
         c->setEnabled(supported);
-        c->setDimmed(supported && !active);
+        c->setDimmed(supported && (!active || (isTime && autoTiming)));
+        if (isTime)
+            c->setValueOverride(timeText);
     }
+    autoTiming_.setTooltip(toJuce(autoTimingTooltip(settings.filter.frequencyHz)));
 
     const auto typeName = toJuce(core::parameters()[core::bandParameter(band_, core::BandParam::Type)]
                                      .choices[static_cast<std::size_t>(type)]);
@@ -179,6 +192,7 @@ void BandPanel::resized()
 
     dynamic_.setBounds(toInt(layout_.dynamicsEnabled));
     source_.setBounds(toInt(layout_.source));
+    autoTiming_.setBounds(toInt(layout_.autoTiming));
     threshold_.setBounds(toInt(layout_.dynamicKnobs[0]));
     range_.setBounds(toInt(layout_.dynamicKnobs[1]));
     attack_.setBounds(toInt(layout_.dynamicKnobs[2]));

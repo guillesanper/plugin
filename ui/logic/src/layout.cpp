@@ -211,12 +211,15 @@ PanelLayout panelLayout(Rect bounds) noexcept
         takeRight(inner, kS2);
 
         layout.dynamicsTitle = {title.x, title.y, kDynamicsSideWidth, title.height};
-        takeTop(side, kS3);
-        layout.dynamicsEnabled = takeTop(side, kControlHeight);
+        // Interruptor, fuente con su aviso debajo y tiempos automáticos: con
+        // la altura del panel (168 px) caben con 2 px de sobra.
         takeTop(side, kS2);
-        layout.source = takeTop(side, kControlHeight);
+        layout.dynamicsEnabled = takeTop(side, kControlHeight);
         takeTop(side, kS1);
+        layout.source = takeTop(side, kControlHeight);
         layout.sourceWarning = takeTop(side, 16.0f);
+        takeTop(side, kS1);
+        layout.autoTiming = takeTop(side, kControlHeight);
 
         const float dynamicCell = inner.width / static_cast<float>(kNumDynamicKnobs);
         for (std::size_t i = 0; i < layout.dynamicKnobs.size(); ++i)

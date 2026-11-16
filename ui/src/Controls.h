@@ -50,6 +50,11 @@ public:
     /// en el sonido (por ejemplo, la dinámica apagada).
     void setDimmed(bool dimmed);
 
+    /// Texto que se muestra (y lee el lector de pantalla) en lugar del valor,
+    /// por ejemplo "Auto" cuando otro ajuste decide el valor; vacío vuelve a
+    /// mostrar el valor. El parámetro no cambia y se puede seguir editando.
+    void setValueOverride(const juce::String& text);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void enablementChanged() override { repaint(); }
@@ -85,6 +90,7 @@ private:
     juce::String label_;
     juce::Colour accent_ = theme::colour::accent;
     bool dimmed_ = false;
+    juce::String valueOverride_;
 
     const core::ParameterSpec* spec_ = nullptr;
     std::unique_ptr<juce::ParameterAttachment> attachment_;

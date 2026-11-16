@@ -235,6 +235,16 @@ TEST_CASE("Controles: la ayuda del modo de fase dice la latencia")
     CHECK(phaseModeTooltip(4608, 0.0) == "Phase mode \xC2\xB7 no latency");
 }
 
+TEST_CASE("Controles: ataque y relajacion con los tiempos automaticos")
+{
+    CHECK(dynamicTimeValueText(true) == "Auto");
+    CHECK(dynamicTimeValueText(false).empty());
+
+    CHECK(autoTimingTooltip(1000.0) ==
+          "Auto timing \xC2\xB7 attack 2.00 ms, release 20.0 ms (200 ms after long notes)");
+    CHECK(autoTimingTooltip(80.0) == "Auto timing \xC2\xB7 attack 25.0 ms, release 100 ms (1.00 s after long notes)");
+}
+
 TEST_CASE("Controles: texto del boton de la compensacion automatica")
 {
     CHECK(autoGainLabel(false, -2.3) == "Auto");

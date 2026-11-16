@@ -99,6 +99,7 @@ struct PanelLayout
     Rect dynamicsEnabled;
     Rect source;
     Rect sourceWarning;
+    Rect autoTiming; ///< Interruptor de los tiempos automáticos ("Auto").
     std::array<Rect, kNumDynamicKnobs> dynamicKnobs;
     Rect dynamicsMeter;
 };

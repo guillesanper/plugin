@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También está hecha la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)). Lo siguiente son los tiempos automáticos en la dinámica (sección 5.4). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)) y los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)). Lo siguiente es la escala de notas (sección 5.1). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -202,7 +202,7 @@ Reglas comunes a todas:
 | Escala de notas | 5.1 | 5 | Ninguno (preferencias) | No |
 | Analizador ampliado | 5.2 | 5 | Ninguno (preferencias) | No |
 | Bandas desde el espectro | 5.3 | 5 | Ninguno | No |
-| Tiempos automáticos en la dinámica | 5.4 | 5 | 24 (uno por banda) | No |
+| Tiempos automáticos en la dinámica ✅ | 5.4 | 5 | 24 (uno por banda) | No |
 | Compensación automática de ganancia ✅ | 5.5 | 5 | 1 global | No |
 | Igualar a una referencia | 5.6 | 6 | Ninguno (crea bandas normales) | No |
 | Dinámica espectral | 5.7 | 6 | 24 (uno por banda) | Sí, mientras se use |
@@ -293,6 +293,8 @@ Reglas comunes a todas:
 - Un test de interfaz comprueba que crear una banda y deshacerla deja el estado exactamente como estaba.
 
 ### 5.4 Tiempos automáticos en la dinámica
+
+**Hecha** (noviembre de 2026): [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md) y [docs/dsp/dinamica.md](docs/dsp/dinamica.md). Cada criterio de aceptación tiene su test (`tests/dsp/dynamics_test.cpp` y `tests/plugin/auto_timing_test.cpp`). Lo que cambió respecto a lo previsto, con sus medidas en la ADR: la relajación lenta no es un segundo detector de pico en paralelo (con el mismo ataque estaría siempre por encima del rápido y la rápida no haría nada), sino un filtro de un polo que promedia la envolvente rápida, y manda el mayor de los dos; el test del rizado se comprueba con el ataque fijo mínimo y 20 ms de relajación (con 100 ms el rizado ya es pequeño); y el interruptor va en el preset, a diferencia de `auto_gain`. El umbral automático sigue pendiente (sección 4.2). Medido: rizado de 0,15 dB a 80 Hz, reducción de ráfagas de 7 kHz en 2,5 ms, recuperación de 23 a 71 ms, y ningún coste extra de CPU.
 
 **Qué es.** Que una banda dinámica elija sola su ataque y su relajación, según su frecuencia y la señal, para que funcione bien sin ajustar tiempos. Con ataques fijos, en graves la ganancia sigue la forma de onda y distorsiona; en agudos, un ataque lento deja pasar las sibilantes.
 
@@ -479,7 +481,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
+| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (hechos, ver [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
 | **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
 
 ---

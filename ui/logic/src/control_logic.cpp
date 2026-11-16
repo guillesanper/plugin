@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/control_logic.h"
 
+#include "esceq/dsp/dynamics.h"
+
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -118,6 +120,23 @@ std::string autoGainTooltip(bool enabled, double compensationDb)
         return "Auto gain \xC2\xB7 off: keep the loudness the same as with bypass, to compare at equal loudness";
     return "Auto gain \xC2\xB7 " + signedDb(compensationDb) +
            ": keeps the loudness of the curve the same as with bypass (static gain only, for pink noise)";
+}
+
+std::string_view dynamicTimeValueText(bool autoTiming) noexcept
+{
+    return autoTiming ? "Auto" : "";
+}
+
+std::string autoTimingTooltip(double frequencyHz)
+{
+    // Con el formato de los propios potenciómetros de ataque y relajación.
+    const auto& specs = core::parameters();
+    const auto& attack = specs[core::dynamicParameter(0, core::DynParam::Attack)];
+    const auto& release = specs[core::dynamicParameter(0, core::DynParam::Release)];
+    const auto times = dsp::autoEnvelopeTimes(frequencyHz);
+    return "Auto timing \xC2\xB7 attack " + core::formatValue(attack, static_cast<float>(times.attackMs)) +
+           ", release " + core::formatValue(release, static_cast<float>(times.releaseMs)) + " (" +
+           core::formatValue(release, static_cast<float>(times.slowReleaseMs)) + " after long notes)";
 }
 
 } // namespace esceq::ui

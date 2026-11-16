@@ -104,7 +104,7 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | Cabecera | Qué ofrece |
 |---|---|
 | `curve_mapping.h` | Frecuencia y ganancia ↔ píxeles, posición y selección de nodos, rejillas, etiqueta flotante, indicador de ganancia fuera de rango, valores de una banda nueva, navegación con el teclado y Q con la rueda |
-| `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto; textos de ayuda del modo de fase y del botón de la compensación automática de ganancia |
+| `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto; textos de ayuda del modo de fase y del botón de la compensación automática de ganancia; texto y ayuda de los tiempos automáticos de la dinámica |
 | `meter_logic.h` | Escala y balística del medidor de salida; balística del analizador; fracción del medidor de dinámica |
 | `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control |
 | `options_menu.h` | Menú de opciones: entradas de la precisión en agudos y del tamaño de la ventana, qué marca y qué hace cada una |

@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo y tiempos automáticos, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -28,6 +28,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Cambiar el tipo de filtro | Clic derecho en el nodo, o el panel inferior |
 | Eliminar una banda | Doble clic en el nodo |
 | Hacer dinámica una banda | Botón "Dynamic" del panel inferior, o clic derecho en el nodo |
+| Que la dinámica elija sola su ataque y su relajación | Interruptor *Auto* bajo la fuente del detector, en el panel inferior (ver abajo) |
 | Elegir el canal de una banda | Selector ST / L / R / M / S del panel inferior, o clic derecho en el nodo |
 | Ajustar un potenciómetro | Arrastrar; Mayús para ajuste fino; rueda; doble clic o Ctrl/Cmd + clic para el valor por defecto |
 | Escribir un valor | Clic en el número bajo el potenciómetro ("1.2k", "-3", "350 Hz") |
@@ -68,6 +69,8 @@ Por debajo de unos 2 kHz (a 48 kHz) los dos suenan prácticamente igual. Se guar
 Al realzar, todo suena más fuerte, y lo más fuerte parece mejor: comparar con el bypass engaña. Con el botón *Auto* (parámetro automatizable `auto_gain`), esceQ baja o sube la salida lo justo para que la sonoridad no cambie al ecualizar, y el botón dice cuánto ("Auto -2.3 dB"). La compensación sale de la curva, no de medir el audio: es la que deja igual la sonoridad de ruido rosa medida como en ITU-R BS.1770, así que no bombea con la música. Solo compensa la ganancia estática de las bandas, no la dinámica (compensarla anularía su efecto), se limita a ±12 dB, se suma a la ganancia de salida y entra con una rampa sin chasquidos, en cualquier modo de fase. Con el bypass puesto no actúa. Está apagada por defecto y en los proyectos anteriores, y elegir un preset no la cambia. Detalles en [docs/dsp/compensacion-de-ganancia.md](docs/dsp/compensacion-de-ganancia.md).
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
+
+**Tiempos automáticos:** con el interruptor *Auto* de la dinámica (parámetro `bNN_autotime`, uno por banda), la banda elige sola su ataque y su relajación según su frecuencia: en graves, un ataque de dos periodos para que la ganancia no siga la forma de onda (no distorsiona); en agudos, medio milisegundo para atrapar las sibilantes. La relajación depende de la señal: un golpe aislado se suelta deprisa, y una nota larga se suelta despacio para que no bombee. Encendido, los potenciómetros de ataque y relajación dicen "Auto" y conservan su valor para cuando se apague. Está apagado por defecto y en los proyectos anteriores; los presets lo guardan. Detalles en [docs/dsp/dinamica.md](docs/dsp/dinamica.md).
 
 **Canal:** cada banda actúa en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid (lo que está en el centro) o Side (lo que está a los lados). Lo que la banda no toca pasa intacto. Una banda dinámica escucha ese mismo canal. El nodo de una banda que no es estéreo lleva su letra (L, R, M, S).
 

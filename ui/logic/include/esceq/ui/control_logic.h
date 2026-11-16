@@ -81,4 +81,14 @@ std::string autoGainLabel(bool enabled, double compensationDb);
 /// Texto de ayuda del botón de la compensación automática de ganancia.
 std::string autoGainTooltip(bool enabled, double compensationDb);
 
+/// Valor que muestran los potenciómetros de ataque y relajación de una
+/// banda: "Auto" con los tiempos automáticos encendidos; vacío si muestran
+/// su propio valor (que se conserva).
+std::string_view dynamicTimeValueText(bool autoTiming) noexcept;
+
+/// Texto de ayuda del interruptor de los tiempos automáticos, con los que
+/// corresponden a la frecuencia de la banda (dsp::autoEnvelopeTimes):
+/// "Auto timing · attack 2.00 ms, release 20.0 ms (200 ms after long notes)".
+std::string autoTimingTooltip(double frequencyHz);
+
 } // namespace esceq::ui
