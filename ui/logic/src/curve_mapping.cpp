@@ -122,6 +122,15 @@ NodeReadout nodeReadout(const core::ParameterValues& values, int band)
     return out;
 }
 
+dsp::BandSettings soundingBandSettings(const core::ParameterValues& values, int band, dsp::FilterAlgorithm algorithm,
+                                       double dynamicGainDb) noexcept
+{
+    auto settings = core::bandSettings(values, band, algorithm);
+    if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
+        settings.filter.gainDb += dynamicGainDb;
+    return settings;
+}
+
 std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bool> visible, Point p,
                                 float radius) noexcept
 {

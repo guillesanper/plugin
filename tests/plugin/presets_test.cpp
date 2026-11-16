@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <string>
 
 using namespace esceq;
 using namespace esceq::test;
@@ -115,7 +116,7 @@ TEST_CASE("Presets: guardar, listar, cargar y borrar un preset de usuario")
     const auto file = PresetManager::userDirectory().getChildFile("Mi preset.esceq");
     REQUIRE(file.existsAsFile());
     const auto text = file.loadFileAsString().toStdString();
-    CHECK(text.starts_with("esceQ-state 2\n"));
+    CHECK(text.starts_with("esceQ-state " + std::to_string(core::kStateVersion) + "\n"));
     CHECK(text.find('\r') == std::string::npos);
     CHECK(text.find("ui.") == std::string::npos);
     CHECK(core::deserializeState(text) == saved);

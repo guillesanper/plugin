@@ -154,3 +154,22 @@ TEST_CASE("Modelo: modo de fase")
     CHECK(phaseModeFromChoice(-1.0f) == esceq::dsp::PhaseMode::Iir);
     CHECK(phaseModeFromChoice(std::numeric_limits<float>::quiet_NaN()) == esceq::dsp::PhaseMode::Iir);
 }
+
+TEST_CASE("Modelo: las bandas llevan el algoritmo de filtro que se pide")
+{
+    auto values = defaultValues();
+    values[bandParameter(2, BandParam::Enabled)] = 1.0f;
+    values[bandParameter(2, BandParam::Frequency)] = 15000.0f;
+
+    for (const auto algorithm : {dsp::FilterAlgorithm::Classic, dsp::FilterAlgorithm::Matched})
+    {
+        const auto settings = bandSettings(values, 2, algorithm);
+        CHECK(settings.filter.algorithm == algorithm);
+        // Lo demas no depende del algoritmo.
+        auto expected = bandSettings(values, 2);
+        expected.filter.algorithm = algorithm;
+        CHECK(settings.filter == expected.filter);
+    }
+    // Sin decirlo, el de dsp::FilterParams.
+    CHECK(bandSettings(values, 2).filter.algorithm == dsp::FilterParams{}.algorithm);
+}

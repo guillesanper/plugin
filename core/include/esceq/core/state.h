@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/dsp/filter_design.h"
 
 #include <optional>
 #include <string>
@@ -16,7 +17,16 @@ namespace esceq::core {
 ///
 ///  - 1: solo parámetros.
 ///  - 2: además, preferencias de la interfaz (líneas `ui.*`).
-inline constexpr int kStateVersion = 2;
+///  - 3: además, el algoritmo de filtro de la instancia (línea
+///    `filter_algorithm`). Ver docs/decisiones/0014-estado-v3-algoritmo-de-filtro.md.
+inline constexpr int kStateVersion = 3;
+
+/// Algoritmo de filtro de una instancia nueva.
+inline constexpr dsp::FilterAlgorithm kNewInstanceFilterAlgorithm = dsp::FilterAlgorithm::Matched;
+
+/// Algoritmo de los estados escritos antes de la versión 3 (todos los de la
+/// 0.1): el único que había. Con él suenan bit a bit igual que entonces.
+inline constexpr dsp::FilterAlgorithm kLegacyFilterAlgorithm = dsp::FilterAlgorithm::Classic;
 
 /// Preferencias de la interfaz que se guardan con el proyecto. No son
 /// parámetros: el host no las automatiza ni las ve.
@@ -47,6 +57,9 @@ UiSettings sanitize(UiSettings settings);
 struct PluginState
 {
     ParameterValues parameters = defaultValues();
+    /// Algoritmo de filtro de todas las bandas. No es un parámetro (el host no
+    /// lo ve ni lo automatiza) y los presets no lo cambian.
+    dsp::FilterAlgorithm filterAlgorithm = kNewInstanceFilterAlgorithm;
     UiSettings ui{};
 
     friend bool operator==(const PluginState&, const PluginState&) = default;
@@ -54,10 +67,11 @@ struct PluginState
 
 /// Serializa el estado completo en texto UTF-8:
 ///
-///     esceQ-state 2
+///     esceQ-state 3
 ///     output_gain 0
 ///     bypass 0
 ///     ...
+///     filter_algorithm 1
 ///     ui.analyzer 1
 ///     ui.range 18
 ///     ui.width 1180
@@ -65,8 +79,9 @@ struct PluginState
 ///     ui.preset Vocal
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
-/// independientemente de la configuración regional. Las claves `ui.*` no
-/// son parámetros. No es segura en tiempo real (asigna memoria).
+/// independientemente de la configuración regional. `filter_algorithm` (el
+/// valor numérico de dsp::FilterAlgorithm) y las claves `ui.*` no son
+/// parámetros. No es segura en tiempo real (asigna memoria).
 std::string serializePluginState(const PluginState& state);
 
 /// Lee un estado escrito por cualquier versión de esceQ.
@@ -75,13 +90,16 @@ std::string serializePluginState(const PluginState& state);
 ///  - Claves desconocidas (estado de una versión más nueva): se ignoran.
 ///  - Valores fuera de rango o ilegibles: se ajustan o pasan a por defecto.
 ///  - Cabecera inválida: devuelve nullopt y el llamador conserva su estado.
-///  - Versiones anteriores: se migran paso a paso hasta la actual.
+///  - Versiones anteriores: se migran paso a paso hasta la actual. Las
+///    anteriores a la 3 cargan con kLegacyFilterAlgorithm.
+///  - Un algoritmo que esta versión no conoce (de una versión más nueva) o
+///    ilegible: kNewInstanceFilterAlgorithm, el más reciente que conoce.
 ///
 /// No es segura en tiempo real.
 std::optional<PluginState> deserializePluginState(std::string_view text);
 
-/// Solo los parámetros, sin preferencias de la interfaz: es lo que guarda un
-/// preset. Se lee con cualquiera de las dos funciones de lectura.
+/// Solo los parámetros, sin algoritmo ni preferencias de la interfaz: es lo
+/// que guarda un preset. Se lee con cualquiera de las dos funciones de lectura.
 std::string serializeState(const ParameterValues& values);
 
 /// Como deserializePluginState(), pero devuelve solo los parámetros.

@@ -214,7 +214,7 @@ TEST_CASE("Estado v2: ida y vuelta con las preferencias de la interfaz")
     state.ui.presetName = "Vocal de Ana";
 
     const auto text = serializePluginState(state);
-    CHECK(text.starts_with("esceQ-state 2\n"));
+    CHECK(text.starts_with("esceQ-state " + std::to_string(kStateVersion) + "\n"));
     const auto restored = deserializePluginState(text);
     REQUIRE(restored.has_value());
     CHECK(*restored == state);
@@ -341,4 +341,143 @@ TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
     const auto restored = deserializeState(serializeState(values));
     REQUIRE(restored.has_value());
     CHECK((*restored)[kPhaseMode] == 2.0f);
+}
+
+// ---------------------------------------------------------------------------
+// Version 3: algoritmo de filtro de la instancia (ADR 0013 y 0014)
+
+TEST_CASE("Estado v3: los estados anteriores cargan en Classic")
+{
+    // Todos los fixtures de las versiones 1 y 2, y el proyecto de la 0.1: se
+    // escribieron cuando solo existia Classic, y con el suenan igual.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v1_bands.txt", "v1_dynamics.txt", "v1_channels.txt",
+                             "v2_ui.txt", "release_0.1_full.txt"})
+    {
+        INFO(name);
+        const auto state = deserializePluginState(readFixture(name));
+        REQUIRE(state.has_value());
+        CHECK(state->filterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+        // Las bandas que salen de el son exactamente las de la 0.1, que el
+        // contrato "un proyecto guardado con la 0.1 suena igual" compara con
+        // su audio de referencia.
+        for (int band = 0; band < kNumBands; ++band)
+            CHECK(bandSettings(state->parameters, band, state->filterAlgorithm).filter ==
+                  bandSettings(state->parameters, band).filter);
+    }
+}
+
+TEST_CASE("Estado v3: una instancia nueva usa Matched")
+{
+    CHECK(PluginState{}.filterAlgorithm == esceq::dsp::FilterAlgorithm::Matched);
+    CHECK(kNewInstanceFilterAlgorithm == esceq::dsp::FilterAlgorithm::Matched);
+    CHECK(kLegacyFilterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+}
+
+TEST_CASE("Estado v3: ida y vuelta del algoritmo de filtro")
+{
+    for (const auto algorithm : {esceq::dsp::FilterAlgorithm::Classic, esceq::dsp::FilterAlgorithm::Matched})
+    {
+        PluginState state;
+        state.parameters[kOutputGain] = 1.5f;
+        state.filterAlgorithm = algorithm;
+        const auto text = serializePluginState(state);
+        CHECK(text.find("\nfilter_algorithm " + std::to_string(static_cast<int>(algorithm)) + "\n") !=
+              std::string::npos);
+        const auto restored = deserializePluginState(text);
+        REQUIRE(restored.has_value());
+        CHECK(*restored == state);
+    }
+}
+
+TEST_CASE("Estado v3: fixtures con el algoritmo de filtro")
+{
+    // Un proyecto nuevo, en Matched y en fase lineal.
+    const auto matched = deserializePluginState(readFixture("v3_matched.txt"));
+    REQUIRE(matched.has_value());
+    CHECK(matched->filterAlgorithm == esceq::dsp::FilterAlgorithm::Matched);
+    CHECK(matched->parameters[kPhaseMode] == 1.0f);
+    CHECK(matched->parameters[kOutputGain] == -2.0f);
+    CHECK(matched->parameters[bandParameter(0, BandParam::Frequency)] == 120.0f);
+    CHECK(matched->ui.presetName == "Low-End Cleanup");
+
+    // El proyecto de la 0.1, guardado otra vez con la version 3: sigue en
+    // Classic, con los mismos parametros y preferencias.
+    const auto classic = deserializePluginState(readFixture("v3_classic.txt"));
+    const auto original = deserializePluginState(readFixture("release_0.1_full.txt"));
+    REQUIRE(classic.has_value());
+    REQUIRE(original.has_value());
+    CHECK(classic->filterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+    CHECK(*classic == *original);
+
+    // Mientras kStateVersion sea 3, lo que se escribe a partir de ellos es
+    // identico, salvo las lineas de los parametros que se añadan despues.
+    if (kStateVersion == 3)
+    {
+        for (const char* name : {"v3_matched.txt", "v3_classic.txt"})
+        {
+            INFO(name);
+            const auto text = readFixture(name);
+            const auto written = serializePluginState(*deserializePluginState(text));
+            CHECK(esceq::test::withoutParametersAddedAfter(written, esceq::test::kParametersInV3Fixtures) == text);
+        }
+    }
+}
+
+TEST_CASE("Estado v3: migracion desde la version 2")
+{
+    // Una linea filter_algorithm en un estado que dice ser de la version 2 no
+    // la escribio esceQ (la 2 no la tenia): se descarta y queda Classic.
+    for (const char* text : {"esceQ-state 2\nfilter_algorithm 1\n", "esceQ-state 1\nfilter_algorithm 1\n"})
+    {
+        INFO(text);
+        const auto state = deserializePluginState(text);
+        REQUIRE(state.has_value());
+        CHECK(state->filterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+    }
+
+    // En la version 3 si cuenta.
+    const auto v3 = deserializePluginState("esceQ-state 3\nfilter_algorithm 0\n");
+    REQUIRE(v3.has_value());
+    CHECK(v3->filterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+
+    // Un estado de la 3 sin la linea (escrito a mano): el valor por defecto,
+    // como cualquier dato ausente.
+    const auto missing = deserializePluginState("esceQ-state 3\noutput_gain 2\n");
+    REQUIRE(missing.has_value());
+    CHECK(missing->filterAlgorithm == kNewInstanceFilterAlgorithm);
+}
+
+TEST_CASE("Estado v3: un algoritmo desconocido o ilegible toma el de las instancias nuevas")
+{
+    // 7: un algoritmo de una version mas nueva que esta no sabe hacer sonar.
+    for (const char* value : {"7", "-1", "abc", ""})
+    {
+        INFO(value);
+        const auto state = deserializePluginState(std::string("esceQ-state 3\nfilter_algorithm ") + value + "\n");
+        REQUIRE(state.has_value());
+        CHECK(state->filterAlgorithm == kNewInstanceFilterAlgorithm);
+    }
+
+    // Tampoco se escribe un valor que no existe (fuera del enum a propósito).
+    PluginState state;
+    // NOLINTNEXTLINE(clang-analyzer-optin.core.EnumCastOutOfRange)
+    state.filterAlgorithm = static_cast<esceq::dsp::FilterAlgorithm>(9);
+    const auto restored = deserializePluginState(serializePluginState(state));
+    REQUIRE(restored.has_value());
+    CHECK(restored->filterAlgorithm == kNewInstanceFilterAlgorithm);
+}
+
+TEST_CASE("Estado v3: el algoritmo no es un parametro ni una preferencia de la interfaz")
+{
+    // Ninguna version de esceQ lo confunde con un parametro, y una anterior
+    // (que no lo conoce) lo ignora y carga los parametros.
+    CHECK_FALSE(findParameter("filter_algorithm").has_value());
+    PluginState state;
+    state.parameters[kOutputGain] = -4.0f;
+    const auto values = deserializeState(serializePluginState(state));
+    REQUIRE(values.has_value());
+    CHECK((*values)[kOutputGain] == -4.0f);
+
+    // Lo que guarda un preset (serializeState) no lo lleva.
+    CHECK(serializeState(defaultValues()).find("filter_algorithm") == std::string::npos);
 }

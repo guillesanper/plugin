@@ -137,7 +137,7 @@ TEST_CASE("Fase: un impulso sale retrasado la latencia, con la magnitud de la cu
             peak = i;
     CHECK(peak == static_cast<std::size_t>(latency));
     // La magnitud de la curva: la del filtro de la banda tal y como se dibuja.
-    const auto band = core::bandSettings(p->currentValues(), 0);
+    const auto band = core::bandSettings(p->currentValues(), 0, p->filterAlgorithm());
     for (const double hz : {100.0, 1000.0, 5000.0})
         CHECK_THAT(magnitudeDb(out, hz),
                    WithinAbs(dsp::magnitudeDb(dsp::designBand(band.filter, kRate), hz, kRate), 0.02));

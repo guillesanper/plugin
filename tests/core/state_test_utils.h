@@ -14,6 +14,10 @@ namespace esceq::test
 /// versión 2 (los de la 0.1).
 inline constexpr std::size_t kParametersInV2Fixtures = 338;
 
+/// Parámetros que había cuando se escribieron los fixtures de estado de la
+/// versión 3 (los de la 0.1 y phase_mode).
+inline constexpr std::size_t kParametersInV3Fixtures = 339;
+
 /// `text` (un estado) sin las líneas de los parámetros con índice
 /// `firstAdded` o mayor: los que se añadieron a la tabla después de escribir
 /// un fixture. Un parámetro nuevo se escribe con su valor por defecto; así no

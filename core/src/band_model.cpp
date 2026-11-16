@@ -82,7 +82,7 @@ bool usesSlope(dsp::FilterType type) noexcept
     return type == dsp::FilterType::LowCut || type == dsp::FilterType::HighCut;
 }
 
-dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept
+dsp::BandSettings bandSettings(const ParameterValues& values, int band, dsp::FilterAlgorithm algorithm) noexcept
 {
     const auto& specs = parameters();
     auto value = [&](BandParam p) {
@@ -97,6 +97,7 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept
     settings.filter.gainDb = value(BandParam::Gain);
     settings.filter.q = value(BandParam::Q);
     settings.filter.slopeDbPerOct = slopeFromChoice(value(BandParam::Slope));
+    settings.filter.algorithm = algorithm;
 
     auto dyn = [&](DynParam p) {
         const std::size_t i = dynamicParameter(band, p);

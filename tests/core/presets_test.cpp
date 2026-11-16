@@ -126,7 +126,7 @@ TEST_CASE("Presets de fabrica: lo que promete cada uno")
 TEST_CASE("Presets: el texto compacto se lee como los mismos valores")
 {
     // Por defecto: solo la cabecera.
-    CHECK(serializePreset(defaultValues()) == "esceQ-state 2\n");
+    CHECK(serializePreset(defaultValues()) == "esceQ-state " + std::to_string(kStateVersion) + "\n");
 
     ParameterValues values = defaultValues();
     std::uint32_t rng = 99u;
@@ -140,8 +140,9 @@ TEST_CASE("Presets: el texto compacto se lee como los mismos valores")
     CHECK(deserializeState(text) == values);
     CHECK(text.size() < serializeState(values).size());
 
-    // Un preset no lleva preferencias de la interfaz.
+    // Un preset no lleva preferencias de la interfaz ni el algoritmo de filtro.
     CHECK(text.find("ui.") == std::string::npos);
+    CHECK(text.find("filter_algorithm") == std::string::npos);
     const auto state = deserializePluginState(text);
     REQUIRE(state.has_value());
     CHECK(state->ui == UiSettings{});

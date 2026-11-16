@@ -144,7 +144,7 @@ La bilineal lleva todo el eje de frecuencias analógico, hasta el infinito, al i
 | 20000 | +4,43 | +1,16 | +3,92 |
 | 23000 | +3,36 | +0,06 | +3,13 |
 
-Matched (M. Vicanek, *Matched Second Order Digital Filters*, 2016) parte del mismo prototipo analógico de la tabla de tipos y lo digitaliza de otra forma. El código está en `dsp/src/filter_design.cpp`.
+Matched (M. Vicanek, *Matched Second Order Digital Filters*, 2016) parte del mismo prototipo analógico de la tabla de tipos y lo digitaliza de otra forma. El código está en `dsp/src/filter_design.cpp`. En `dsp` cada banda lleva su algoritmo en `FilterParams::algorithm`; en el plugin, todas las bandas de una instancia usan el mismo, guardado en el estado y elegido en el menú *HF accuracy* (Matched en las instancias nuevas, Classic en los proyectos anteriores: [ADR 0014](../decisiones/0014-estado-v3-algoritmo-de-filtro.md)).
 
 ### Sección de segundo orden
 

@@ -4,6 +4,7 @@
 #include "EditHistory.h"
 #include "PresetManager.h"
 
+#include "esceq/core/history.h"
 #include "esceq/core/parameters.h"
 #include "esceq/core/phase_design_thread.h"
 #include "esceq/core/spectrum_session.h"
@@ -72,6 +73,30 @@ public:
     /// Pone todos los parámetros a `values`, avisando al host. Cada parámetro
     /// que cambia va en su propio gesto, para que el host lo registre.
     void applyValues(const core::ParameterValues& values);
+
+    /// Algoritmo de filtro de todas las bandas (ADR 0013 y 0014). No es un
+    /// parámetro: se guarda en el estado y los presets no lo cambian. Una
+    /// instancia nueva empieza en core::kNewInstanceFilterAlgorithm. Se puede
+    /// leer desde cualquier hilo.
+    dsp::FilterAlgorithm filterAlgorithm() const noexcept { return filterAlgorithm_.load(std::memory_order_relaxed); }
+
+    /// Cambia el algoritmo y, si cambia, avisa al host de que el estado ha
+    /// cambiado (para que marque el proyecto como modificado). No crea una
+    /// acción de deshacer: para eso, changeFilterAlgorithm(). El audio pasa al
+    /// algoritmo nuevo en el bloque siguiente, con el fundido de un cambio
+    /// estructural de banda. Hilo de mensajes.
+    void setFilterAlgorithm(dsp::FilterAlgorithm algorithm);
+
+    /// Lo que hace el usuario al elegir el algoritmo en la interfaz: lo
+    /// cambia como una acción propia, que se puede deshacer. Hilo de mensajes.
+    void changeFilterAlgorithm(dsp::FilterAlgorithm algorithm);
+
+    /// Lo que deshace el historial: los parámetros y el algoritmo actuales.
+    core::EditState currentEditState() const noexcept;
+
+    /// Aplica una instantánea del historial: los parámetros con applyValues()
+    /// y el algoritmo con setFilterAlgorithm(). Hilo de mensajes.
+    void applyEditState(const core::EditState& state);
 
     /// Deshacer y rehacer, y presets.
     EditHistory& history() noexcept { return *history_; }
@@ -154,6 +179,9 @@ private:
     /// equalizer_ para destruirse antes.
     core::PhaseDesignThread designer_{equalizer_};
     core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
+    dsp::FilterAlgorithm pushedAlgorithm_ = core::kNewInstanceFilterAlgorithm; ///< Ídem.
+    std::atomic<dsp::FilterAlgorithm> filterAlgorithm_{core::kNewInstanceFilterAlgorithm};
+    static_assert(std::atomic<dsp::FilterAlgorithm>::is_always_lock_free);
     dsp::GainRamp outputGain_;
     dsp::SpscFifo preFifo_{1 << 15};
     dsp::SpscFifo postFifo_{1 << 15};

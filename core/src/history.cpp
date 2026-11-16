@@ -8,11 +8,11 @@ namespace esceq::core {
 namespace {
 
 /// Los valores se comparan ya saneados: dos estados que suenan igual son el mismo.
-ParameterValues sanitized(ParameterValues values) noexcept
+EditState sanitized(EditState state) noexcept
 {
     for (std::size_t i = 0; i < kNumParameters; ++i)
-        values[i] = sanitize(parameters()[i], values[i]);
-    return values;
+        state.parameters[i] = sanitize(parameters()[i], state.parameters[i]);
+    return state;
 }
 
 } // namespace
@@ -21,19 +21,19 @@ UndoHistory::UndoHistory(std::size_t capacity)
     : capacity_(std::max<std::size_t>(capacity, 1))
 {
     states_.reserve(capacity_ + 1);
-    states_.push_back(defaultValues());
+    states_.push_back(EditState{});
 }
 
-void UndoHistory::reset(const ParameterValues& current)
+void UndoHistory::reset(const EditState& current)
 {
     states_.clear();
     states_.push_back(sanitized(current));
     index_ = 0;
 }
 
-bool UndoHistory::commit(const ParameterValues& current)
+bool UndoHistory::commit(const EditState& current)
 {
-    const ParameterValues next = sanitized(current);
+    const EditState next = sanitized(current);
     if (next == states_[index_])
         return false;
 
@@ -49,14 +49,14 @@ bool UndoHistory::commit(const ParameterValues& current)
     return true;
 }
 
-std::optional<ParameterValues> UndoHistory::undo()
+std::optional<EditState> UndoHistory::undo()
 {
     if (!canUndo())
         return std::nullopt;
     return states_[--index_];
 }
 
-std::optional<ParameterValues> UndoHistory::redo()
+std::optional<EditState> UndoHistory::redo()
 {
     if (!canRedo())
         return std::nullopt;

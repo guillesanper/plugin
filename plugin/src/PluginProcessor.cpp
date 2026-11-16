@@ -199,6 +199,37 @@ void PluginProcessor::applyValues(const core::ParameterValues& values)
     }
 }
 
+void PluginProcessor::setFilterAlgorithm(dsp::FilterAlgorithm algorithm)
+{
+    if (filterAlgorithm_.exchange(algorithm, std::memory_order_relaxed) == algorithm)
+        return;
+    // No es un parámetro: sin este aviso, el host no sabría que el proyecto
+    // ha cambiado y podría cerrarlo sin pedir que se guarde.
+    updateHostDisplay(ChangeDetails().withNonParameterStateChanged(true));
+}
+
+void PluginProcessor::changeFilterAlgorithm(dsp::FilterAlgorithm algorithm)
+{
+    if (algorithm == filterAlgorithm())
+        return;
+    // Lo que el usuario acaba de hacer (un arrastre que aún espera su
+    // registro) es una acción aparte: deshacer el algoritmo no lo deshace.
+    history_->flushPending();
+    setFilterAlgorithm(algorithm);
+    history_->commitNow();
+}
+
+core::EditState PluginProcessor::currentEditState() const noexcept
+{
+    return {currentValues(), filterAlgorithm()};
+}
+
+void PluginProcessor::applyEditState(const core::EditState& state)
+{
+    applyValues(state.parameters);
+    setFilterAlgorithm(state.filterAlgorithm);
+}
+
 core::UiSettings PluginProcessor::uiSettings() const
 {
     const juce::ScopedLock lock(uiSettingsLock_);
@@ -230,11 +261,13 @@ void PluginProcessor::pushParametersToEngine(bool force) noexcept
     // (FL Studio los entrega a veces de pocas muestras) se nota. Si no ha
     // cambiado ninguno, el ecualizador ya tiene sus ajustes.
     const auto values = currentValues();
-    if (!force && values == pushedValues_)
+    const auto algorithm = filterAlgorithm();
+    if (!force && values == pushedValues_ && algorithm == pushedAlgorithm_)
         return;
     pushedValues_ = values;
+    pushedAlgorithm_ = algorithm;
     for (int band = 0; band < core::kNumBands; ++band)
-        equalizer_.setBand(band, core::bandSettings(values, band));
+        equalizer_.setBand(band, core::bandSettings(values, band, algorithm));
     equalizer_.setBypassed(values[core::kBypass] >= 0.5f);
     equalizer_.setPhaseMode(core::phaseModeFromChoice(values[core::kPhaseMode]));
 }
@@ -318,11 +351,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 }
 
 // El estado se guarda en el formato propio de core, no en el de JUCE:
-// así sigue siendo legible aunque cambie el framework. Lleva los parámetros
-// y las preferencias de la interfaz.
+// así sigue siendo legible aunque cambie el framework. Lleva los parámetros,
+// el algoritmo de filtro y las preferencias de la interfaz.
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    const std::string text = core::serializePluginState({currentValues(), uiSettings()});
+    const std::string text = core::serializePluginState({currentValues(), filterAlgorithm(), uiSettings()});
     destData.replaceAll(text.data(), text.size());
 }
 
@@ -338,6 +371,8 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
 
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
         params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1(state->parameters[i]));
+    // Sin avisar al host: es el estado que acaba de darnos.
+    filterAlgorithm_.store(state->filterAlgorithm, std::memory_order_relaxed);
 
     setUiSettings(state->ui);
     // Lo que había antes de cargar ya no se puede deshacer.

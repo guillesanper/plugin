@@ -93,6 +93,13 @@ struct NodeReadout
 
 NodeReadout nodeReadout(const core::ParameterValues& values, int band);
 
+/// Ajustes de la banda tal y como suenan ahora, para dibujar su curva: los
+/// que recibe el procesador (core::bandSettings con el algoritmo de filtro de
+/// la instancia) y, si la banda es dinámica, con la ganancia dinámica
+/// `dynamicGainDb` sumada a la estática.
+dsp::BandSettings soundingBandSettings(const core::ParameterValues& values, int band, dsp::FilterAlgorithm algorithm,
+                                       double dynamicGainDb) noexcept;
+
 /// Índice del nodo visible más cercano a `p` dentro de `radius` píxeles.
 /// `visible[i]` indica si el nodo i se dibuja.
 std::optional<int> hitTestNodes(std::span<const Point> nodes, std::span<const bool> visible, Point p,

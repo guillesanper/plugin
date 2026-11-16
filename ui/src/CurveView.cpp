@@ -114,10 +114,7 @@ CurveMapping CurveView::mapping() const
 
 dsp::BandSettings CurveView::soundingSettings(int band) const
 {
-    auto settings = core::bandSettings(values_, band);
-    if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
-        settings.filter.gainDb += dynamicGains_[static_cast<std::size_t>(band)];
-    return settings;
+    return soundingBandSettings(values_, band, algorithm_, dynamicGains_[static_cast<std::size_t>(band)]);
 }
 
 void CurveView::resized()
@@ -135,8 +132,11 @@ void CurveView::refresh()
     // Solo se repinta si algo ha cambiado: dibujar la curva con muchas bandas
     // en una ventana grande cuesta varios milisegundos.
     const double sampleRate = processor_.currentSampleRate(); // cambia la curva cerca de Nyquist
-    bool changed = values != values_ || gains != dynamicGains_ || !juce::exactlyEqual(sampleRate, lastSampleRate_);
+    const auto algorithm = processor_.filterAlgorithm();
+    bool changed = values != values_ || algorithm != algorithm_ || gains != dynamicGains_ ||
+                   !juce::exactlyEqual(sampleRate, lastSampleRate_);
     values_ = values;
+    algorithm_ = algorithm;
     dynamicGains_ = gains;
     lastSampleRate_ = sampleRate;
 
@@ -519,7 +519,7 @@ void CurveView::updateCurveCache(const CurveMapping& m)
     for (int band = 0; band < core::kNumBands; ++band)
     {
         auto& curve = cache.bands[static_cast<std::size_t>(band)];
-        const auto settings = core::bandSettings(values_, band);
+        const auto settings = core::bandSettings(values_, band, algorithm_);
         if (!settings.enabled)
         {
             curve.valid = false;

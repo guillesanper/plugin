@@ -43,6 +43,9 @@ enum class FilterAlgorithm
     Matched,
 };
 
+/// Número de algoritmos de FilterAlgorithm.
+inline constexpr int kNumFilterAlgorithms = 2;
+
 inline constexpr double kButterworthQ = 0.70710678118654752440;
 inline constexpr double kMinFrequencyHz = 1.0;
 inline constexpr double kMaxFrequencyRatio = 0.49; ///< Fracción máxima de la frecuencia de muestreo.

@@ -8,7 +8,7 @@ namespace esceq {
 EditHistory::EditHistory(PluginProcessor& processor)
     : processor_(processor)
 {
-    history_.reset(processor_.currentValues());
+    history_.reset(processor_.currentEditState());
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
         processor_.parameter(i).addListener(this);
 }
@@ -80,7 +80,7 @@ void EditHistory::timerCallback()
     const juce::ScopedLock lock(lock_);
     if (numOpenGestures_ > 0)
         return; // hay un gesto en curso: se registrará cuando termine
-    history_.commit(processor_.currentValues());
+    history_.commit(processor_.currentEditState());
 }
 
 void EditHistory::flushPending()
@@ -90,7 +90,7 @@ void EditHistory::flushPending()
     cancelPendingUpdate();
     stopTimer();
     const juce::ScopedLock lock(lock_);
-    history_.commit(processor_.currentValues());
+    history_.commit(processor_.currentEditState());
 }
 
 void EditHistory::commitNow()
@@ -98,38 +98,38 @@ void EditHistory::commitNow()
     cancelPendingUpdate();
     stopTimer();
     const juce::ScopedLock lock(lock_);
-    history_.commit(processor_.currentValues());
+    history_.commit(processor_.currentEditState());
 }
 
-void EditHistory::apply(const core::ParameterValues& values)
+void EditHistory::apply(const core::EditState& state)
 {
     applying_.store(true);
-    processor_.applyValues(values);
+    processor_.applyEditState(state);
     applying_.store(false);
 }
 
 void EditHistory::undo()
 {
     flushPending();
-    std::optional<core::ParameterValues> values;
+    std::optional<core::EditState> state;
     {
         const juce::ScopedLock lock(lock_);
-        values = history_.undo();
+        state = history_.undo();
     }
-    if (values)
-        apply(*values);
+    if (state)
+        apply(*state);
 }
 
 void EditHistory::redo()
 {
     flushPending();
-    std::optional<core::ParameterValues> values;
+    std::optional<core::EditState> state;
     {
         const juce::ScopedLock lock(lock_);
-        values = history_.redo();
+        state = history_.redo();
     }
-    if (values)
-        apply(*values);
+    if (state)
+        apply(*state);
 }
 
 void EditHistory::reset()
@@ -139,7 +139,7 @@ void EditHistory::reset()
     const juce::ScopedLock lock(lock_);
     openGestures_.fill(false);
     numOpenGestures_ = 0;
-    history_.reset(processor_.currentValues());
+    history_.reset(processor_.currentEditState());
 }
 
 } // namespace esceq

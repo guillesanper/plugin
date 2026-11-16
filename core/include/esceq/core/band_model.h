@@ -36,8 +36,13 @@ bool usesQ(dsp::FilterType type, int slopeDbPerOct) noexcept;
 /// true si la pendiente influye en el sonido para ese tipo.
 bool usesSlope(dsp::FilterType type) noexcept;
 
-/// Ajustes de la banda `band` (0..kNumBands-1), dinámica incluida.
-dsp::BandSettings bandSettings(const ParameterValues& values, int band) noexcept;
+/// Ajustes de la banda `band` (0..kNumBands-1), dinámica incluida, con el
+/// algoritmo de filtro `algorithm`. Lo que diseña filtros (el procesador, la
+/// curva) pasa el de la instancia (PluginState::filterAlgorithm); el valor
+/// por defecto es el de dsp::FilterParams y vale para leer el tipo, la
+/// frecuencia o la ganancia, que no dependen de él.
+dsp::BandSettings bandSettings(const ParameterValues& values, int band,
+                               dsp::FilterAlgorithm algorithm = dsp::FilterAlgorithm::Classic) noexcept;
 
 /// Primera banda desactivada, o nullopt si están todas en uso.
 std::optional<int> firstFreeBand(const ParameterValues& values) noexcept;

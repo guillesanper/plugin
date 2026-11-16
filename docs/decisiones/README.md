@@ -20,3 +20,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0011](0011-espectros-compartidos.md) | Espectros compartidos entre instancias del mismo proceso y colisiones como enmascaramiento direccional | Aceptada |
 | [0012](0012-modos-de-fase.md) | Modos de fase: IIR y fase lineal (FIR por muestreo en frecuencia, convolución particionada, dinámica como diferencia sobre el FIR, diseño en otro hilo) | Aceptada |
 | [0013](0013-correccion-en-agudos.md) | Corrección en agudos: algoritmo de filtro Matched (Vicanek), con Classic intacto y la versión guardada por instancia | Aceptada |
+| [0014](0014-estado-v3-algoritmo-de-filtro.md) | Estado versión 3: el algoritmo de filtro de la instancia, una línea del estado (no un parámetro) que se deshace y que los presets no cambian | Aceptada |

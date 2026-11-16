@@ -9,6 +9,7 @@ juce_add_console_app(esceq_plugin_tests PRODUCT_NAME "esceq_plugin_tests")
 
 target_sources(esceq_plugin_tests PRIVATE
     main.cpp
+    filter_algorithm_test.cpp
     history_test.cpp
     presets_test.cpp
     phase_test.cpp

@@ -305,3 +305,52 @@ TEST_CASE("Vista: la rueda multiplica la Q por 2^1,5 por paso")
     CHECK_THAT(wheelQ(2.0, -1.0), WithinRel(2.0 / std::pow(2.0, 1.5), 1e-12));
     CHECK(wheelQ(0.7, 0.0) == 0.7);
 }
+
+TEST_CASE("Vista: la curva se dibuja con el algoritmo de filtro de la instancia")
+{
+    using core::BandParam;
+    using core::DynParam;
+    auto values = core::defaultValues();
+    values[core::bandParameter(0, BandParam::Enabled)] = 1.0f;
+    values[core::bandParameter(0, BandParam::Frequency)] = 18000.0f;
+    values[core::bandParameter(0, BandParam::Gain)] = 12.0f;
+    values[core::bandParameter(0, BandParam::Q)] = 2.0f;
+
+    constexpr double kRate = 44100.0;
+    for (const auto algorithm : {dsp::FilterAlgorithm::Classic, dsp::FilterAlgorithm::Matched})
+    {
+        INFO(static_cast<int>(algorithm));
+        // Lo mismo que recibe el procesador: la curva es lo que suena.
+        const auto drawn = soundingBandSettings(values, 0, algorithm, 0.0);
+        CHECK(drawn.filter == core::bandSettings(values, 0, algorithm).filter);
+    }
+    // Y los dos algoritmos se dibujan distintos cerca de Nyquist.
+    const auto classic =
+        dsp::designBand(soundingBandSettings(values, 0, dsp::FilterAlgorithm::Classic, 0.0).filter, kRate);
+    const auto matched =
+        dsp::designBand(soundingBandSettings(values, 0, dsp::FilterAlgorithm::Matched, 0.0).filter, kRate);
+    CHECK(std::abs(dsp::magnitudeDb(classic, 20000.0, kRate) - dsp::magnitudeDb(matched, 20000.0, kRate)) > 1.0);
+}
+
+TEST_CASE("Vista: la curva de una banda dinamica suma la ganancia dinamica")
+{
+    using core::BandParam;
+    using core::DynParam;
+    auto values = core::defaultValues();
+    values[core::bandParameter(1, BandParam::Enabled)] = 1.0f;
+    values[core::bandParameter(1, BandParam::Gain)] = 2.0f;
+    constexpr auto kAlgorithm = dsp::FilterAlgorithm::Matched;
+
+    // Sin dinamica, la ganancia dinamica no cuenta.
+    CHECK(soundingBandSettings(values, 1, kAlgorithm, -5.0).filter.gainDb == 2.0);
+
+    values[core::dynamicParameter(1, DynParam::Enabled)] = 1.0f;
+    const auto dynamic = soundingBandSettings(values, 1, kAlgorithm, -5.0);
+    CHECK(dynamic.filter.gainDb == -3.0);
+    CHECK(dynamic.filter.algorithm == kAlgorithm);
+
+    // En un tipo sin ganancia (un corte) la dinamica no actua.
+    values[core::bandParameter(1, BandParam::Type)] = 3.0f;
+    REQUIRE(core::bandSettings(values, 1).filter.type == dsp::FilterType::LowCut);
+    CHECK(soundingBandSettings(values, 1, kAlgorithm, -5.0).filter.gainDb == 2.0);
+}

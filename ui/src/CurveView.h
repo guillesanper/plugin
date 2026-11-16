@@ -126,6 +126,7 @@ private:
 
     PluginProcessor& processor_;
     core::ParameterValues values_{};
+    dsp::FilterAlgorithm algorithm_ = dsp::FilterAlgorithm::Classic; ///< El de la instancia, leído en refresh().
     std::array<float, core::kNumBands> dynamicGains_{};
 
     int selected_ = -1;

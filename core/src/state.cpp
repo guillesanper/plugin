@@ -24,6 +24,11 @@ constexpr std::string_view kUiWidth = "ui.width";
 constexpr std::string_view kUiHeight = "ui.height";
 constexpr std::string_view kUiPreset = "ui.preset";
 
+constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
+/// kLegacyFilterAlgorithm tal y como se escribe en el estado.
+constexpr std::string_view kLegacyAlgorithmText = "0";
+static_assert(static_cast<int>(kLegacyFilterAlgorithm) == 0);
+
 constexpr int kDisplayRanges[] = {6, 12, 18, 30};
 constexpr int kMinStoredWindow = 100;
 constexpr int kMaxStoredWindow = 16384;
@@ -76,6 +81,27 @@ void migrate1to2(std::vector<Entry>& entries)
     std::erase_if(entries, [](const Entry& entry) { return entry.key.starts_with(kUiPrefix); });
 }
 
+/// Migración de la versión 2 a la 3.
+///
+/// La versión 3 añade el algoritmo de filtro de la instancia. Los estados
+/// anteriores se escribieron cuando solo había uno, kLegacyFilterAlgorithm:
+/// se cargan con él, que suena bit a bit igual. Va al final porque, si una
+/// clave se repite, cuenta la última: una línea `filter_algorithm` en un
+/// estado que dice ser anterior no la escribió esceQ y queda anulada.
+void migrate2to3(std::vector<Entry>& entries)
+{
+    entries.push_back({kFilterAlgorithm, kLegacyAlgorithmText});
+}
+
+/// Algoritmo a partir de su valor guardado. Lo que no se conozca (un
+/// algoritmo de una versión más nueva) toma el de las instancias nuevas.
+dsp::FilterAlgorithm filterAlgorithmFromStored(int stored) noexcept
+{
+    if (stored < 0 || stored >= dsp::kNumFilterAlgorithms)
+        return kNewInstanceFilterAlgorithm;
+    return static_cast<dsp::FilterAlgorithm>(stored);
+}
+
 std::string cleanPresetName(std::string_view name)
 {
     std::string out;
@@ -121,6 +147,8 @@ std::string serializePluginState(const PluginState& state)
     const UiSettings ui = sanitize(state.ui);
     std::ostringstream extra;
     extra.imbue(std::locale::classic());
+    extra << kFilterAlgorithm << ' '
+          << static_cast<int>(filterAlgorithmFromStored(static_cast<int>(state.filterAlgorithm))) << '\n';
     extra << kUiAnalyzer << ' ' << ui.analyzerMode << '\n';
     extra << kUiRange << ' ' << ui.displayRangeDb << '\n';
     if (ui.windowWidth > 0)
@@ -165,6 +193,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
     // que se conozca.
     if (version < 2)
         migrate1to2(entries);
+    if (version < 3)
+        migrate2to3(entries);
 
     PluginState state;
     for (const Entry& entry : entries)
@@ -182,6 +212,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             state.ui.presetName = std::string(entry.value);
         else if (!parseNumber(entry.value, number))
             continue;
+        else if (entry.key == kFilterAlgorithm)
+            state.filterAlgorithm = filterAlgorithmFromStored(number);
         else if (entry.key == kUiAnalyzer)
             state.ui.analyzerMode = number;
         else if (entry.key == kUiRange)

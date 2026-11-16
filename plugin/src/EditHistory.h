@@ -13,6 +13,7 @@ namespace esceq {
 class PluginProcessor;
 
 /// Deshacer y rehacer dentro del plugin, con las acciones agrupadas por gesto.
+/// Deshace los parámetros y el algoritmo de filtro (core::EditState).
 ///
 /// Escucha el principio y el final de los gestos de todos los parámetros
 /// (los marca la interfaz con beginChangeGesture/endChangeGesture) y, cuando
@@ -59,6 +60,11 @@ public:
     /// Registra ya el estado actual como una acción (por ejemplo, tras cargar un preset).
     void commitNow();
 
+    /// Si hay una acción esperando su registro (un gesto terminado hace menos
+    /// de kCoalesceMs), la registra ya. Se llama antes de un cambio que no es
+    /// un gesto (el algoritmo de filtro) para que sea una acción aparte.
+    void flushPending();
+
     /// Da por terminados los gestos abiertos (la interfaz se cierra en mitad
     /// de un arrastre). Si había alguno, lo hecho se registra como una acción.
     void abandonOpenGestures();
@@ -68,9 +74,8 @@ private:
     void parameterGestureChanged(int parameterIndex, bool gestureIsStarting) override;
     void handleAsyncUpdate() override;
     void timerCallback() override;
-    void flushPending();
     /// Aplica una instantánea del historial sin que sus gestos programen un registro.
-    void apply(const core::ParameterValues& values);
+    void apply(const core::EditState& state);
 
     PluginProcessor& processor_;
     core::UndoHistory history_;

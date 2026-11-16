@@ -7,11 +7,11 @@ using namespace esceq::core;
 
 namespace {
 
-ParameterValues withGain(float db)
+EditState withGain(float db)
 {
-    auto values = defaultValues();
-    values[kOutputGain] = db;
-    return values;
+    EditState state;
+    state.parameters[kOutputGain] = db;
+    return state;
 }
 
 } // namespace
@@ -23,7 +23,7 @@ TEST_CASE("Historial: recien creado no hay nada que deshacer ni rehacer")
     CHECK_FALSE(history.canRedo());
     CHECK_FALSE(history.undo().has_value());
     CHECK_FALSE(history.redo().has_value());
-    CHECK(history.present() == defaultValues());
+    CHECK(history.present() == EditState{});
 }
 
 TEST_CASE("Historial: deshacer y rehacer recorren las acciones en orden")
@@ -122,21 +122,48 @@ TEST_CASE("Historial: al llenarse olvida las acciones mas antiguas")
 TEST_CASE("Historial: guarda todos los parametros, no solo el que cambia")
 {
     UndoHistory history;
-    auto values = defaultValues();
-    history.reset(values);
+    EditState state;
+    history.reset(state);
 
+    auto& values = state.parameters;
     values[bandParameter(3, BandParam::Enabled)] = 1.0f;
     values[bandParameter(3, BandParam::Frequency)] = 440.0f;
     values[channelParameter(3)] = 3.0f;
-    history.commit(values);
+    history.commit(state);
 
     values[dynamicParameter(3, DynParam::Threshold)] = -40.0f;
-    history.commit(values);
+    history.commit(state);
 
     const auto back = history.undo();
     REQUIRE(back.has_value());
-    CHECK((*back)[bandParameter(3, BandParam::Frequency)] == 440.0f);
-    CHECK((*back)[channelParameter(3)] == 3.0f);
-    CHECK((*back)[dynamicParameter(3, DynParam::Threshold)] == parameters()[dynamicParameter(3, DynParam::Threshold)].defaultValue);
-    CHECK(history.undo() == defaultValues());
+    CHECK(back->parameters[bandParameter(3, BandParam::Frequency)] == 440.0f);
+    CHECK(back->parameters[channelParameter(3)] == 3.0f);
+    CHECK(back->parameters[dynamicParameter(3, DynParam::Threshold)] ==
+          parameters()[dynamicParameter(3, DynParam::Threshold)].defaultValue);
+    CHECK(history.undo() == EditState{});
+}
+
+TEST_CASE("Historial: cambiar el algoritmo de filtro es una accion que se deshace")
+{
+    UndoHistory history;
+    EditState state;
+    state.filterAlgorithm = esceq::dsp::FilterAlgorithm::Classic;
+    history.reset(state);
+
+    // Los mismos parametros con otro algoritmo suenan distinto: es un cambio.
+    state.filterAlgorithm = esceq::dsp::FilterAlgorithm::Matched;
+    CHECK(history.commit(state));
+    CHECK_FALSE(history.commit(state));
+
+    state.parameters[kOutputGain] = 3.0f;
+    CHECK(history.commit(state));
+
+    const auto before = history.undo();
+    REQUIRE(before.has_value());
+    CHECK(before->filterAlgorithm == esceq::dsp::FilterAlgorithm::Matched);
+    CHECK(before->parameters[kOutputGain] == 0.0f);
+    const auto first = history.undo();
+    REQUIRE(first.has_value());
+    CHECK(first->filterAlgorithm == esceq::dsp::FilterAlgorithm::Classic);
+    CHECK(history.redo()->filterAlgorithm == esceq::dsp::FilterAlgorithm::Matched);
 }

@@ -100,8 +100,10 @@ TEST_CASE("Estado del plugin: el fixture de la version 2 carga con sus preferenc
     CHECK(p->uiSettings().windowWidth == 1480);
     CHECK(p->uiSettings().presetName == "Low-End Cleanup");
     CHECK(valueOf(*p, core::kOutputGain) == -2.0f);
-    // Y se vuelve a guardar identico (salvo los parametros añadidos despues).
-    CHECK(withoutParametersAddedAfter(save(*p), kParametersInV2Fixtures) == fixture("v2_ui.txt"));
+    // Mientras kStateVersion sea 2, se vuelve a guardar identico (salvo los
+    // parametros añadidos despues). Con la 3, ver filter_algorithm_test.cpp.
+    if (core::kStateVersion == 2)
+        CHECK(withoutParametersAddedAfter(save(*p), kParametersInV2Fixtures) == fixture("v2_ui.txt"));
 }
 
 TEST_CASE("Estado del plugin: datos que no son un estado no cambian nada")

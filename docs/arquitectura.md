@@ -44,7 +44,8 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | Orden de los tipos de filtro (índice guardado en el estado) | `core::kFilterTypeChoices` y `dsp::FilterType` | `static_assert` en `core/src/band_model.cpp` |
 | Orden de los canales de banda (índice guardado en el estado) | `core::kChannelChoices` y `dsp::ChannelMode` | `static_assert` en `core/src/band_model.cpp` · [ADR 0007](decisiones/0007-canal-por-banda.md) |
 | Orden de los modos de fase (índice guardado en el estado) | `core::kPhaseModeChoices` y `dsp::PhaseMode` | `static_assert` en `core/src/band_model.cpp` · [ADR 0012](decisiones/0012-modos-de-fase.md) |
-| Formato del estado guardado (versiones 1 y 2) | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
+| Formato del estado guardado (versiones 1, 2 y 3) | `core/src/state.cpp` | Fixtures en `tests/fixtures/state/` · [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md), [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md) |
+| Valores de los algoritmos de filtro (guardados en el estado) | `dsp::FilterAlgorithm` | `tests/core/state_test.cpp`, `tests/dsp/filter_algorithm_test.cpp` · [ADR 0013](decisiones/0013-correccion-en-agudos.md) |
 | Nombre, orden y sonido de los presets de fábrica | `core/src/presets.cpp` | `tests/core/presets_test.cpp` · [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
 | Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, `CLAP_ID` (`org.esceq.esceq`), nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
 | Identidad de la instalación en Windows: `AppId` | `packaging/windows/esceQ.iss` | Revisión manual: si cambia, una versión nueva no actualiza la anterior |
@@ -80,8 +81,8 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | Cabecera | Qué ofrece |
 |---|---|
 | `parameters.h` | La tabla de parámetros, su normalización para el host y su formato como texto |
-| `state.h` | Lectura y escritura del estado guardado: parámetros y preferencias de la interfaz (`UiSettings`), con migraciones entre versiones |
-| `history.h` | Historial de deshacer y rehacer por instantáneas (`UndoHistory`) |
+| `state.h` | Lectura y escritura del estado guardado: parámetros, algoritmo de filtro de la instancia y preferencias de la interfaz (`UiSettings`), con migraciones entre versiones |
+| `history.h` | Historial de deshacer y rehacer por instantáneas de los parámetros y el algoritmo de filtro (`EditState`, `UndoHistory`) |
 | `presets.h` | Presets de fábrica, texto de un preset, parámetros que un preset no cambia (el modo de fase) y nombres de preset válidos como nombre de archivo |
 | `spectrum_session.h` | Espectros compartidos entre las instancias del proceso: registro, hilo trabajador que solo calcula si alguien mira, y la selección de instancias a comparar ([ADR 0011](decisiones/0011-espectros-compartidos.md)) |
 | `phase_design_thread.h` | El hilo que diseña los FIR de fase lineal de un `dsp::PhaseEqualizer`, y `flush()` para diseñar en el momento (al preparar el audio y al renderizar) ([ADR 0012](decisiones/0012-modos-de-fase.md)) |
@@ -129,13 +130,14 @@ No hace falta tocar el código de estado ni registrar nada en JUCE.
 
 ## Estado guardado
 
-Texto UTF-8 con formato propio (no el de JUCE), versionado. Lleva los parámetros y, desde la versión 2, las preferencias de la interfaz (claves `ui.*`, que no son parámetros):
+Texto UTF-8 con formato propio (no el de JUCE), versionado. Lleva los parámetros; desde la versión 2, las preferencias de la interfaz (claves `ui.*`, que no son parámetros), y desde la 3, el algoritmo de filtro de la instancia (`filter_algorithm`, el valor de `dsp::FilterAlgorithm`, que tampoco es un parámetro):
 
 ```
-esceQ-state 2
+esceQ-state 3
 output_gain 0
 bypass 0
 ...
+filter_algorithm 1
 ui.analyzer 1
 ui.range 18
 ui.width 1180
@@ -143,12 +145,12 @@ ui.height 700
 ui.preset Vocal
 ```
 
-Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Los estados de versiones anteriores se migran paso a paso (`migrate1to2`...). Al subir `kStateVersion` se añade una migración en `core/src/state.cpp` y un fixture nuevo; los fixtures antiguos no se tocan. Un preset es este mismo formato con solo parámetros. Ver [ADR 0003](decisiones/0003-formato-de-estado.md) y [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md).
+Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Los estados de versiones anteriores se migran paso a paso (`migrate1to2`, `migrate2to3`): los anteriores a la 3 cargan en Classic, el algoritmo de la 0.1, y suenan bit a bit igual; una instancia nueva usa Matched. Al subir `kStateVersion` se añade una migración en `core/src/state.cpp` y un fixture nuevo; los fixtures antiguos no se tocan. Un preset es este mismo formato con solo parámetros: no lleva el algoritmo, y cargarlo no lo cambia. Ver [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md).
 
 ## Deshacer, rehacer y presets
 
-- `core::UndoHistory` guarda instantáneas de todos los parámetros. `plugin/src/EditHistory` decide cuándo hay una acción nueva: al cerrarse el último gesto abierto de la interfaz, tras 300 ms sin más gestos. Un arrastre, una banda nueva o una ráfaga de rueda son una acción. La automatización del host no crea acciones. Los gestos se cuentan por parámetro; los que abre el propio deshacer no cuentan, y si la ventana se cierra con un gesto abierto, los controles lo cierran y el editor avisa al historial (`abandonOpenGestures`).
-- Cargar un proyecto borra el historial; cargar un preset es una acción más.
+- `core::UndoHistory` guarda instantáneas de todos los parámetros y del algoritmo de filtro (`core::EditState`). `plugin/src/EditHistory` decide cuándo hay una acción nueva: al cerrarse el último gesto abierto de la interfaz, tras 300 ms sin más gestos. Un arrastre, una banda nueva o una ráfaga de rueda son una acción. La automatización del host no crea acciones. Los gestos se cuentan por parámetro; los que abre el propio deshacer no cuentan, y si la ventana se cierra con un gesto abierto, los controles lo cierran y el editor avisa al historial (`abandonOpenGestures`).
+- Cargar un proyecto borra el historial; cargar un preset es una acción más. Cambiar el algoritmo de filtro (`PluginProcessor::changeFilterAlgorithm`) es una acción propia: lo que estuviera esperando su registro se registra antes, por separado.
 - `plugin/src/PresetManager` lista los presets de fábrica (`core::factoryPresets()`) y los de usuario (archivos `.esceq`), y los carga con `PluginProcessor::applyValues`, que avisa al host de cada parámetro que cambia.
 
 ## Hilos
@@ -164,7 +166,8 @@ Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignor
 
 Comunicación:
 
-- **Interfaz → audio:** solo mediante parámetros del host. El hilo de audio lee sus valores atómicos una vez por bloque. Los gestos de la curva (arrastrar, rueda, doble clic) van envueltos en `beginChangeGesture`/`endChangeGesture` para que el host los registre como una sola acción de deshacer y de automatización.
+- **Interfaz → audio:** mediante parámetros del host y el algoritmo de filtro (abajo). El hilo de audio lee sus valores atómicos una vez por bloque. Los gestos de la curva (arrastrar, rueda, doble clic) van envueltos en `beginChangeGesture`/`endChangeGesture` para que el host los registre como una sola acción de deshacer y de automatización.
+- **Algoritmo de filtro:** un `std::atomic<dsp::FilterAlgorithm>` en el procesador. El hilo de mensajes lo escribe (el menú, deshacer, cargar un estado) y el de audio lo lee una vez por bloque, junto a los parámetros; la curva lo lee en cada refresco. Como no es un parámetro, al cambiarlo el procesador avisa al host con `updateHostDisplay` (estado modificado) para que el proyecto se marque como cambiado.
 - **Preferencias de la interfaz:** viven en el procesador (`uiSettings()`), protegidas con un cerrojo que el hilo de audio nunca toma. El editor las lee al abrirse y cuando el host carga un estado (`stateRevision()`), y las escribe cuando cambian.
 - **Audio → interfaz:** dos `dsp::SpscFifo` (audio mono antes y después del EQ). El hilo de audio escribe; si la cola está llena, descarta. El editor abierto es el **único** lector. Si algún host abriera dos editores a la vez del mismo plugin, habría dos lectores: no está soportado.
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
