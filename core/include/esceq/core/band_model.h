@@ -5,6 +5,7 @@
 #include "esceq/dsp/equalizer.h"
 #include "esceq/dsp/linear_phase.h"
 
+#include <array>
 #include <optional>
 
 /// Traducción entre los parámetros del plugin y los ajustes del motor de
@@ -43,6 +44,10 @@ bool usesSlope(dsp::FilterType type) noexcept;
 /// frecuencia o la ganancia, que no dependen de él.
 dsp::BandSettings bandSettings(const ParameterValues& values, int band,
                                dsp::FilterAlgorithm algorithm = dsp::FilterAlgorithm::Classic) noexcept;
+
+/// Ajustes de las kNumBands bandas, en orden, como bandSettings().
+std::array<dsp::BandSettings, kNumBands> allBandSettings(const ParameterValues& values,
+                                                         dsp::FilterAlgorithm algorithm) noexcept;
 
 /// Primera banda desactivada, o nullopt si están todas en uso.
 std::optional<int> firstFreeBand(const ParameterValues& values) noexcept;

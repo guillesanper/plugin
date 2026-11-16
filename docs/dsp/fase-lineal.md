@@ -115,8 +115,8 @@ Cambiar de modo deja un hueco: no se puede pasar sin él de una latencia a otra.
 ## Hilos
 
 ```
-hilo de audio                                   hilo de diseño (core::PhaseDesignThread)
-─────────────                                   ────────────────────────────────────────
+hilo de audio                                   hilo de control (core::ControlThread)
+─────────────                                   ─────────────────────────────────────
 setBand / setPhaseMode ─► TripleBuffer ───────► serviceDesigns(): lee la última petición
                                                  diseña el FIR (y, si cambia el modo,
 process(): recoge ◄──────── Handoff ◄──────────  construye el camino: convolución y retardos)
@@ -124,8 +124,8 @@ process(): recoge ◄──────── Handoff ◄───────�
 ```
 
 - **El hilo de audio no asigna ni libera memoria.** Las peticiones van en un `TripleBuffer` (el lector ve siempre la última, sin esperar). Los FIR y los caminos van en un `Handoff`: el hilo de diseño entrega y el de audio recoge; lo que el audio ya no usa vuelve por el mismo `Handoff` y lo destruye el hilo de diseño. `take()` solo entrega si queda sitio para devolver, así que el hilo de audio nunca tiene que liberar nada (`dsp/handoff.h`). El job de RealtimeSanitizer del CI ejecuta todos los tests con esto.
-- **El hilo de diseño** mira cada 10 ms si hay algo nuevo (una lectura atómica). En la 0.x hay uno por instancia.
-- **Render sin tiempo real.** El procesador llama a `PhaseDesignThread::flush()` en cada bloque: el FIR de los ajustes de ese bloque se diseña en el momento. El resultado no depende de lo rápido que vaya el render (lo comprueba un test que renderiza dos veces con automatización).
+- **El hilo de diseño** es el hilo de control de la instancia (`core::ControlThread`), que también calcula la compensación automática de ganancia ([compensacion-de-ganancia.md](compensacion-de-ganancia.md)). Mira cada 10 ms si hay algo nuevo (una lectura atómica). En la 0.x hay uno por instancia.
+- **Render sin tiempo real.** El procesador llama a `ControlThread::flush()` en cada bloque: el FIR de los ajustes de ese bloque se diseña en el momento. El resultado no depende de lo rápido que vaya el render (lo comprueba un test que renderiza dos veces con automatización).
 - **Al preparar el audio** (`prepareToPlay`) también se diseña en el momento: el primer bloque ya suena en el modo pedido y el host conoce la latencia antes de empezar.
 - Los cambios rápidos de modo (de Medium a IIR y vuelta a Medium antes de que el hilo de diseño lo vea, por ejemplo) se resuelven con dos contadores: uno de "época" (modo y frecuencia de muestreo) y otro de "generación" (cualquier cosa que cambie el FIR). Lo que llega para una época o generación antigua se devuelve sin usar.
 
@@ -158,4 +158,4 @@ Se comprobó que los tests detectan los fallos: quitando el fundido entre núcle
 - **Resolución en graves** según el modo (ver la tabla de precisión). Un notch estrecho no llega a la profundidad del IIR: un notch de Q 10 en 1 kHz baja unos 11 dB en Low, 22 en Medium y 34 en High.
 - **Pasa todo.** En fase lineal un pasa todo no hace nada: solo cambia la fase, y la fase lineal la iguala en todas las frecuencias.
 - **El analizador "pre"** muestra la entrada sin retrasar, y el "post" la salida, que llega con la latencia: en High, el "post" va unos 360 ms por detrás.
-- **Un hilo de diseño por instancia**, aunque esté en IIR (mira cada 10 ms si hay algo que hacer).
+- **Un hilo de control por instancia**, aunque esté en IIR (mira cada 10 ms si hay algo que hacer).

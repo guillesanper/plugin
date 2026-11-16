@@ -235,11 +235,11 @@ cmake --build build-tsan --parallel --target esceq_plugin_tests
 ./build-tsan/tests/plugin/esceq_plugin_tests_artefacts/RelWithDebInfo/esceq_plugin_tests
 ```
 
-El hilo de diseño de la fase lineal y su intercambio con el de audio se prueban en los tests de `dsp/` y `core/`:
+El hilo de control (diseño de la fase lineal y compensación de ganancia) y su intercambio con el de audio se prueban en los tests de `dsp/` y `core/`:
 
 ```
 cmake --build build-tsan --parallel --target esceq_tests
-./build-tsan/tests/esceq_tests "Hilo de diseno*,Handoff*,TripleBuffer*,PhaseEqualizer*"
+./build-tsan/tests/esceq_tests "Hilo de control*,Handoff*,TripleBuffer*,PhaseEqualizer*,AutoGain*"
 ```
 
 ## Problemas frecuentes

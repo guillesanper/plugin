@@ -110,6 +110,10 @@ struct Table
         set(kPhaseMode, "phase_mode", "Phase Mode",
             {.kind = Choice, .min = 0.0f, .max = static_cast<float>(kPhaseModeChoices.size() - 1),
              .defaultValue = 0.0f, .choices = kPhaseModeChoices});
+
+        // Compensación automática de ganancia (fase 5): al final. Apagada es el
+        // comportamiento de los estados anteriores.
+        set(kAutoGain, "auto_gain", "Auto Gain", {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
     }
 };
 

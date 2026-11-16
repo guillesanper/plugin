@@ -31,11 +31,13 @@ std::span<const FactoryPreset> factoryPresets() noexcept;
 /// Parámetros de un preset de fábrica por su nombre, o nullopt si no existe.
 std::optional<ParameterValues> loadFactoryPreset(std::string_view name);
 
-/// Parámetros que no forman parte de un preset: el modo de fase. Es una
-/// decisión de la sesión, no del sonido de un preset, y cambiarlo cambia la
-/// latencia de la pista: elegir un preset no debe hacerlo.
-/// Ver docs/decisiones/0012-modos-de-fase.md.
-inline constexpr std::array<std::size_t, 1> kParametersOutsidePresets{kPhaseMode};
+/// Parámetros que no forman parte de un preset: el modo de fase y la
+/// compensación automática de ganancia. Son decisiones de la sesión, no del
+/// sonido de un preset: elegir un preset no debe cambiar la latencia de la
+/// pista ni encender o apagar la compensación (los presets anteriores la
+/// apagarían). Ver docs/decisiones/0012-modos-de-fase.md y
+/// docs/decisiones/0015-compensacion-automatica-de-ganancia.md.
+inline constexpr std::array<std::size_t, 2> kParametersOutsidePresets{kPhaseMode, kAutoGain};
 
 /// Lo que queda al cargar `preset` sobre `current`: los valores del preset,
 /// salvo los kParametersOutsidePresets, que conservan los de `current`.

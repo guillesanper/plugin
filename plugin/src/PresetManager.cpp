@@ -86,7 +86,8 @@ bool PresetManager::load(const Entry& entry)
     if (!values)
         return false;
 
-    // El modo de fase no es parte del preset (core::kParametersOutsidePresets).
+    // El modo de fase y la compensación no son parte del preset
+    // (core::kParametersOutsidePresets).
     processor_.applyValues(core::applyPreset(*values, processor_.currentValues()));
     cachedName_ = entry.name;
     cachedValues_ = processor_.currentValues();
@@ -191,8 +192,8 @@ bool PresetManager::isModified() const
         return false; // no se puede comparar: el archivo ya no existe
 
     // El bypass y la ganancia de salida no forman parte del "sonido" del
-    // preset a estos efectos, ni el modo de fase, que ni siquiera se guarda en
-    // él: tocarlos no lo marca como modificado.
+    // preset a estos efectos, ni el modo de fase y la compensación, que ni
+    // siquiera se guardan en él: tocarlos no lo marca como modificado.
     auto a = processor_.currentValues();
     auto b = *cachedValues_;
     for (const auto index : {core::kBypass, core::kOutputGain})

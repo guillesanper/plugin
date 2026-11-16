@@ -257,36 +257,56 @@ double PluginProcessor::currentSampleRate() const noexcept
 
 void PluginProcessor::pushParametersToEngine(bool force) noexcept
 {
-    // Traducir los 338 parámetros cuesta unos 2 µs: con bloques muy pequeños
-    // (FL Studio los entrega a veces de pocas muestras) se nota. Si no ha
-    // cambiado ninguno, el ecualizador ya tiene sus ajustes.
+    // Traducir los parámetros cuesta unos 2 µs: con bloques muy pequeños (FL
+    // Studio los entrega a veces de pocas muestras) se nota. Si no ha cambiado
+    // ninguno, el ecualizador ya tiene sus ajustes.
     const auto values = currentValues();
     const auto algorithm = filterAlgorithm();
     if (!force && values == pushedValues_ && algorithm == pushedAlgorithm_)
         return;
     pushedValues_ = values;
     pushedAlgorithm_ = algorithm;
+    const auto bands = core::allBandSettings(values, algorithm);
     for (int band = 0; band < core::kNumBands; ++band)
-        equalizer_.setBand(band, core::bandSettings(values, band, algorithm));
+        equalizer_.setBand(band, bands[static_cast<std::size_t>(band)]);
     equalizer_.setBypassed(values[core::kBypass] >= 0.5f);
     equalizer_.setPhaseMode(core::phaseModeFromChoice(values[core::kPhaseMode]));
+
+    // La compensación la calcula el hilo de control (ADR 0015), y solo si
+    // está encendida. Al encenderla, lo calculado antes no vale: la ganancia
+    // espera al valor de estos ajustes.
+    const bool autoGain = values[core::kAutoGain] >= 0.5f;
+    if (autoGain)
+    {
+        if (!autoGainPushed_ || force)
+            autoGain_.restart();
+        autoGain_.request(bands, currentSampleRate(), engineChannels_);
+    }
+    autoGainPushed_ = autoGain;
+}
+
+float PluginProcessor::autoGainDb() const noexcept
+{
+    return autoGainPushed_ ? autoGain_.latestDb().value_or(0.0f) : 0.0f;
 }
 
 void PluginProcessor::prepareToPlay(double sampleRate, int)
 {
     sampleRate_.store(sampleRate);
     sessionMember_->setSampleRate(sampleRate);
+    engineChannels_ = std::clamp(getMainBusNumOutputChannels(), 1, 2);
     pushParametersToEngine(true);
-    equalizer_.prepare(sampleRate, std::clamp(getMainBusNumOutputChannels(), 1, 2));
-    // En fase lineal, el FIR se diseña ya: así el primer bloque suena en el
-    // modo pedido y el host conoce la latencia antes de empezar.
-    designer_.flush();
+    equalizer_.prepare(sampleRate, engineChannels_);
+    // En fase lineal, el FIR se diseña ya, y la compensación se calcula ya:
+    // así el primer bloque suena en el modo pedido, con su ganancia, y el
+    // host conoce la latencia antes de empezar.
+    control_.flush();
     equalizer_.update();
     setLatencySamples(equalizer_.latencySamples());
 
     const bool bypassed = raw_[core::kBypass]->load() >= 0.5f;
     outputGain_.prepare(sampleRate, kGainRampSeconds);
-    outputGain_.reset(bypassed ? 1.0f : dsp::dbToGain(raw_[core::kOutputGain]->load()));
+    outputGain_.reset(bypassed ? 1.0f : dsp::dbToGain(raw_[core::kOutputGain]->load() + autoGainDb()));
 }
 
 void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -315,11 +335,11 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     preFifo_.writeMix(channels, numChannels, numSamples);
 
     pushParametersToEngine();
-    // Sin tiempo real (al renderizar), el FIR de los ajustes de este bloque se
-    // diseña aquí mismo: el resultado no depende de lo rápido que vaya el
-    // render ni de lo que tarde el hilo de diseño.
+    // Sin tiempo real (al renderizar), el FIR y la compensación de los ajustes
+    // de este bloque se calculan aquí mismo: el resultado no depende de lo
+    // rápido que vaya el render ni de lo que tarde el hilo de control.
     if (isNonRealtime())
-        designer_.flush();
+        control_.flush();
     equalizer_.process(channels, numChannels, numSamples, sidechain, sidechainChannels);
 
     for (int band = 0; band < core::kNumBands; ++band)
@@ -327,7 +347,9 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
                                                             std::memory_order_relaxed);
 
     const bool bypassed = raw_[core::kBypass]->load(std::memory_order_relaxed) >= 0.5f;
-    const float gainDb = raw_[core::kOutputGain]->load(std::memory_order_relaxed);
+    // La compensación se suma a la ganancia de salida; con bypass, ninguna de
+    // las dos. Apagada, o con la curva plana, suma exactamente 0.
+    const float gainDb = raw_[core::kOutputGain]->load(std::memory_order_relaxed) + autoGainDb();
     outputGain_.setTarget(bypassed ? 1.0f : dsp::dbToGain(gainDb));
     outputGain_.process(channels, numChannels, numSamples);
 

@@ -115,6 +115,15 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band, dsp::Fil
     return settings;
 }
 
+std::array<dsp::BandSettings, kNumBands> allBandSettings(const ParameterValues& values,
+                                                         dsp::FilterAlgorithm algorithm) noexcept
+{
+    std::array<dsp::BandSettings, kNumBands> bands{};
+    for (int band = 0; band < kNumBands; ++band)
+        bands[static_cast<std::size_t>(band)] = bandSettings(values, band, algorithm);
+    return bands;
+}
+
 std::optional<int> firstFreeBand(const ParameterValues& values) noexcept
 {
     for (int band = 0; band < kNumBands; ++band)

@@ -6,9 +6,10 @@
 
 #include "esceq/core/history.h"
 #include "esceq/core/parameters.h"
-#include "esceq/core/phase_design_thread.h"
+#include "esceq/core/control_thread.h"
 #include "esceq/core/spectrum_session.h"
 #include "esceq/core/state.h"
+#include "esceq/dsp/auto_gain.h"
 #include "esceq/dsp/gain_ramp.h"
 #include "esceq/dsp/phase_equalizer.h"
 #include "esceq/dsp/spsc_fifo.h"
@@ -154,8 +155,12 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
-    /// Pasa los parámetros al ecualizador si han cambiado desde la última vez (o siempre, con `force`).
+    /// Pasa los parámetros al ecualizador si han cambiado desde la última vez
+    /// (o siempre, con `force`) y, con la compensación encendida, pide la suya.
     void pushParametersToEngine(bool force = false) noexcept;
+    /// Compensación que se aplica ahora, en dB: la última calculada para lo
+    /// pasado con la compensación encendida, o 0. Solo el hilo de audio.
+    float autoGainDb() const noexcept;
 
     /// Avisa al host, desde el hilo de mensajes, cuando cambia la latencia del
     /// motor (al cambiar de modo de fase con el audio en marcha).
@@ -175,11 +180,14 @@ private:
     std::array<juce::RangedAudioParameter*, core::kNumParameters> params_{};
 
     dsp::PhaseEqualizer equalizer_;
-    /// Diseña los FIR de fase lineal fuera del hilo de audio. Va después de
-    /// equalizer_ para destruirse antes.
-    core::PhaseDesignThread designer_{equalizer_};
+    dsp::AutoGain autoGain_;
+    /// Diseña los FIR de fase lineal y calcula la compensación fuera del hilo
+    /// de audio. Va después de equalizer_ y autoGain_ para destruirse antes.
+    core::ControlThread control_{equalizer_, autoGain_};
     core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
     dsp::FilterAlgorithm pushedAlgorithm_ = core::kNewInstanceFilterAlgorithm; ///< Ídem.
+    bool autoGainPushed_ = false; ///< Con la compensación encendida en lo último pasado. Ídem.
+    int engineChannels_ = 2;      ///< Canales con los que se preparó el ecualizador. Ídem.
     std::atomic<dsp::FilterAlgorithm> filterAlgorithm_{core::kNewInstanceFilterAlgorithm};
     static_assert(std::atomic<dsp::FilterAlgorithm>::is_always_lock_free);
     dsp::GainRamp outputGain_;

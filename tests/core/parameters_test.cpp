@@ -119,7 +119,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 1);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -146,10 +146,10 @@ TEST_CASE("Parametros: indices de canal, despues de la dinamica")
     CHECK(parseValue(parameters()[channelParameter(3)], "side") == 4.0f);
 }
 
-TEST_CASE("Parametros: modo de fase, el ultimo y global")
+TEST_CASE("Parametros: modo de fase, global, tras los canales")
 {
     const auto& spec = parameters()[kPhaseMode];
-    CHECK(kPhaseMode == kNumParameters - 1);
+    CHECK(kPhaseMode + 1 == kAutoGain);
     CHECK(spec.id == "phase_mode");
     CHECK(spec.kind == ParameterKind::Choice);
     CHECK(spec.choices.size() == 4);
@@ -160,6 +160,17 @@ TEST_CASE("Parametros: modo de fase, el ultimo y global")
     CHECK(formatValue(spec, 3.0f) == "Linear High");
     CHECK(parseValue(spec, "linear high") == 3.0f);
     CHECK(findParameter("phase_mode") == kPhaseMode);
+}
+
+TEST_CASE("Parametros: compensacion automatica de ganancia, la ultima y global")
+{
+    const auto& spec = parameters()[kAutoGain];
+    CHECK(kAutoGain == kNumParameters - 1);
+    CHECK(spec.id == "auto_gain");
+    CHECK(spec.name == "Auto Gain");
+    CHECK(spec.kind == ParameterKind::Toggle);
+    CHECK(spec.defaultValue == 0.0f); // apagada: lo que hacian los estados anteriores
+    CHECK(findParameter("auto_gain") == kAutoGain);
 }
 
 TEST_CASE("Parametros: findParameter")

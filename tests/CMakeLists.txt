@@ -24,9 +24,9 @@ add_executable(esceq_tests
     dsp/phase_equalizer_test.cpp
     dsp/spectrum_collision_test.cpp
     core/band_model_test.cpp
+    core/control_thread_test.cpp
     core/history_test.cpp
     core/parameters_test.cpp
-    core/phase_design_thread_test.cpp
     core/presets_test.cpp
     core/release_contract_test.cpp
     core/spectrum_session_test.cpp

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#include "esceq/core/phase_design_thread.h"
+#include "esceq/core/control_thread.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <thread>
 #include <vector>
 
 using namespace esceq;
@@ -53,13 +54,14 @@ template <typename Done> bool processUntil(dsp::PhaseEqualizer& eq, Done done, d
 
 } // namespace
 
-TEST_CASE("Hilo de diseno: en manual, solo flush disena")
+TEST_CASE("Hilo de control: en manual, solo flush disena")
 {
     dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
     eq.setBand(0, bell(1000.0, 6.0));
     eq.setPhaseMode(dsp::PhaseMode::LinearMedium);
     eq.prepare(kFs);
-    core::PhaseDesignThread designer(eq, core::PhaseDesignThread::Threading::Manual);
+    core::ControlThread designer(eq, autoGain, core::ControlThread::Threading::Manual);
 
     std::uint32_t seed = 1u;
     for (int i = 0; i < 20; ++i)
@@ -72,13 +74,14 @@ TEST_CASE("Hilo de diseno: en manual, solo flush disena")
     CHECK(eq.latencySamples() == dsp::latencySamples(dsp::PhaseMode::LinearMedium, kFs));
 }
 
-TEST_CASE("Hilo de diseno: al preparar, flush deja el modo listo sin procesar audio")
+TEST_CASE("Hilo de control: al preparar, flush deja el modo listo sin procesar audio")
 {
     // Lo que hace el plugin en prepareToPlay: así informa al host de la latencia
     // correcta antes del primer bloque.
     dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
     eq.setPhaseMode(dsp::PhaseMode::LinearHigh);
-    core::PhaseDesignThread designer(eq);
+    core::ControlThread designer(eq, autoGain);
     eq.prepare(kFs);
     designer.flush();
     eq.update();
@@ -86,12 +89,13 @@ TEST_CASE("Hilo de diseno: al preparar, flush deja el modo listo sin procesar au
     CHECK(eq.latencySamples() == 17408);
 }
 
-TEST_CASE("Hilo de diseno: el hilo propio entrega los cambios de modo y de ajustes")
+TEST_CASE("Hilo de control: el hilo propio entrega los cambios de modo y de ajustes")
 {
     dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
     eq.setBand(0, bell(1000.0, 6.0));
     eq.prepare(kFs);
-    core::PhaseDesignThread designer(eq);
+    core::ControlThread designer(eq, autoGain);
 
     eq.setPhaseMode(dsp::PhaseMode::LinearLow);
     CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
@@ -106,14 +110,15 @@ TEST_CASE("Hilo de diseno: el hilo propio entrega los cambios de modo y de ajust
     CHECK(eq.latencySamples() == 0);
 }
 
-TEST_CASE("Hilo de diseno: audio y disenos a la vez, con ajustes cambiando en cada bloque")
+TEST_CASE("Hilo de control: audio y disenos a la vez, con ajustes cambiando en cada bloque")
 {
     // Con ThreadSanitizer, este test comprueba que el intercambio entre los
     // dos hilos no tiene carreras (ver DEV.md).
     dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
     eq.setPhaseMode(dsp::PhaseMode::LinearLow);
     eq.prepare(kFs);
-    core::PhaseDesignThread designer(eq);
+    core::ControlThread designer(eq, autoGain);
 
     std::uint32_t seed = 7u;
     const dsp::PhaseMode modes[] = {dsp::PhaseMode::LinearLow, dsp::PhaseMode::LinearMedium, dsp::PhaseMode::Iir,
@@ -128,12 +133,47 @@ TEST_CASE("Hilo de diseno: audio y disenos a la vez, con ajustes cambiando en ca
     CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
 }
 
-TEST_CASE("Hilo de diseno: se para enseguida al destruirlo")
+TEST_CASE("Hilo de control: se para enseguida al destruirlo")
 {
     dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
     const auto start = Clock::now();
     {
-        core::PhaseDesignThread designer(eq);
+        core::ControlThread designer(eq, autoGain);
     }
     CHECK(Clock::now() - start < std::chrono::seconds(1));
+}
+
+TEST_CASE("Hilo de control: en manual, flush calcula la compensacion pendiente")
+{
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    core::ControlThread control(eq, autoGain, core::ControlThread::Threading::Manual);
+    const dsp::BandSettings bands[] = {bell(1000.0, 6.0)};
+    autoGain.request(bands, kFs, 2);
+    CHECK_FALSE(autoGain.latestDb().has_value());
+    control.flush();
+    REQUIRE(autoGain.latestDb().has_value());
+    CHECK(*autoGain.latestDb() == static_cast<float>(dsp::autoGainDb(bands, kFs, 2)));
+}
+
+TEST_CASE("Hilo de control: el hilo propio calcula la compensacion")
+{
+    // Con ThreadSanitizer, comprueba también la entrega de la compensación.
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    core::ControlThread control(eq, autoGain);
+    const auto limit = Clock::now() + std::chrono::seconds(10);
+    for (int i = 0; i < 200 && Clock::now() < limit; ++i)
+    {
+        const dsp::BandSettings bands[] = {bell(500.0 + 10.0 * i, 6.0)};
+        autoGain.request(bands, kFs, 2);
+        (void)autoGain.latestDb();
+    }
+    const dsp::BandSettings last[] = {bell(1000.0, -6.0)};
+    autoGain.request(last, kFs, 2);
+    const float expected = static_cast<float>(dsp::autoGainDb(last, kFs, 2));
+    while (autoGain.latestDb() != expected && Clock::now() < limit)
+        std::this_thread::yield();
+    CHECK(autoGain.latestDb() == expected);
 }

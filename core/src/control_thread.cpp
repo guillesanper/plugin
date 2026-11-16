@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
-#include "esceq/core/phase_design_thread.h"
+#include "esceq/core/control_thread.h"
 
 namespace esceq::core
 {
 
-PhaseDesignThread::PhaseDesignThread(dsp::PhaseEqualizer& equalizer, Threading threading) : equalizer_(equalizer)
+ControlThread::ControlThread(dsp::PhaseEqualizer& equalizer, dsp::AutoGain& autoGain, Threading threading)
+    : equalizer_(equalizer), autoGain_(autoGain)
 {
     if (threading == Threading::Background)
         thread_ = std::thread([this] { run(); });
 }
 
-PhaseDesignThread::~PhaseDesignThread()
+ControlThread::~ControlThread()
 {
     {
         const std::lock_guard lock(wakeMutex_);
@@ -21,22 +22,24 @@ PhaseDesignThread::~PhaseDesignThread()
         thread_.join();
 }
 
-void PhaseDesignThread::flush()
+void ControlThread::flush()
 {
     const std::lock_guard lock(serviceMutex_);
     serviceAll();
 }
 
-void PhaseDesignThread::serviceAll()
+void ControlThread::serviceAll()
 {
     // Un cambio de modo entrega primero el camino y, si mientras tanto han
     // cambiado los ajustes, después un FIR: se sigue hasta que no quede nada.
     while (equalizer_.serviceDesigns())
     {
     }
+    // La compensación solo calcula la última petición.
+    autoGain_.service();
 }
 
-void PhaseDesignThread::run()
+void ControlThread::run()
 {
     std::unique_lock lock(wakeMutex_);
     while (!wake_.wait_for(lock, kPeriod, [this] { return stopping_; }))

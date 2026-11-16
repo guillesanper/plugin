@@ -343,6 +343,24 @@ TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
     CHECK((*restored)[kPhaseMode] == 2.0f);
 }
 
+TEST_CASE("Estado: los estados anteriores a la compensacion la cargan apagada")
+{
+    // Si se encendiera sola, un proyecto anterior sonaria con otro volumen.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt", "v3_classic.txt", "v3_matched.txt"})
+    {
+        INFO(name);
+        const auto state = deserializePluginState(readFixture(name));
+        REQUIRE(state.has_value());
+        CHECK(state->parameters[kAutoGain] == 0.0f);
+    }
+
+    auto values = defaultValues();
+    values[kAutoGain] = 1.0f;
+    const auto restored = deserializeState(serializeState(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[kAutoGain] == 1.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Version 3: algoritmo de filtro de la instancia (ADR 0013 y 0014)
 

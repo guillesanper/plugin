@@ -82,6 +82,8 @@ enum ParameterIndex : std::size_t
     kFirstChannelParameter = kFirstDynamicParameter + static_cast<std::size_t>(kNumBands) * kDynParamsPerBand,
     /// Modo de fase (fase 5), global: tras los canales.
     kPhaseMode = kFirstChannelParameter + static_cast<std::size_t>(kNumBands),
+    /// Compensación automática de ganancia (fase 5), global: tras el modo de fase.
+    kAutoGain,
     kNumParameters,
 };
 

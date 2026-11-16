@@ -135,6 +135,9 @@ TEST_CASE("Presets: el texto compacto se lee como los mismos valores")
         rng = rng * 1664525u + 1013904223u;
         values[i] = fromNormalized(parameters()[i], static_cast<float>(rng >> 8) / 16777216.0f);
     }
+    // Los que no van en el preset se leen con su valor por defecto.
+    for (const auto index : kParametersOutsidePresets)
+        values[index] = parameters()[index].defaultValue;
 
     const auto text = serializePreset(values);
     CHECK(deserializeState(text) == values);
@@ -196,6 +199,33 @@ TEST_CASE("Presets: cargar un preset no cambia el modo de fase")
     CHECK(result[kPhaseMode] == 3.0f);
     preset[kPhaseMode] = current[kPhaseMode];
     CHECK(result == preset); // el resto, el del preset
+}
+
+TEST_CASE("Presets: cargar un preset no cambia la compensacion automatica")
+{
+    // Todos los presets anteriores la apagarian, porque no la llevan.
+    for (const float on : {0.0f, 1.0f})
+    {
+        auto current = defaultValues();
+        current[kAutoGain] = on;
+        for (const auto& preset : factoryPresets())
+        {
+            INFO(preset.name);
+            const auto values = loadFactoryPreset(preset.name);
+            REQUIRE(values.has_value());
+            CHECK(applyPreset(*values, current)[kAutoGain] == on);
+        }
+    }
+}
+
+TEST_CASE("Presets: la compensacion automatica no se guarda en el preset")
+{
+    auto values = defaultValues();
+    values[kAutoGain] = 1.0f;
+    CHECK(serializePreset(values).find("auto_gain") == std::string::npos);
+    const auto restored = deserializeState(serializePreset(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[kAutoGain] == 0.0f);
 }
 
 TEST_CASE("Presets: el modo de fase no se guarda en el preset")

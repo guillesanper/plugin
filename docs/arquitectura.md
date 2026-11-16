@@ -66,14 +66,14 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | `equalizer.h` | Las 24 bandas en serie (IIR), con suavizado de parámetros, fundidos al cambiar de tipo o activar, bypass con fundido, dinámica por banda con sidechain opcional, y canal por banda (Stereo, Left, Right, Mid, Side). En modo "solo dinámica", solo el cambio que añade la dinámica (para la fase lineal) | Audio |
 | `linear_phase.h` | Modos de fase (`PhaseMode`), tamaños y latencias, y diseño de FIR de fase lineal a partir de las bandas (`LinearPhaseDesigner`). Ver [docs/dsp/fase-lineal.md](dsp/fase-lineal.md) | Diseño: no tiempo real |
 | `partitioned_convolver.h` | Convolución estéreo particionada por FFT (`FirKernel`, `PartitionedConvolver`), con fundido entre núcleos | Audio (el núcleo se construye fuera) |
-| `phase_equalizer.h` | El ecualizador completo con sus cuatro modos de fase: IIR (el `Equalizer`) o FIR de fase lineal más la dinámica en IIR; bypass con latencia constante y cambio de modo con fundido. `serviceDesigns()` es la parte del hilo de diseño | Audio, y un hilo de diseño |
+| `phase_equalizer.h` | El ecualizador completo con sus cuatro modos de fase: IIR (el `Equalizer`) o FIR de fase lineal más la dinámica en IIR; bypass con latencia constante y cambio de modo con fundido. `serviceDesigns()` es la parte del hilo de control | Audio, y el de control |
 | `handoff.h` | `TripleBuffer` (el último valor, sin bloqueos) y `Handoff` (entregar objetos al hilo de audio y recogerlos para destruirlos fuera de él) | Uno de audio y uno que no es de tiempo real |
 | `spsc_fifo.h` | Cola sin bloqueo de un productor y un consumidor | Audio escribe, interfaz lee |
 | `fft.h` | FFT radix-2 en `float` y `double`, directa e inversa | Cualquiera |
 | `spectrum_analyzer.h` | Espectro calibrado para dibujar | Interfaz |
 | `spectrum_collision.h` | Colisiones (enmascaramiento) entre dos espectros: suavizado por octavas, presencia, severidad, tramos y promedio temporal. Ver [docs/dsp/colisiones.md](dsp/colisiones.md) | Cualquiera |
 
-`dsp` no crea hilos: el de diseño de la fase lineal vive en `core` (`PhaseDesignThread`) y solo llama a `PhaseEqualizer::serviceDesigns()`.
+`dsp` no crea hilos: el de control vive en `core` (`ControlThread`) y solo llama a `PhaseEqualizer::serviceDesigns()` y a `AutoGain::service()`.
 
 El diseño (`designBand`) y el procesado (`BandFilter`) están separados a propósito: la interfaz puede calcular la curva sin procesar audio, y el filtro no sabe nada de tipos ni de parámetros de usuario. Un tipo de filtro nuevo se añade en `designBand` sin tocar `BandFilter`. Detalles en [docs/dsp/filtros.md](dsp/filtros.md), [docs/dsp/ecualizador.md](dsp/ecualizador.md) y [docs/dsp/dinamica.md](dsp/dinamica.md).
 
@@ -84,16 +84,16 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 | `parameters.h` | La tabla de parámetros, su normalización para el host y su formato como texto |
 | `state.h` | Lectura y escritura del estado guardado: parámetros, algoritmo de filtro de la instancia y preferencias de la interfaz (`UiSettings`), con migraciones entre versiones |
 | `history.h` | Historial de deshacer y rehacer por instantáneas de los parámetros y el algoritmo de filtro (`EditState`, `UndoHistory`) |
-| `presets.h` | Presets de fábrica, texto de un preset, parámetros que un preset no cambia (el modo de fase) y nombres de preset válidos como nombre de archivo |
+| `presets.h` | Presets de fábrica, texto de un preset, parámetros que un preset no cambia (el modo de fase y la compensación automática de ganancia) y nombres de preset válidos como nombre de archivo |
 | `spectrum_session.h` | Espectros compartidos entre las instancias del proceso: registro, hilo trabajador que solo calcula si alguien mira, y la selección de instancias a comparar ([ADR 0011](decisiones/0011-espectros-compartidos.md)) |
-| `phase_design_thread.h` | El hilo que diseña los FIR de fase lineal de un `dsp::PhaseEqualizer`, y `flush()` para diseñar en el momento (al preparar el audio y al renderizar) ([ADR 0012](decisiones/0012-modos-de-fase.md)) |
-| `band_model.h` | De los valores de los parámetros a `dsp::BandSettings`, dinámica incluida, y al modo de fase (`phaseModeFromChoice`). El procesador y la interfaz usan la misma función, así que **la curva que se dibuja es siempre la que suena** (la interfaz le suma la ganancia dinámica que publica el procesador) |
+| `control_thread.h` | El hilo de control de una instancia: diseña los FIR de fase lineal de un `dsp::PhaseEqualizer` y calcula la compensación de ganancia de un `dsp::AutoGain`, y `flush()` para hacerlo en el momento (al preparar el audio y al renderizar) ([ADR 0012](decisiones/0012-modos-de-fase.md), [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)) |
+| `band_model.h` | De los valores de los parámetros a `dsp::BandSettings` (de una banda o de las 24), dinámica incluida, y al modo de fase (`phaseModeFromChoice`). El procesador y la interfaz usan la misma función, así que **la curva que se dibuja es siempre la que suena** (la interfaz le suma la ganancia dinámica que publica el procesador) |
 
 ## Contenido de `plugin/`
 
 | Archivo | Qué hace |
 |---|---|
-| `PluginProcessor` | Buses, parámetros del host generados a partir de la tabla de `core`, `processBlock`, latencia y cola según el modo de fase (y el hilo de diseño), estado, colas del analizador, picos de salida, y su lugar en la sesión de espectros compartidos (salida y nombre y color de la pista) |
+| `PluginProcessor` | Buses, parámetros del host generados a partir de la tabla de `core`, `processBlock`, latencia y cola según el modo de fase, compensación automática de ganancia (y el hilo de control que calcula las dos cosas), estado, colas del analizador, picos de salida, y su lugar en la sesión de espectros compartidos (salida y nombre y color de la pista) |
 | `EditHistory` | Deshacer y rehacer: convierte los gestos de los parámetros en acciones de `core::UndoHistory` |
 | `PresetManager` | Presets de fábrica y de usuario (archivos en una carpeta del sistema) |
 | `PluginEditorFactory.cpp` | Único punto en el que el procesador conoce a la interfaz (`createEditor`) |
@@ -113,13 +113,14 @@ Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/sr
 
 ## Parámetros: una sola fuente de verdad
 
-`core::parameters()` es la única lista de parámetros, 339 en total, en este orden:
+`core::parameters()` es la única lista de parámetros, 340 en total, en este orden:
 
 1. 2 globales: `output_gain`, `bypass`.
 2. 6 por cada una de las 24 bandas (`bNN_on`, `bNN_type`, `bNN_freq`, `bNN_gain`, `bNN_q`, `bNN_slope`), con índice `core::bandParameter()`.
 3. 7 de dinámica por cada banda (`bNN_dyn`, `bNN_thr`, `bNN_range`, `bNN_att`, `bNN_rel`, `bNN_knee`, `bNN_sc`), con índice `core::dynamicParameter()`. Van detrás de todas las bandas porque se añadieron en la fase 3 ([ADR 0006](decisiones/0006-dinamica-por-banda.md)).
 4. 1 de canal por cada banda (`bNN_chan`), con índice `core::channelParameter()`. Añadido en la fase 4 ([ADR 0007](decisiones/0007-canal-por-banda.md)).
 5. 1 global de modo de fase (`phase_mode`), con índice `core::kPhaseMode`. Añadido en la fase 5 ([ADR 0012](decisiones/0012-modos-de-fase.md)).
+6. 1 global de compensación automática de ganancia (`auto_gain`), con índice `core::kAutoGain`. Añadido en la fase 5 ([ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)).
 
  `plugin/` genera los parámetros del host recorriéndola (incluidos el texto que muestran y la escala logarítmica de frecuencia y Q), y el estado se serializa recorriéndola. Para añadir un parámetro:
 
@@ -160,7 +161,7 @@ Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignor
 |---|---|---|
 | Audio | `processBlock` | No asigna memoria, no bloquea, no hace E/S |
 | Mensajes / interfaz | Editor (refresco a 30 Hz), analizador, carga y guardado de estado, historial de deshacer, presets (lectura y escritura de archivos) | Ninguna especial |
-| Diseño de fase lineal (uno por instancia) | Mira cada 10 ms si hay que diseñar un FIR o preparar un modo de fase, lo diseña y se lo entrega al hilo de audio ([ADR 0012](decisiones/0012-modos-de-fase.md)) | No lo espera nunca el hilo de audio. Se crea y se para con la instancia. Al preparar el audio y al renderizar sin tiempo real, el diseño se hace en el hilo que llama (`flush()`) |
+| Control (uno por instancia) | Mira cada 10 ms si hay que diseñar un FIR, preparar un modo de fase o calcular la compensación de ganancia, lo hace y se lo entrega al hilo de audio ([ADR 0012](decisiones/0012-modos-de-fase.md), [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)) | No lo espera nunca el hilo de audio. Se crea y se para con la instancia. Al preparar el audio y al renderizar sin tiempo real, el trabajo se hace en el hilo que llama (`flush()`) |
 | Sesión de espectros (uno por proceso) | Lee la cola de cada instancia y calcula su espectro, 20 veces por segundo, solo mientras alguna interfaz compara ([ADR 0011](decisiones/0011-espectros-compartidos.md)) | No lo usa el hilo de audio; se crea con la primera instancia y se para con la última, nunca al descargar el binario |
 
 **Carga y guardado del estado.** VST3 (`IComponent::setState`) y CLAP (`state.load`) exigen que el host llame a `setStateInformation` desde el hilo de mensajes, y el envoltorio VST3 de JUCE lo comprueba con una aserción en depuración; AU no dice nada. Si algún host lo hiciera desde otro hilo, no hay carreras de datos: los parámetros son atómicos, las preferencias tienen su cerrojo, el historial (`EditHistory`) protege lo suyo con otro, y en JUCE 9 `Timer::stopTimer` se puede llamar desde cualquier hilo (lo dice su documentación) y `AsyncUpdater::cancelPendingUpdate` solo pone a cero un atómico. Un test de `tests/plugin/state_test.cpp` carga estados desde un hilo mientras el de mensajes deshace y el de audio procesa; ejecutado con ThreadSanitizer no da ningún aviso (el CI no lo ejecuta así; cómo hacerlo, en [DEV.md](../DEV.md)). Lo único que no se garantiza en ese caso es el orden: una carga simultánea a un deshacer puede dejar parámetros de los dos. `getStateInformation` solo lee, y se puede llamar desde cualquier hilo.
@@ -172,7 +173,8 @@ Comunicación:
 - **Preferencias de la interfaz:** viven en el procesador (`uiSettings()`), protegidas con un cerrojo que el hilo de audio nunca toma. El editor las lee al abrirse y cuando el host carga un estado (`stateRevision()`), y las escribe cuando cambian.
 - **Audio → interfaz:** dos `dsp::SpscFifo` (audio mono antes y después del EQ). El hilo de audio escribe; si la cola está llena, descarta. El editor abierto es el **único** lector. Si algún host abriera dos editores a la vez del mismo plugin, habría dos lectores: no está soportado.
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
-- **Audio ↔ diseño de fase lineal:** el hilo de audio publica lo que hay que diseñar en un `dsp::TripleBuffer`; el de diseño entrega los FIR y los caminos de cada modo por un `dsp::Handoff`, por el que también recoge lo que el audio ya no usa para destruirlo. El hilo de audio no asigna ni libera memoria ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)).
+- **Audio ↔ control, compensación de ganancia:** con `auto_gain` encendido, cuando cambian los parámetros el hilo de audio publica las bandas en el `dsp::TripleBuffer` de `dsp::AutoGain`; el de control calcula la compensación y la publica con el número de la petición en un atómico de 64 bits. El audio aplica la última que haya, y al encenderla espera a la de los ajustes de ese momento ([docs/dsp/compensacion-de-ganancia.md](dsp/compensacion-de-ganancia.md)).
+- **Audio ↔ control, fase lineal:** el hilo de audio publica lo que hay que diseñar en un `dsp::TripleBuffer`; el de control entrega los FIR y los caminos de cada modo por un `dsp::Handoff`, por el que también recoge lo que el audio ya no usa para destruirlo. El hilo de audio no asigna ni libera memoria ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)).
 - **Latencia → host:** el procesador la comunica en `prepareToPlay` y, si cambia de modo con el audio en marcha, desde un temporizador del hilo de mensajes (20 Hz).
 - **Audio → otras instancias:** una tercera `dsp::SpscFifo` por instancia, en `core::SpectrumSession`. El hilo de audio solo escribe si alguna interfaz del proceso está comparando (un atómico); la lee el hilo de la sesión, que publica el espectro bajo un cerrojo que el hilo de audio nunca toma. Las interfaces leen copias (`snapshot`).
 - **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.
@@ -183,13 +185,13 @@ Toda función de `dsp/` documenta en su cabecera si es segura en tiempo real y s
 
 ```
                          ┌─ IIR: dsp::Equalizer (24 bandas IIR en serie) ──────────────┐
-entrada ─► cola "pre" ─► ┤                                                                 ├─► dsp::GainRamp (salida) ─► cola "post" + cola de la sesión + picos ─► salida
+entrada ─► cola "pre" ─► ┤                                                                 ├─► dsp::GainRamp (salida + compensación) ─► cola "post" + cola de la sesión + picos ─► salida
                          └─ Linear: FIR (partes estáticas) ─► dsp::Equalizer (solo dinámica) ┘
                                                                    ▲ detectores (en Linear, retrasados como el audio)
 sidechain (bus opcional) ──────────────────────────────────────────┘
 ```
 
-Cada bloque, el procesador lee los 339 parámetros, los traduce con `core::bandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de diseño. En IIR, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en IIR; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
+Cada bloque, el procesador lee los 340 parámetros y, si alguno ha cambiado, los traduce con `core::allBandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de control; con `auto_gain` encendido, pide también la compensación de las bandas a `dsp::AutoGain`. En IIR, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). La rampa de salida (20 ms) aplica `output_gain` más la compensación, si está encendida; apagada, o con la curva plana, la compensación suma exactamente 0 dB. Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida, compensación incluida, vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en IIR; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
 
 El búfer que entrega el host contiene los canales de todos los buses: el procesador toma el bus principal con `getBusBuffer` y el sidechain como solo lectura.
 
