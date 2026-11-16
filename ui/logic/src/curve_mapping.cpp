@@ -2,6 +2,7 @@
 #include "esceq/ui/curve_mapping.h"
 
 #include "esceq/core/band_model.h"
+#include "esceq/ui/notes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -98,7 +99,7 @@ Rect floatingLabelRect(Rect area, Point node, float width, float height, float g
     return {x, y, w, h};
 }
 
-NodeReadout nodeReadout(const core::ParameterValues& values, int band)
+NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz)
 {
     const auto& specs = core::parameters();
     auto text = [&](std::size_t index) { return core::formatValue(specs[index], values[index]); };
@@ -112,6 +113,8 @@ NodeReadout nodeReadout(const core::ParameterValues& values, int band)
         out.title += " \xC2\xB7 " + text(core::channelParameter(band));
 
     out.frequency = text(core::bandParameter(band, core::BandParam::Frequency));
+    if (a4Hz)
+        out.frequency += " \xC2\xB7 " + noteText(settings.filter.frequencyHz, *a4Hz);
     if (core::usesGain(type))
         out.gain = text(core::bandParameter(band, core::BandParam::Gain));
     if (core::usesQ(type, settings.filter.slopeDbPerOct))

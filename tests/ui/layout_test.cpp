@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/layout.h"
+#include "esceq/ui/notes.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -192,10 +193,84 @@ TEST_CASE("Disposicion: el panel de banda no solapa controles ni corta textos en
     }
 }
 
+namespace {
+
+bool same(const Rect& a, const Rect& b)
+{
+    return a.x == b.x && a.y == b.y && a.width == b.width && a.height == b.height;
+}
+
+} // namespace
+
+TEST_CASE("Disposicion: sin el teclado de notas, la de siempre, pixel a pixel")
+{
+    // Medidas de la ventana mediana antes de la escala de notas (PLAN.md 5.1).
+    const auto medium = editorLayout(1180.0f, 700.0f);
+    CHECK(same(medium.topBar, {0.0f, 0.0f, 1180.0f, 48.0f}));
+    CHECK(same(medium.curve, {12.0f, 48.0f, 1096.0f, 484.0f}));
+    CHECK(same(medium.meter, {1116.0f, 48.0f, 52.0f, 484.0f}));
+    CHECK(same(medium.panel, {0.0f, 532.0f, 1180.0f, 168.0f}));
+    CHECK(same(medium.keyboard, {}));
+
+    for (const auto size : sizesToCheck())
+    {
+        INFO(size.width << " x " << size.height);
+        const auto w = static_cast<float>(size.width);
+        const auto h = static_cast<float>(size.height);
+        const auto hidden = editorLayout(w, h, false);
+        const auto byDefault = editorLayout(w, h);
+        CHECK(same(hidden.curve, byDefault.curve));
+        CHECK(same(hidden.meter, byDefault.meter));
+        CHECK(same(hidden.panel, byDefault.panel));
+        CHECK(same(hidden.keyboard, {}));
+        // La curva llega hasta el panel, como antes.
+        CHECK(hidden.curve.y + hidden.curve.height == hidden.panel.y);
+    }
+}
+
+TEST_CASE("Disposicion: el teclado de notas va bajo la curva, con su mismo ancho")
+{
+    for (const auto size : sizesToCheck())
+    {
+        INFO(size.width << " x " << size.height);
+        const auto w = static_cast<float>(size.width);
+        const auto h = static_cast<float>(size.height);
+        const auto hidden = editorLayout(w, h, false);
+        const auto shown = editorLayout(w, h, true);
+        const Rect window{0.0f, 0.0f, w, h};
+        checkDisjointInside({{"barra", shown.topBar},
+                             {"curva", shown.curve},
+                             {"teclado", shown.keyboard},
+                             {"medidor", shown.meter},
+                             {"panel", shown.panel}},
+                            window);
+
+        CHECK(shown.keyboard.height == kPianoKeyboardHeight);
+        CHECK(shown.keyboard.x == shown.curve.x);
+        CHECK(shown.keyboard.width == shown.curve.width);
+        CHECK(shown.keyboard.y > shown.curve.y + shown.curve.height); // con una separacion
+        CHECK(shown.keyboard.y + shown.keyboard.height == shown.panel.y);
+        // Solo la curva cede su alto; lo demas no se mueve.
+        CHECK(same(shown.topBar, hidden.topBar));
+        CHECK(same(shown.meter, hidden.meter));
+        CHECK(same(shown.panel, hidden.panel));
+        CHECK(shown.curve.x == hidden.curve.x);
+        CHECK(shown.curve.width == hidden.curve.width);
+        CHECK(shown.curve.height >= 300.0f);
+    }
+}
+
 TEST_CASE("Disposicion: tamanos absurdos no producen medidas negativas")
 {
     for (const auto& [w, h] : {std::pair{0.0f, 0.0f}, {50.0f, 30.0f}, {-10.0f, 400.0f}})
     {
+        for (const bool keyboard : {false, true})
+        {
+            const auto shown = editorLayout(w, h, keyboard);
+            CHECK(shown.curve.height >= 0.0f);
+            CHECK(shown.keyboard.height >= 0.0f);
+            CHECK(shown.keyboard.width >= 0.0f);
+        }
         const auto editor = editorLayout(w, h);
         const auto panel = panelLayout(editor.panel);
         const auto bar = topBarLayout(editor.topBar);

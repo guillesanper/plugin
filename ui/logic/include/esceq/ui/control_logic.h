@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/state.h"
 
 #include <optional>
 #include <string>
@@ -65,8 +66,12 @@ ValueSpan valueSpan(const core::ParameterSpec& spec, float value) noexcept;
 std::string editText(const core::ParameterSpec& spec, float value);
 
 /// Valor resultante de confirmar `text` en el campo de edición, o nullopt si
-/// no se entiende (el control conserva su valor). Usa core::parseValue.
-std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text);
+/// no se entiende (el control conserva su valor). Usa core::parseValue; en
+/// los parámetros en Hz acepta además una nota ("A3", "C#2", "Eb4", ver
+/// esceq/ui/notes.h), que suena a su frecuencia con la afinación `a4Hz`.
+/// Como un número, se ajusta al rango del parámetro.
+std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text,
+                                double a4Hz = core::kDefaultA4Hz);
 
 /// Texto de ayuda del selector del modo de fase, con la latencia que el modo
 /// que suena añade: "Phase mode · latency 26.7 ms (1280 samples)", o

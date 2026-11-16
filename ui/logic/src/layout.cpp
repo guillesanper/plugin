@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/layout.h"
 
+#include "esceq/ui/notes.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -51,6 +53,13 @@ Rect takeTop(Rect& r, float amount) noexcept
     return out;
 }
 
+Rect takeBottom(Rect& r, float amount) noexcept
+{
+    const float h = std::clamp(amount, 0.0f, r.height);
+    r.height -= h;
+    return {r.x, r.y + r.height, r.width, h};
+}
+
 Rect inset(Rect r, float dx, float dy) noexcept
 {
     const float w = std::max(0.0f, r.width - 2.0f * dx);
@@ -95,7 +104,7 @@ WindowSize clampWindow(WindowSize size) noexcept
             std::clamp(size.height, kMinWindow.height, kMaxWindow.height)};
 }
 
-EditorLayout editorLayout(float width, float height) noexcept
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard) noexcept
 {
     Rect area{0.0f, 0.0f, std::max(width, 0.0f), std::max(height, 0.0f)};
     EditorLayout layout;
@@ -110,6 +119,11 @@ EditorLayout editorLayout(float width, float height) noexcept
     Rect middle = inset(area, kS3, 0.0f);
     layout.meter = takeRight(middle, kMeterWidth);
     takeRight(middle, kS2);
+    if (pianoKeyboard)
+    {
+        layout.keyboard = takeBottom(middle, kPianoKeyboardHeight);
+        takeBottom(middle, kS1);
+    }
     layout.curve = middle;
     return layout;
 }

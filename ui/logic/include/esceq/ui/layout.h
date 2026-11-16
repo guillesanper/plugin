@@ -51,11 +51,16 @@ struct EditorLayout
 {
     Rect topBar;
     Rect curve;
-    Rect meter; ///< Medidor de salida, a la derecha de la curva.
-    Rect panel; ///< Panel de la banda seleccionada.
+    Rect meter;    ///< Medidor de salida, a la derecha de la curva.
+    Rect panel;    ///< Panel de la banda seleccionada.
+    Rect keyboard; ///< Teclado de la escala de notas, bajo la curva; vacío si está oculto.
 };
 
-EditorLayout editorLayout(float width, float height) noexcept;
+/// Con `pianoKeyboard`, la curva cede por abajo el alto del teclado de notas
+/// (kPianoKeyboardHeight, de esceq/ui/notes.h) y una separación, y el teclado
+/// va ahí, con el mismo ancho y la misma x que la curva. Sin él, la
+/// disposición es la de antes de la escala de notas, píxel a píxel.
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard = false) noexcept;
 
 /// Barra superior, de izquierda a derecha.
 struct TopBarLayout

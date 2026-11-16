@@ -55,6 +55,51 @@ std::vector<WindowSizeItem> windowSizeItems(std::optional<SizePreset> current);
 /// Tamaño de la entrada `menuId`, o nullopt si no es una de esas entradas.
 std::optional<SizePreset> windowSizeForMenuId(int menuId) noexcept;
 
+/// Título de la sección de la escala de notas.
+inline constexpr const char* kNotesHeading = "Notes";
+
+/// Una entrada que se marca o no.
+struct ToggleItem
+{
+    int menuId = 0; ///< Identificador de la entrada en el menú (> 0).
+    std::string label;
+    bool ticked = false;
+
+    friend bool operator==(const ToggleItem&, const ToggleItem&) = default;
+};
+
+/// Entrada que muestra u oculta el teclado de notas bajo la curva.
+ToggleItem pianoKeyboardItem(bool shown);
+
+/// true si `menuId` es la entrada del teclado de notas.
+bool isPianoKeyboardMenuId(int menuId) noexcept;
+
+/// Título del submenú de la afinación, con la actual: "Tuning: A4 = 440.0 Hz".
+std::string tuningMenuTitle(double a4Hz);
+
+/// Una entrada del submenú de la afinación.
+struct TuningItem
+{
+    int menuId = 0; ///< Identificador de la entrada en el menú (> 0).
+    /// La afinación de la entrada, o nullopt en "Other...", que pide escribirla.
+    std::optional<double> a4Hz;
+    std::string label; ///< "440 Hz (standard)", u "Other (438.5 Hz)..." si es la actual.
+    bool ticked = false;
+
+    // NOLINTNEXTLINE(clang-diagnostic-float-equal)
+    friend bool operator==(const TuningItem&, const TuningItem&) = default;
+};
+
+/// Las afinaciones habituales (415, 432, 440, 442, 443 y 444 Hz) y "Other...",
+/// con `a4Hz` marcada: en su entrada si es una de ellas y, si no, en "Other".
+std::vector<TuningItem> tuningItems(double a4Hz);
+
+/// Afinación de la entrada `menuId`, o nullopt si no es una de las habituales.
+std::optional<double> tuningForMenuId(int menuId) noexcept;
+
+/// true si `menuId` es la entrada "Other...", que pide escribir la afinación.
+bool isCustomTuningMenuId(int menuId) noexcept;
+
 /// Ayuda del botón de opciones, con el algoritmo que suena:
 /// "Options · HF accuracy: Matched".
 std::string optionsTooltip(dsp::FilterAlgorithm current);

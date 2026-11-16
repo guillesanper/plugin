@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <limits>
 #include <locale>
 #include <sstream>
@@ -23,6 +24,8 @@ constexpr std::string_view kUiRange = "ui.range";
 constexpr std::string_view kUiWidth = "ui.width";
 constexpr std::string_view kUiHeight = "ui.height";
 constexpr std::string_view kUiPreset = "ui.preset";
+constexpr std::string_view kUiNotes = "ui.notes";
+constexpr std::string_view kUiA4 = "ui.a4";
 
 constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
 /// kLegacyFilterAlgorithm tal y como se escribe en el estado.
@@ -137,7 +140,18 @@ UiSettings sanitize(UiSettings settings)
     }
 
     settings.presetName = cleanPresetName(settings.presetName);
+    settings.a4Hz = validA4(settings.a4Hz).value_or(defaults.a4Hz);
     return settings;
+}
+
+std::optional<double> validA4(double a4Hz) noexcept
+{
+    if (!std::isfinite(a4Hz))
+        return std::nullopt;
+    const double rounded = std::round(a4Hz * 10.0) / 10.0;
+    if (rounded < kMinA4Hz || rounded > kMaxA4Hz)
+        return std::nullopt;
+    return rounded;
 }
 
 std::string serializePluginState(const PluginState& state)
@@ -158,6 +172,12 @@ std::string serializePluginState(const PluginState& state)
     }
     if (!ui.presetName.empty())
         extra << kUiPreset << ' ' << ui.presetName << '\n';
+    // Las de la escala de notas, solo si no tienen su valor por defecto: un
+    // estado que no las usa se escribe igual que antes de existir.
+    if (ui.pianoKeyboard)
+        extra << kUiNotes << " 1\n";
+    if (ui.a4Hz != kDefaultA4Hz)
+        extra << kUiA4 << ' ' << ui.a4Hz << '\n';
     return out + extra.str();
 }
 
@@ -210,6 +230,11 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
         int number = 0;
         if (entry.key == kUiPreset)
             state.ui.presetName = std::string(entry.value);
+        else if (entry.key == kUiA4)
+        {
+            double a4 = 0.0;
+            state.ui.a4Hz = parseNumber(entry.value, a4) ? a4 : kDefaultA4Hz;
+        }
         else if (!parseNumber(entry.value, number))
             continue;
         else if (entry.key == kFilterAlgorithm)
@@ -222,6 +247,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             state.ui.windowWidth = number;
         else if (entry.key == kUiHeight)
             state.ui.windowHeight = number;
+        else if (entry.key == kUiNotes && (number == 0 || number == 1))
+            state.ui.pianoKeyboard = number == 1;
     }
 
     state.ui = sanitize(std::move(state.ui));

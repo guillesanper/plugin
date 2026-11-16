@@ -86,12 +86,14 @@ Rect floatingLabelRect(Rect area, Point node, float width, float height, float g
 struct NodeReadout
 {
     std::string title;     ///< "Band 3 · Bell" o "Band 3 · Bell · Mid".
-    std::string frequency; ///< "1.20 kHz"
+    std::string frequency; ///< "1.20 kHz"; con la escala de notas, "1.20 kHz · D6 +37 ct".
     std::string gain;      ///< "+3.0 dB"; vacío en los tipos sin ganancia.
     std::string q;         ///< "Q 1.50", o la pendiente en los cortes de 6 dB/oct.
 };
 
-NodeReadout nodeReadout(const core::ParameterValues& values, int band);
+/// Con `a4Hz` (la escala de notas visible, con esa afinación), la frecuencia
+/// lleva detrás la nota más cercana y su desviación (esceq/ui/notes.h).
+NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz = std::nullopt);
 
 /// Ajustes de la banda tal y como suenan ahora, para dibujar su curva: los
 /// que recibe el procesador (core::bandSettings con el algoritmo de filtro de

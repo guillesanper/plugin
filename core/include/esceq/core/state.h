@@ -41,12 +41,29 @@ struct UiSettings
     int windowHeight = 0;
     /// Nombre del preset cargado, o vacío. Solo informativo.
     std::string presetName{};
+    /// Escala de notas (PLAN.md 5.1, ADR 0017): si se muestra el teclado de
+    /// piano bajo la curva. Línea `ui.notes` (0 o 1); solo se escribe encendida.
+    bool pianoKeyboard = false;
+    /// Afinación de la escala de notas: frecuencia del la central (A4), en Hz,
+    /// de kMinA4Hz a kMaxA4Hz en pasos de 0,1. Línea `ui.a4`; solo se escribe
+    /// si no es kDefaultA4Hz. Solo cambia cómo se leen y se escriben las
+    /// frecuencias como notas, nunca el sonido.
+    double a4Hz = 440.0;
 
+    /// Igualdad exacta a propósito: a4Hz está redondeada a 0,1 Hz por sanitize().
+    // NOLINTNEXTLINE(clang-diagnostic-float-equal)
     friend bool operator==(const UiSettings&, const UiSettings&) = default;
 };
 
 inline constexpr int kNumAnalyzerModes = 3;
 inline constexpr int kMaxPresetNameLength = 64;
+inline constexpr double kDefaultA4Hz = 440.0;
+inline constexpr double kMinA4Hz = 400.0;
+inline constexpr double kMaxA4Hz = 480.0;
+
+/// La afinación `a4Hz` redondeada a 0,1 Hz, o nullopt si no es un número
+/// finito o, redondeada, queda fuera de kMinA4Hz..kMaxA4Hz.
+std::optional<double> validA4(double a4Hz) noexcept;
 
 /// Lleva las preferencias a valores válidos: lo que no se entienda toma su
 /// valor por defecto. Los límites del tamaño de ventana son amplios a
@@ -77,6 +94,8 @@ struct PluginState
 ///     ui.width 1180
 ///     ui.height 700
 ///     ui.preset Vocal
+///     ui.notes 1
+///     ui.a4 432
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
 /// independientemente de la configuración regional. `filter_algorithm` (el

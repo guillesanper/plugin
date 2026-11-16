@@ -208,6 +208,21 @@ TEST_CASE("Vista: textos de la etiqueta de un nodo")
     CHECK(readout.q.empty());
 }
 
+TEST_CASE("Vista: con la escala de notas, la etiqueta dice la nota y su desviacion")
+{
+    auto values = core::defaultValues();
+    values[core::bandParameter(2, core::BandParam::Frequency)] = 220.0f;
+    CHECK(nodeReadout(values, 2).frequency == "220 Hz");
+    CHECK(nodeReadout(values, 2, std::nullopt).frequency == "220 Hz");
+    CHECK(nodeReadout(values, 2, 440.0).frequency == "220 Hz \xC2\xB7 A3 +0 ct");
+    CHECK(nodeReadout(values, 2, 432.0).frequency == "220 Hz \xC2\xB7 A3 +32 ct");
+    values[core::bandParameter(2, core::BandParam::Frequency)] = 1200.0f;
+    CHECK(nodeReadout(values, 2, 440.0).frequency == "1.20 kHz \xC2\xB7 D6 +37 ct");
+    // Lo demas no cambia.
+    CHECK(nodeReadout(values, 2, 440.0).title == nodeReadout(values, 2).title);
+    CHECK(nodeReadout(values, 2, 440.0).q == nodeReadout(values, 2).q);
+}
+
 TEST_CASE("Vista: con margen, el nodo fuera de rango queda entero dentro de la vista")
 {
     const CurveMapping m({0.0f, 10.0f, 400.0f, 360.0f}, 18.0);

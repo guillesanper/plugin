@@ -2,6 +2,7 @@
 #include "esceq/ui/control_logic.h"
 
 #include "esceq/dsp/dynamics.h"
+#include "esceq/ui/notes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -94,8 +95,11 @@ std::string editText(const core::ParameterSpec& spec, float value)
     return core::formatValue(spec, value);
 }
 
-std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text)
+std::optional<float> commitText(const core::ParameterSpec& spec, std::string_view text, double a4Hz)
 {
+    if (spec.unit == "Hz")
+        if (const auto midi = parseNote(text))
+            return core::sanitize(spec, static_cast<float>(frequencyForNote(*midi, a4Hz)));
     return core::parseValue(spec, text);
 }
 

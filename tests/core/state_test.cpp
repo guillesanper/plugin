@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <fstream>
+#include <limits>
 #include <sstream>
 #include <string>
 
@@ -323,6 +324,74 @@ TEST_CASE("Estado v2: preferencias absurdas toman el valor por defecto")
     const auto restored = deserializePluginState(serializePluginState(evil));
     REQUIRE(restored.has_value());
     CHECK(restored->parameters == defaultValues());
+}
+
+TEST_CASE("Estado: preferencias de la escala de notas")
+{
+    // Por defecto no se escriben: un estado sin tocarlas es identico al de antes.
+    const auto defaults = serializePluginState(PluginState{});
+    CHECK(defaults.find("ui.notes") == std::string::npos);
+    CHECK(defaults.find("ui.a4") == std::string::npos);
+
+    PluginState state;
+    state.ui.pianoKeyboard = true;
+    state.ui.a4Hz = 432.5;
+    const auto text = serializePluginState(state);
+    CHECK(text.find("\nui.notes 1\n") != std::string::npos);
+    CHECK(text.find("\nui.a4 432.5\n") != std::string::npos);
+    const auto restored = deserializePluginState(text);
+    REQUIRE(restored.has_value());
+    CHECK(*restored == state);
+
+    // Cada una por separado.
+    state.ui.a4Hz = kDefaultA4Hz;
+    CHECK(serializePluginState(state).find("ui.a4") == std::string::npos);
+    state.ui.pianoKeyboard = false;
+    state.ui.a4Hz = 415.0;
+    const auto onlyTuning = serializePluginState(state);
+    CHECK(onlyTuning.find("ui.notes") == std::string::npos);
+    CHECK(deserializePluginState(onlyTuning)->ui.a4Hz == 415.0);
+
+    // Los estados anteriores (que no las tienen) cargan con la franja oculta y A4 = 440 Hz.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt", "v3_classic.txt", "v3_matched.txt"})
+    {
+        INFO(name);
+        const auto old = deserializePluginState(readFixture(name));
+        REQUIRE(old.has_value());
+        CHECK_FALSE(old->ui.pianoKeyboard);
+        CHECK(old->ui.a4Hz == kDefaultA4Hz);
+    }
+
+    // Son preferencias de la version 2 en adelante, sin subir de version (ADR 0009).
+    const auto v2 = deserializePluginState("esceQ-state 2\nui.notes 1\nui.a4 442\n");
+    REQUIRE(v2.has_value());
+    CHECK(v2->ui.pianoKeyboard);
+    CHECK(v2->ui.a4Hz == 442.0);
+}
+
+TEST_CASE("Estado: preferencias de la escala de notas absurdas toman el valor por defecto")
+{
+    for (const char* text : {"esceQ-state 3\nui.notes 7\nui.a4 399.9\n", "esceQ-state 3\nui.notes -1\nui.a4 480.1\n",
+                             "esceQ-state 3\nui.notes abc\nui.a4 abc\n", "esceQ-state 3\nui.notes\nui.a4 nan\n",
+                             "esceQ-state 3\nui.notes 2\nui.a4 inf\n", "esceQ-state 3\nui.a4 -440\n"})
+    {
+        INFO(text);
+        const auto state = deserializePluginState(text);
+        REQUIRE(state.has_value());
+        CHECK(state->ui == UiSettings{});
+    }
+
+    // La afinacion va en pasos de 0,1 Hz.
+    UiSettings ui;
+    ui.a4Hz = 432.25;
+    CHECK(sanitize(ui).a4Hz == 432.3);
+    ui.a4Hz = 479.99;
+    CHECK(sanitize(ui).a4Hz == 480.0);
+    ui.a4Hz = std::numeric_limits<double>::quiet_NaN();
+    CHECK(sanitize(ui).a4Hz == kDefaultA4Hz);
+    const auto stored = deserializePluginState("esceQ-state 3\nui.a4 441.26\n");
+    REQUIRE(stored.has_value());
+    CHECK(stored->ui.a4Hz == 441.3);
 }
 
 TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
