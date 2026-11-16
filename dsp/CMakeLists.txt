@@ -3,6 +3,7 @@
 # Biblioteca DSP: C++20 puro. No puede depender de core/, de JUCE ni de
 # ningún SDK de plugin. Ver docs/arquitectura.md.
 add_library(esceq_dsp STATIC
+    src/auto_gain.cpp
     src/band_filter.cpp
     src/dynamics.cpp
     src/equalizer.cpp

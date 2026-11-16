@@ -59,6 +59,7 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 |---|---|---|
 | `decibels.h` | Conversión entre decibelios y ganancia lineal | Cualquiera |
 | `gain_ramp.h` | Ganancia suavizada sin chasquidos | Audio |
+| `auto_gain.h` | Compensación automática de ganancia: la ganancia que deja igual la sonoridad de ruido rosa (ponderación K) por la curva estática (`autoGainDb`), y su entrega del hilo de control al de audio (`AutoGain`). Ver [docs/dsp/compensacion-de-ganancia.md](dsp/compensacion-de-ganancia.md) | El cálculo, fuera del de audio; la entrega, uno de audio y uno de control |
 | `filter_design.h` | De parámetros de banda a coeficientes, y respuesta en frecuencia exacta para dibujar la curva | Cualquiera |
 | `band_filter.h` | Procesado de audio de una banda (cascada de secciones SVF) | Audio |
 | `dynamics.h` | Curva de ganancia, seguidor de envolvente y filtro del detector de la dinámica | Audio (la curva y el detector, cualquiera) |
