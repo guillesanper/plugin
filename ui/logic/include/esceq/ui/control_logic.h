@@ -73,4 +73,12 @@ std::optional<float> commitText(const core::ParameterSpec& spec, std::string_vie
 /// "Phase mode · no latency".
 std::string phaseModeTooltip(int latencySamples, double sampleRate);
 
+/// Texto del botón de la compensación automática de ganancia: "Auto" si está
+/// apagada; encendida, con la compensación que aplica, con una cifra
+/// decimal: "Auto -2.3 dB", "Auto +1.0 dB" o, si redondea a 0, "Auto 0.0 dB".
+std::string autoGainLabel(bool enabled, double compensationDb);
+
+/// Texto de ayuda del botón de la compensación automática de ganancia.
+std::string autoGainTooltip(bool enabled, double compensationDb);
+
 } // namespace esceq::ui

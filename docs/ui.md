@@ -85,8 +85,8 @@ El arco de valor sale **del centro** en los parámetros bipolares (ganancia, ran
 
 ### Interruptor, selector y desplegable
 
-- `ToggleSwitch`: interruptor (On, Dynamic) o botón que se queda encendido (Bypass). Espacio o Intro lo cambian.
-- `Segmented`: una opción entre unas pocas, todas a la vista (canal de la banda, tamaño de ventana).
+- `ToggleSwitch`: interruptor (On, Dynamic) o botón que se queda encendido (Auto, Bypass). Espacio o Intro lo cambian.
+- `Segmented`: una opción entre unas pocas, todas a la vista (canal de la banda).
 - `Dropdown`: desplegable (tipo, pendiente, fuente del detector, analizador, rango). La rueda cambia de opción.
 
 ## Ventana
@@ -95,7 +95,7 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ marca  presets  deshacer  comparar  analizador  rango  S M L  salida  bypass │  48 px
+│ marca  presets  deshacer  comparar  opciones  fase  analizador  rango  salida  Auto  bypass │  48 px
 ├──────────────────────────────────────────────────────────┬───────────┤
 │                                                          │           │
 │                         curva                            │  medidor  │
@@ -105,22 +105,30 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 └──────────────┴─────────────────┴─────────────────────────────────────┘
 ```
 
-- **Tamaños:** S (1120 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 1120 × 540 y 2400 × 1400. El ancho mínimo es el que necesita la barra superior entera con el navegador de presets en su mínimo ([ADR 0012](decisiones/0012-modos-de-fase.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md)).
+- **Tamaños:** S (1120 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 1120 × 540 y 2400 × 1400. El ancho mínimo es el que necesita la barra superior entera con el navegador de presets en su mínimo ([ADR 0012](decisiones/0012-modos-de-fase.md), [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md) y [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)): en 1120 px el navegador tiene exactamente 140. Los tamaños predefinidos se eligen en el menú de opciones.
 - **Sin textos cortados:** los tests de `tests/ui/layout_test.cpp` recorren los tamaños de ventana y comprueban que ninguna zona ni control se solapa, y que cada celda de potenciómetro tiene ancho para su etiqueta y su valor.
 - **Escalado:** todo es vectorial y se dibuja en píxeles lógicos; el factor de escala (100, 125, 150, 200 %) lo aplican JUCE y el host. Las líneas de 1 px se alinean a píxeles enteros.
 
 ### Barra superior
 
-De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **opciones** (ver más abajo); **modo de fase** (IIR, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; rango de la curva; tamaño de la ventana; ganancia de salida y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
+De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **opciones** (ver más abajo); **modo de fase** (IIR, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; rango de la curva; ganancia de salida; **compensación automática de ganancia** (ver más abajo) y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
 
-### Opciones: precisión en agudos
+### Opciones: precisión en agudos y tamaño de la ventana
 
-El botón con tres deslizadores, entre Compare y el modo de fase, abre el menú de opciones de la instancia. Su única sección, **HF accuracy**, elige el algoritmo de filtro de todas las bandas ([ADR 0013](decisiones/0013-correccion-en-agudos.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md)):
+El botón con tres deslizadores, entre Compare y el modo de fase, abre el menú de opciones de la instancia. Tiene dos secciones. La primera, **HF accuracy**, elige el algoritmo de filtro de todas las bandas ([ADR 0013](decisiones/0013-correccion-en-agudos.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md)):
 
 - **Classic (as in esceQ 0.1):** el de la 0.1. Cerca de Nyquist estrecha campanas y shelves y hunde los cortes de agudos.
 - **Matched (analog-accurate highs):** magnitud ajustada a la del filtro analógico, también cerca de Nyquist.
 
-Está marcado el que suena, y la ayuda del botón lo dice ("Options · HF accuracy: Matched"). Una instancia nueva empieza en Matched; un proyecto guardado antes de la versión 3 del estado abre en Classic y suena igual que entonces. Se guarda con el proyecto, cambiarlo se puede deshacer, y los presets no lo cambian. La curva se dibuja con el algoritmo elegido. Los textos y la correspondencia entre entradas y algoritmos están en `ui/logic` (`options_menu.h`).
+Está marcado el que suena, y la ayuda del botón lo dice ("Options · HF accuracy: Matched"). Una instancia nueva empieza en Matched; un proyecto guardado antes de la versión 3 del estado abre en Classic y suena igual que entonces. Se guarda con el proyecto, cambiarlo se puede deshacer, y los presets no lo cambian. La curva se dibuja con el algoritmo elegido.
+
+La segunda, **Window size**, cambia la ventana a uno de los tamaños predefinidos: *Small (1120 × 580)*, *Medium (1180 × 700)* o *Large (1480 × 860)*, con el actual marcado si la ventana lo tiene exactamente. Estaba en la barra (S, M, L) y pasó aquí para dejar sitio al botón Auto ([ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)).
+
+Los textos y la correspondencia entre entradas y acciones están en `ui/logic` (`options_menu.h`), con tests.
+
+### Compensación automática de ganancia
+
+El botón **Auto**, entre la ganancia de salida y el bypass, enciende y apaga la compensación (`auto_gain`, [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)). Encendido se queda iluminado con el color de acento y dice la compensación que aplica, con una cifra decimal ("Auto -2.3 dB"); apagado dice "Auto". El valor lo calcula la interfaz con la misma función y los mismos ajustes que el procesador (`dsp::autoGainDb`), solo cuando cambian, así que es el que suena aunque el host no esté procesando audio. Mide 92 px: cabe "Auto +12.0 dB". Los textos del botón y de su ayuda están en `ui/logic` (`control_logic.h`).
 
 ### Panel de banda
 

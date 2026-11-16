@@ -6,6 +6,7 @@
 //   --hover N     banda señalada por el ratón: muestra su etiqueta flotante.
 //   --overflow    sube una banda por encima del rango visible.
 //   --bypass      con el bypass activado.
+//   --auto-gain   con la compensación automática de ganancia encendida.
 //   --gallery     en vez del editor, la galería de estados de los controles.
 //   --compare     con otras dos instancias en la sesión ("Bass" y "Keys"), superpuestas
 //                 y con las colisiones marcadas.
@@ -255,14 +256,14 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] "
-                     "[--overflow] [--bypass] [--gallery] [--compare] [--bench N]\n";
+                     "[--overflow] [--bypass] [--auto-gain] [--gallery] [--compare] [--bench N]\n";
         return 2;
     }
 
     int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0;
     std::string desktop;
     float scale = 2.0f;
-    bool overflow = false, bypass = false, gallery = false, compare = false;
+    bool overflow = false, bypass = false, autoGain = false, gallery = false, compare = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -278,6 +279,8 @@ int main(int argc, char** argv)
             overflow = true;
         else if (arg == "--bypass")
             bypass = true;
+        else if (arg == "--auto-gain")
+            autoGain = true;
         else if (arg == "--gallery")
             gallery = true;
         else if (arg == "--compare")
@@ -329,6 +332,8 @@ int main(int argc, char** argv)
     setDynamic(*processor, 5, DynParam::Enabled, 1.0f);
     if (bypass)
         processor->parameter(esceq::core::kBypass).setValueNotifyingHost(1.0f);
+    if (autoGain)
+        processor->parameter(esceq::core::kAutoGain).setValueNotifyingHost(1.0f);
     if (bench > 0)
     {
         // El peor caso: las 24 bandas, todas campanas dinámicas que actúan.

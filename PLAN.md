@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. La compensación automática de ganancia (sección 5.5) está en curso: el cálculo y el procesador están hechos (parámetro `auto_gain`); falta el control de la interfaz. Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También está hecha la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)). Lo siguiente son los tiempos automáticos en la dinámica (sección 5.4). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -191,7 +191,7 @@ Funciones del flujo de trabajo de referencia que esceQ aún no tiene, comprobado
 
 Reglas comunes a todas:
 
-- **Contratos (sección 2.1):** los parámetros nuevos se añaden al final de la tabla, y su valor por defecto deja el sonido como está: un proyecto o preset anterior suena idéntico, bit a bit, sin tocar nada. Las preferencias de la interfaz van en líneas `ui.*` del estado, que sigue en la versión 2 si solo se añaden líneas ([ADR 0009](docs/decisiones/0009-preferencias-deshacer-y-presets.md)).
+- **Contratos (sección 2.1):** los parámetros nuevos se añaden al final de la tabla, y su valor por defecto deja el sonido como está: un proyecto o preset anterior suena idéntico, bit a bit, sin tocar nada. Las preferencias de la interfaz van en líneas `ui.*` del estado, que no sube de versión si solo se añaden líneas ([ADR 0009](docs/decisiones/0009-preferencias-deshacer-y-presets.md)).
 - **Tiempo real (sección 4.5):** lo que corre en el hilo de audio no asigna ni bloquea, y se comprueba con RealtimeSanitizer. Lo que es análisis o diseño corre en la interfaz o en un hilo propio, como el diseño de la fase lineal.
 - **Lógica sin JUCE:** los cálculos (notas, picos, ajuste de bandas, compensación) van en `dsp`, `core` o `ui/logic`, con tests. En `ui/src` solo se pinta.
 - **Deshacer:** cada gesto que cambia varias bandas a la vez (tomar un pico, aplicar una igualación) es una sola acción.
@@ -203,7 +203,7 @@ Reglas comunes a todas:
 | Analizador ampliado | 5.2 | 5 | Ninguno (preferencias) | No |
 | Bandas desde el espectro | 5.3 | 5 | Ninguno | No |
 | Tiempos automáticos en la dinámica | 5.4 | 5 | 24 (uno por banda) | No |
-| Compensación automática de ganancia | 5.5 | 5 | 1 global | No |
+| Compensación automática de ganancia ✅ | 5.5 | 5 | 1 global | No |
 | Igualar a una referencia | 5.6 | 6 | Ninguno (crea bandas normales) | No |
 | Dinámica espectral | 5.7 | 6 | 24 (uno por banda) | Sí, mientras se use |
 | Saturación | 5.8 | 6 | 3 globales | Solo con sobremuestreo en fase lineal |
@@ -317,6 +317,8 @@ Reglas comunes a todas:
 El umbral automático de la sección 4.2 sigue pendiente aparte; se puede diseñar en la misma ADR.
 
 ### 5.5 Compensación automática de ganancia
+
+**Hecha** (noviembre de 2026): [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md) y [docs/dsp/compensacion-de-ganancia.md](docs/dsp/compensacion-de-ganancia.md). Cada criterio de aceptación tiene su test (`tests/dsp/auto_gain_test.cpp` y `tests/plugin/auto_gain_test.cpp`). Lo que cambió respecto a lo previsto, con sus medidas en la ADR: la integral usa una rejilla refinada alrededor de cada banda (una uniforme se equivocaba hasta en 3,8 dB con picos estrechos); el "hilo de control" es el de diseño de la fase lineal generalizado (`core::ControlThread`), con cálculo en el momento al renderizar; y el selector del tamaño de la ventana (S, M, L) pasó al menú de opciones para que el botón quepa en la barra.
 
 **Qué es.** Mantener la sonoridad igual al ecualizar, para comparar con el bypass sin que "más fuerte" parezca "mejor".
 
@@ -477,7 +479,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (5.5), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
+| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
 | **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
 
 ---

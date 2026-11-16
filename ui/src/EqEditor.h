@@ -8,6 +8,8 @@
 #include "OutputMeter.h"
 #include "PresetBar.h"
 
+#include "esceq/core/parameters.h"
+#include "esceq/dsp/filter_design.h"
 #include "esceq/ui/layout.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
@@ -22,8 +24,9 @@ class PluginProcessor;
 namespace esceq::ui {
 
 /// Ventana del plugin: barra superior (presets, deshacer, comparar, opciones,
-/// modo de fase, analizador, rango, tamaño, salida y bypass), curva, medidor
-/// de salida y panel de la banda seleccionada.
+/// modo de fase, analizador, rango, salida, compensación automática de
+/// ganancia y bypass), curva, medidor de salida y panel de la banda
+/// seleccionada.
 /// La disposición sale de esceq/ui/layout.h.
 class EqEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -46,7 +49,8 @@ private:
     void storeUiSettings();
     /// Menú para elegir con qué instancias de la sesión comparar.
     void showCompareMenu();
-    /// Menú de opciones: el algoritmo de filtro ("HF accuracy").
+    /// Menú de opciones: el algoritmo de filtro ("HF accuracy") y el tamaño
+    /// de la ventana ("Window size").
     void showOptionsMenu();
     /// Pone en la ayuda del botón de opciones el algoritmo que suena.
     void updateOptionsTooltip();
@@ -54,6 +58,8 @@ private:
     void updateCompareButton();
     /// Pone en la ayuda del modo de fase la latencia del modo que suena.
     void updatePhaseTooltip();
+    /// Pone en el botón Auto la compensación de la curva actual.
+    void updateAutoGain();
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
@@ -75,8 +81,22 @@ private:
     int shownLatency_ = -1;
     Dropdown analyzer_{"Analyzer"};
     Dropdown range_{"Display range"};
-    Segmented size_;
     ParamControl output_{ParamControl::Style::Bar, "Output"};
+    ToggleSwitch autoGain_{ToggleSwitch::Style::Pill, "Auto", "Auto gain"};
+    /// De lo que depende la compensación que muestra autoGain_: solo se
+    /// recalcula si cambia (tarda de 13 µs a unos ms, ver dsp/auto_gain.h).
+    struct AutoGainInputs
+    {
+        core::ParameterValues values{};
+        dsp::FilterAlgorithm algorithm{};
+        double sampleRate = 0.0;
+        int channels = 0;
+
+        /// Igualdad exacta a propósito: cualquier cambio obliga a recalcular.
+        // NOLINTNEXTLINE(clang-diagnostic-float-equal)
+        friend bool operator==(const AutoGainInputs&, const AutoGainInputs&) = default;
+    };
+    std::optional<AutoGainInputs> autoGainInputs_;
     ToggleSwitch bypass_{ToggleSwitch::Style::Pill, "Bypass", "Bypass"};
 
     int stateRevision_ = 0;

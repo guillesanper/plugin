@@ -6,7 +6,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Añadido
 
-- **Compensación automática de ganancia.** Un interruptor global, parámetro automatizable `auto_gain` ("Auto Gain"), que mantiene la sonoridad igual al ecualizar, para comparar con el bypass sin que "más fuerte" parezca "mejor". La ganancia se calcula a partir de la curva (cuánto cambia la sonoridad de ruido rosa, ponderada como en ITU-R BS.1770) y no midiendo el audio, así que no bombea con la música. Solo compensa la parte estática de las bandas, no la dinámica; con bandas en L, R, M o S, la media de los dos canales. Se limita a ±12 dB, se suma a la ganancia de salida, entra con una rampa sin chasquidos y funciona igual en los cuatro modos de fase; con bypass no actúa. Al renderizar sin tiempo real, cada cambio se aplica en su bloque exacto. Ver la [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md) y [docs/dsp/compensacion-de-ganancia.md](docs/dsp/compensacion-de-ganancia.md).
+- **Compensación automática de ganancia.** Un botón *Auto* en la barra superior, junto a la salida (parámetro automatizable `auto_gain`, "Auto Gain"), que mantiene la sonoridad igual al ecualizar, para comparar con el bypass sin que "más fuerte" parezca "mejor". La ganancia se calcula a partir de la curva (cuánto cambia la sonoridad de ruido rosa, ponderada como en ITU-R BS.1770) y no midiendo el audio, así que no bombea con la música. Solo compensa la parte estática de las bandas, no la dinámica; con bandas en L, R, M o S, la media de los dos canales. Se limita a ±12 dB, se suma a la ganancia de salida, entra con una rampa sin chasquidos y funciona igual en los cuatro modos de fase; con bypass no actúa. Encendido, el botón dice la compensación que aplica ("Auto -2.3 dB"). Al renderizar sin tiempo real, cada cambio se aplica en su bloque exacto. Ver la [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md) y [docs/dsp/compensacion-de-ganancia.md](docs/dsp/compensacion-de-ganancia.md).
 
   **Compatibilidad:** es un parámetro nuevo, al final de la tabla, y el estado sigue en la versión 3. **Está apagada por defecto: los proyectos y presets anteriores la cargan apagada y suenan exactamente igual.** Elegir un preset no la enciende ni la apaga, y los presets no la guardan.
 
@@ -24,6 +24,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Cambiado
 
+- El selector del tamaño de la ventana (S, M, L) sale de la barra superior y pasa al menú de opciones (*Window size*), para dejar sitio al botón *Auto*. Los tamaños son los mismos, y la ventana se sigue pudiendo redimensionar desde la esquina.
 - El ancho mínimo de la ventana pasa de 960 a 1120 px, y el tamaño S, de 960 × 580 a 1120 × 580, para que quepan el selector del modo de fase y el botón de opciones. Una ventana guardada más estrecha abre con el ancho mínimo.
 
 ## [0.1.0] - 2026-11-12

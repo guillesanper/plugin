@@ -47,3 +47,35 @@ TEST_CASE("Opciones: la ayuda dice el algoritmo que suena")
     CHECK(optionsTooltip(dsp::FilterAlgorithm::Matched) == "Options \xC2\xB7 HF accuracy: Matched");
     CHECK(optionsTooltip(dsp::FilterAlgorithm::Classic) == "Options \xC2\xB7 HF accuracy: Classic");
 }
+
+TEST_CASE("Opciones: una entrada por tamano de ventana, con el de la ventana marcado")
+{
+    for (const auto current : {std::optional<SizePreset>{}, std::optional{SizePreset::Small},
+                               std::optional{SizePreset::Medium}, std::optional{SizePreset::Large}})
+    {
+        const auto items = windowSizeItems(current);
+        REQUIRE(items.size() == static_cast<std::size_t>(kNumSizePresets));
+        CHECK(items[0].label == "Small (1120 \xC3\x97 580)");
+        CHECK(items[1].label == "Medium (1180 \xC3\x97 700)");
+        CHECK(items[2].label == "Large (1480 \xC3\x97 860)");
+
+        std::set<int> ids;
+        int ticked = 0;
+        for (const auto& item : items)
+        {
+            CHECK(item.menuId > 0);
+            ids.insert(item.menuId);
+            CHECK(item.ticked == (current == item.preset));
+            ticked += item.ticked ? 1 : 0;
+            CHECK(windowSizeForMenuId(item.menuId) == item.preset);
+            // No se confunden con las de los algoritmos.
+            CHECK_FALSE(filterAlgorithmForMenuId(item.menuId).has_value());
+        }
+        for (const auto& item : filterAlgorithmItems(dsp::FilterAlgorithm::Matched))
+            CHECK_FALSE(windowSizeForMenuId(item.menuId).has_value());
+        CHECK(ids.size() == items.size());
+        CHECK(ticked == (current ? 1 : 0));
+    }
+    for (const int id : {0, -1, 1, 199, 203, 1000})
+        CHECK_FALSE(windowSizeForMenuId(id).has_value());
+}

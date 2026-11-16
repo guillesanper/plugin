@@ -35,7 +35,8 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Cargar o guardar un preset | Nombre del preset en la barra superior; las flechas de los lados pasan al anterior o al siguiente |
 | Elegir el modo de fase | Desplegable de la barra superior (ver abajo); su ayuda dice la latencia |
 | Elegir la precisión en agudos | Botón de opciones (tres deslizadores) de la barra superior → *HF accuracy*: *Classic* o *Matched* (ver abajo). Se puede deshacer |
-| Cambiar el tamaño de la ventana | Botones S, M, L de la barra superior, o arrastrar la esquina |
+| Igualar la sonoridad al comparar con el bypass | Botón *Auto* de la barra superior, junto a la salida: encendido, dice la compensación ("Auto -2.3 dB"; ver abajo) |
+| Cambiar el tamaño de la ventana | Botón de opciones → *Window size*: *Small*, *Medium* o *Large*; o arrastrar la esquina |
 | Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
 Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host.
@@ -61,6 +62,10 @@ Los filtros digitales clásicos se deforman cerca de la mitad de la frecuencia d
 | **Classic** | El de la 0.1 | Los proyectos guardados con versiones anteriores, que así suenan exactamente igual |
 
 Por debajo de unos 2 kHz (a 48 kHz) los dos suenan prácticamente igual. Se guarda con el proyecto, cambiarlo se puede deshacer y los presets no lo cambian. La curva se dibuja siempre con el algoritmo elegido. Detalles en [docs/dsp/filtros.md](docs/dsp/filtros.md).
+
+### Compensación automática de ganancia
+
+Al realzar, todo suena más fuerte, y lo más fuerte parece mejor: comparar con el bypass engaña. Con el botón *Auto* (parámetro automatizable `auto_gain`), esceQ baja o sube la salida lo justo para que la sonoridad no cambie al ecualizar, y el botón dice cuánto ("Auto -2.3 dB"). La compensación sale de la curva, no de medir el audio: es la que deja igual la sonoridad de ruido rosa medida como en ITU-R BS.1770, así que no bombea con la música. Solo compensa la ganancia estática de las bandas, no la dinámica (compensarla anularía su efecto), se limita a ±12 dB, se suma a la ganancia de salida y entra con una rampa sin chasquidos, en cualquier modo de fase. Con el bypass puesto no actúa. Está apagada por defecto y en los proyectos anteriores, y elegir un preset no la cambia. Detalles en [docs/dsp/compensacion-de-ganancia.md](docs/dsp/compensacion-de-ganancia.md).
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
 

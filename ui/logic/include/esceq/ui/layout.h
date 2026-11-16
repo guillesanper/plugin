@@ -65,13 +65,13 @@ struct TopBarLayout
     Rect undo;
     Rect redo;
     Rect compare; ///< Comparar con otras instancias de la sesión (botón con icono).
-    Rect options; ///< Menú de opciones (botón con icono): el algoritmo de filtro.
+    Rect options; ///< Menú de opciones (botón con icono): el algoritmo de filtro y el tamaño de la ventana.
     Rect phase;   ///< Modo de fase.
     Rect analyzer;
     Rect range;
-    Rect size;
     Rect output;      ///< Barra de la ganancia de salida.
     Rect outputValue; ///< Su valor, editable.
+    Rect autoGain;    ///< Compensación automática de ganancia: "Auto -2.3 dB".
     Rect bypass;
 };
 

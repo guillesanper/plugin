@@ -8,6 +8,22 @@ namespace {
 /// Las entradas de los algoritmos van de kFirstAlgorithmId en adelante, en el
 /// orden del enum.
 constexpr int kFirstAlgorithmId = 100;
+/// Y las de los tamaños, de kFirstSizeId en adelante, en el orden de SizePreset.
+constexpr int kFirstSizeId = 200;
+
+const char* sizeName(SizePreset preset)
+{
+    switch (preset)
+    {
+    case SizePreset::Small:
+        return "Small";
+    case SizePreset::Large:
+        return "Large";
+    case SizePreset::Medium:
+        break;
+    }
+    return "Medium";
+}
 
 const char* algorithmName(dsp::FilterAlgorithm algorithm)
 {
@@ -52,6 +68,28 @@ std::optional<dsp::FilterAlgorithm> filterAlgorithmForMenuId(int menuId) noexcep
     if (index < 0 || index >= dsp::kNumFilterAlgorithms)
         return std::nullopt;
     return static_cast<dsp::FilterAlgorithm>(index);
+}
+
+std::vector<WindowSizeItem> windowSizeItems(std::optional<SizePreset> current)
+{
+    std::vector<WindowSizeItem> items;
+    for (int i = 0; i < kNumSizePresets; ++i)
+    {
+        const auto preset = static_cast<SizePreset>(i);
+        const auto size = windowSize(preset);
+        const std::string label = std::string(sizeName(preset)) + " (" + std::to_string(size.width) + " \xC3\x97 " +
+                                  std::to_string(size.height) + ")";
+        items.push_back({kFirstSizeId + i, preset, label, current == preset});
+    }
+    return items;
+}
+
+std::optional<SizePreset> windowSizeForMenuId(int menuId) noexcept
+{
+    const int index = menuId - kFirstSizeId;
+    if (index < 0 || index >= kNumSizePresets)
+        return std::nullopt;
+    return static_cast<SizePreset>(index);
 }
 
 std::string optionsTooltip(dsp::FilterAlgorithm current)

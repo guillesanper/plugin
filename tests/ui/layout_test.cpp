@@ -107,9 +107,9 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"fase", bar.phase},
                              {"analizador", bar.analyzer},
                              {"rango", bar.range},
-                             {"tamano", bar.size},
                              {"salida", bar.output},
                              {"valor de salida", bar.outputValue},
+                             {"compensacion", bar.autoGain},
                              {"bypass", bar.bypass}},
                             editor.topBar);
         CHECK(bar.presets.width >= 140.0f); // sitio para el nombre de un preset
@@ -119,6 +119,11 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
         CHECK(bar.compare.width == bar.compare.height);
         CHECK(bar.options.width == bar.compare.width);
         CHECK(bar.options.height == bar.compare.height);
+        // La compensación, junto al bypass y de su misma altura.
+        CHECK(bar.autoGain.width >= 92.0f);
+        CHECK(bar.autoGain.height == bar.bypass.height);
+        CHECK(bar.autoGain.x > bar.outputValue.x);
+        CHECK(bar.autoGain.x < bar.bypass.x);
     }
 }
 

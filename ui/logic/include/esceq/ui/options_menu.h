@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/dsp/filter_design.h"
+#include "esceq/ui/layout.h"
 
 #include <optional>
 #include <string>
@@ -32,6 +33,27 @@ std::vector<FilterAlgorithmItem> filterAlgorithmItems(dsp::FilterAlgorithm curre
 /// Algoritmo de la entrada `menuId`, o nullopt si no es una de esas entradas
 /// (otra sección, o el menú se cerró sin elegir: 0).
 std::optional<dsp::FilterAlgorithm> filterAlgorithmForMenuId(int menuId) noexcept;
+
+/// Título de la sección del tamaño de la ventana.
+inline constexpr const char* kWindowSizeHeading = "Window size";
+
+/// Una entrada de la sección "Window size": un tamaño predefinido.
+struct WindowSizeItem
+{
+    int menuId = 0; ///< Identificador de la entrada en el menú (> 0).
+    SizePreset preset = SizePreset::Medium;
+    std::string label;   ///< "Medium (1180 × 700)".
+    bool ticked = false; ///< El de la ventana, si coincide exactamente.
+
+    friend bool operator==(const WindowSizeItem&, const WindowSizeItem&) = default;
+};
+
+/// Las entradas de la sección "Window size", una por tamaño y en el orden de
+/// SizePreset, con `current` marcado (ninguno si la ventana tiene otro tamaño).
+std::vector<WindowSizeItem> windowSizeItems(std::optional<SizePreset> current);
+
+/// Tamaño de la entrada `menuId`, o nullopt si no es una de esas entradas.
+std::optional<SizePreset> windowSizeForMenuId(int menuId) noexcept;
 
 /// Ayuda del botón de opciones, con el algoritmo que suena:
 /// "Options · HF accuracy: Matched".

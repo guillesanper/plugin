@@ -123,11 +123,11 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     takeLeft(row, kS4);
 
     layout.bypass = takeRight(row, 76.0f);
+    takeRight(row, kS2);
+    layout.autoGain = takeRight(row, 92.0f); // "Auto -12.0 dB" sin cortarse
     takeRight(row, kS3);
     layout.outputValue = takeRight(row, 60.0f);
     layout.output = takeRight(row, 96.0f);
-    takeRight(row, kS3);
-    layout.size = takeRight(row, 72.0f);
     takeRight(row, kS3);
     layout.range = takeRight(row, 92.0f);
     takeRight(row, kS2);

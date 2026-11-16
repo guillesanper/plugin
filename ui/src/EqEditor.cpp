@@ -6,7 +6,9 @@
 #include "PluginProcessor.h"
 #include "Theme.h"
 
+#include "esceq/core/band_model.h"
 #include "esceq/core/parameters.h"
+#include "esceq/dsp/auto_gain.h"
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/options_menu.h"
 #include "esceq/ui/session_overlay.h"
@@ -26,11 +28,6 @@ juce::Rectangle<int> toInt(const Rect& r)
     return toJuce(r).toNearestInt();
 }
 
-std::vector<Segmented::Option> sizeOptions()
-{
-    return {{"S", "Small window"}, {"M", "Medium window"}, {"L", "Large window"}};
-}
-
 } // namespace
 
 EqEditor::EqEditor(PluginProcessor& owner)
@@ -39,8 +36,7 @@ EqEditor::EqEditor(PluginProcessor& owner)
       curve_(owner),
       meter_(owner),
       panel_(owner),
-      presets_(owner),
-      size_(sizeOptions(), "Window size")
+      presets_(owner)
 {
     setLookAndFeel(&lookAndFeel_);
     setTitle("esceQ");
@@ -77,12 +73,6 @@ EqEditor::EqEditor(PluginProcessor& owner)
     };
     addAndMakeVisible(range_);
 
-    size_.onSelect = [this](int index) {
-        const auto size = windowSize(static_cast<SizePreset>(index));
-        setSize(size.width, size.height);
-    };
-    addAndMakeVisible(size_);
-
     undo_.onClick = [this] { processor_.history().undo(); };
     redo_.onClick = [this] { processor_.history().redo(); };
     undo_.setTooltip("Undo (Ctrl+Z)");
@@ -93,6 +83,10 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     output_.attach(owner.parameter(core::kOutputGain), core::parameters()[core::kOutputGain]);
     addAndMakeVisible(output_);
+
+    autoGain_.attach(owner.parameter(core::kAutoGain));
+    addAndMakeVisible(autoGain_);
+    updateAutoGain();
 
     bypass_.attach(owner.parameter(core::kBypass));
     bypass_.setAccent(colour::warning);
@@ -107,7 +101,7 @@ EqEditor::EqEditor(PluginProcessor& owner)
     int order = 1;
     for (juce::Component* c :
          std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &options_, &phase_, &analyzer_,
-                                                 &range_, &size_, &output_, &bypass_, &curve_, &panel_})
+                                                 &range_, &output_, &autoGain_, &bypass_, &curve_, &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -220,18 +214,14 @@ void EqEditor::resized()
     phase_.setBounds(toInt(topBar_.phase));
     analyzer_.setBounds(toInt(topBar_.analyzer));
     range_.setBounds(toInt(topBar_.range));
-    size_.setBounds(toInt(topBar_.size));
     // La barra y su valor son un solo control; a su izquierda va la etiqueta "OUT".
     output_.setBounds(toInt(topBar_.output).withTrimmedLeft(26).getUnion(toInt(topBar_.outputValue)));
+    autoGain_.setBounds(toInt(topBar_.autoGain));
     bypass_.setBounds(toInt(topBar_.bypass));
 
     curve_.setBounds(toInt(layout_.curve));
     meter_.setBounds(toInt(layout_.meter));
     panel_.setBounds(toInt(layout_.panel));
-
-    // El selector de tamaño marca el preset solo si la ventana lo cumple exactamente.
-    const auto preset = matchingPreset({getWidth(), getHeight()});
-    size_.setSelected(preset ? static_cast<int>(*preset) : -1);
 
     storeUiSettings();
 }
@@ -249,6 +239,7 @@ void EqEditor::timerCallback()
     updateCompareButton(); // la curva quita de la selección las instancias que se van
     updatePhaseTooltip();
     updateOptionsTooltip(); // el algoritmo cambia también al deshacer o al cargar un proyecto
+    updateAutoGain();
     undo_.setEnabled(processor_.history().canUndo());
     redo_.setEnabled(processor_.history().canRedo());
 }
@@ -272,12 +263,32 @@ void EqEditor::updateOptionsTooltip()
     options_.setTooltip(toJuce(optionsTooltip(algorithm)));
 }
 
+void EqEditor::updateAutoGain()
+{
+    const AutoGainInputs inputs{processor_.currentValues(), processor_.filterAlgorithm(),
+                                processor_.currentSampleRate(), processor_.outputChannelCount()};
+    if (inputs == autoGainInputs_)
+        return;
+    autoGainInputs_ = inputs;
+    // La misma función y los mismos ajustes que el procesador: el valor es el
+    // que suena, y se ve aunque el host no esté procesando audio.
+    const bool enabled = inputs.values[core::kAutoGain] >= 0.5f;
+    const double db = enabled ? dsp::autoGainDb(core::allBandSettings(inputs.values, inputs.algorithm),
+                                                inputs.sampleRate, inputs.channels)
+                              : 0.0;
+    autoGain_.setButtonText(toJuce(autoGainLabel(enabled, db)));
+    autoGain_.setTooltip(toJuce(autoGainTooltip(enabled, db)));
+}
+
 void EqEditor::showOptionsMenu()
 {
     juce::PopupMenu menu;
     menu.setLookAndFeel(&getLookAndFeel());
     menu.addSectionHeader(kHfAccuracyHeading);
     for (const auto& item : filterAlgorithmItems(processor_.filterAlgorithm()))
+        menu.addItem(item.menuId, toJuce(item.label), true, item.ticked);
+    menu.addSectionHeader(kWindowSizeHeading);
+    for (const auto& item : windowSizeItems(matchingPreset({getWidth(), getHeight()})))
         menu.addItem(item.menuId, toJuce(item.label), true, item.ticked);
 
     juce::Component::SafePointer<EqEditor> safe(this);
@@ -287,6 +298,11 @@ void EqEditor::showOptionsMenu()
         // Una acción que se puede deshacer, como cualquier cambio de la interfaz.
         if (const auto algorithm = filterAlgorithmForMenuId(result))
             safe->processor_.changeFilterAlgorithm(*algorithm);
+        if (const auto preset = windowSizeForMenuId(result))
+        {
+            const auto size = windowSize(*preset);
+            safe->setSize(size.width, size.height);
+        }
         safe->updateOptionsTooltip();
     });
 }

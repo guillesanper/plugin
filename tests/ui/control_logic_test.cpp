@@ -234,3 +234,20 @@ TEST_CASE("Controles: la ayuda del modo de fase dice la latencia")
     CHECK(phaseModeTooltip(17408, 48000.0) == "Phase mode \xC2\xB7 latency 362.7 ms (17408 samples)");
     CHECK(phaseModeTooltip(4608, 0.0) == "Phase mode \xC2\xB7 no latency");
 }
+
+TEST_CASE("Controles: texto del boton de la compensacion automatica")
+{
+    CHECK(autoGainLabel(false, -2.3) == "Auto");
+    CHECK(autoGainLabel(true, -2.34) == "Auto -2.3 dB");
+    CHECK(autoGainLabel(true, 1.0) == "Auto +1.0 dB");
+    CHECK(autoGainLabel(true, -12.0) == "Auto -12.0 dB");
+    // Lo que redondea a 0 no lleva signo.
+    CHECK(autoGainLabel(true, 0.0) == "Auto 0.0 dB");
+    CHECK(autoGainLabel(true, -0.04) == "Auto 0.0 dB");
+    CHECK(autoGainLabel(true, 0.049) == "Auto 0.0 dB");
+    CHECK(autoGainLabel(true, -0.06) == "Auto -0.1 dB");
+
+    CHECK(autoGainTooltip(true, -2.3).find("-2.3 dB") != std::string::npos);
+    CHECK(autoGainTooltip(false, -2.3).find("off") != std::string::npos);
+    CHECK(autoGainTooltip(false, -2.3).find("dB") == std::string::npos);
+}

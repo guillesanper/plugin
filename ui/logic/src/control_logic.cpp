@@ -31,6 +31,17 @@ float moveNormalized(const core::ParameterSpec& spec, float value, float amount)
     return core::fromNormalized(spec, std::clamp(normalized + amount, 0.0f, 1.0f));
 }
 
+/// "-2.3 dB", "+1.0 dB" o "0.0 dB": lo que redondea a 0 no lleva signo.
+std::string signedDb(double db)
+{
+    const double rounded = std::round(db * 10.0) / 10.0;
+    char text[32];
+    if (rounded == 0.0 || !std::isfinite(rounded))
+        return "0.0 dB";
+    std::snprintf(text, sizeof text, "%+.1f dB", rounded);
+    return text;
+}
+
 } // namespace
 
 float dragNormalized(float normalized, float deltaPixels, bool fine) noexcept
@@ -94,6 +105,19 @@ std::string phaseModeTooltip(int latencySamples, double sampleRate)
     char text[96];
     std::snprintf(text, sizeof text, "Phase mode \xC2\xB7 latency %.1f ms (%d samples)", ms, latencySamples);
     return text;
+}
+
+std::string autoGainLabel(bool enabled, double compensationDb)
+{
+    return enabled ? "Auto " + signedDb(compensationDb) : "Auto";
+}
+
+std::string autoGainTooltip(bool enabled, double compensationDb)
+{
+    if (!enabled)
+        return "Auto gain \xC2\xB7 off: keep the loudness the same as with bypass, to compare at equal loudness";
+    return "Auto gain \xC2\xB7 " + signedDb(compensationDb) +
+           ": keeps the loudness of the curve the same as with bypass (static gain only, for pink noise)";
 }
 
 } // namespace esceq::ui
