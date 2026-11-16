@@ -6,6 +6,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+
 #include <cstdint>
 #include <set>
 #include <sstream>
@@ -236,4 +238,24 @@ TEST_CASE("Presets: el modo de fase no se guarda en el preset")
     const auto text = serializePreset(values);
     CHECK(text.find("phase_mode") == std::string::npos);
     CHECK(text.find("output_gain 3") != std::string::npos);
+}
+
+TEST_CASE("Presets: los tiempos automaticos van en el preset")
+{
+    // Son un ajuste de la banda, como el ataque: un preset los lleva, y uno
+    // que no los lleva (todos los anteriores) los apaga, que es como sonaba.
+    auto values = defaultValues();
+    values[autoTimingParameter(3)] = 1.0f;
+    CHECK(serializePreset(values).find("b04_autotime 1") != std::string::npos);
+    const auto restored = deserializeState(serializePreset(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[autoTimingParameter(3)] == 1.0f);
+
+    auto current = defaultValues();
+    current[autoTimingParameter(3)] = 1.0f;
+    const auto preset = loadFactoryPreset("De-esser");
+    REQUIRE(preset.has_value());
+    CHECK(applyPreset(*preset, current)[autoTimingParameter(3)] == 0.0f);
+    CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), autoTimingParameter(3)) ==
+          kParametersOutsidePresets.end());
 }

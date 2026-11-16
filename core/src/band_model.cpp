@@ -110,6 +110,8 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band, dsp::Fil
     settings.dynamics.releaseMs = dyn(DynParam::Release);
     settings.dynamics.kneeDb = dyn(DynParam::Knee);
     settings.dynamics.external = dyn(DynParam::Source) >= 0.5f;
+    const std::size_t autoTiming = autoTimingParameter(band);
+    settings.dynamics.autoTiming = sanitize(specs[autoTiming], values[autoTiming]) >= 0.5f;
 
     settings.channel = channelModeFromChoice(values[channelParameter(band)]);
     return settings;

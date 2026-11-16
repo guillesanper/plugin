@@ -119,7 +119,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2 + 24);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -162,10 +162,10 @@ TEST_CASE("Parametros: modo de fase, global, tras los canales")
     CHECK(findParameter("phase_mode") == kPhaseMode);
 }
 
-TEST_CASE("Parametros: compensacion automatica de ganancia, la ultima y global")
+TEST_CASE("Parametros: compensacion automatica de ganancia, global, tras el modo de fase")
 {
     const auto& spec = parameters()[kAutoGain];
-    CHECK(kAutoGain == kNumParameters - 1);
+    CHECK(kAutoGain + 1 == autoTimingParameter(0));
     CHECK(spec.id == "auto_gain");
     CHECK(spec.name == "Auto Gain");
     CHECK(spec.kind == ParameterKind::Toggle);
@@ -357,5 +357,22 @@ TEST_CASE("Parametros: redondear el valor no cambia la posicion ni el orden")
             CHECK(value > previous);
             previous = value;
         }
+    }
+}
+
+TEST_CASE("Parametros: tiempos automaticos, uno por banda, los ultimos")
+{
+    CHECK(autoTimingParameter(0) == kAutoGain + 1);
+    CHECK(autoTimingParameter(23) == kNumParameters - 1);
+    CHECK(parameters()[autoTimingParameter(0)].id == "b01_autotime");
+    CHECK(parameters()[autoTimingParameter(23)].id == "b24_autotime");
+    for (int band = 0; band < kNumBands; ++band)
+    {
+        const auto& spec = parameters()[autoTimingParameter(band)];
+        INFO(spec.id);
+        CHECK(spec.name == "Band " + std::to_string(band + 1) + " Auto Timing");
+        CHECK(spec.kind == ParameterKind::Toggle);
+        CHECK(spec.defaultValue == 0.0f); // apagados: lo que hacian los estados anteriores
+        CHECK(findParameter(spec.id) == autoTimingParameter(band));
     }
 }

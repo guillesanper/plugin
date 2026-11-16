@@ -223,6 +223,7 @@ std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values,
                              core::DynParam::Source})
         setDefault(core::dynamicParameter(band, param));
     setDefault(core::channelParameter(band));
+    setDefault(core::autoTimingParameter(band));
 
     // La última: la banda suena ya con sus valores.
     set(core::bandParameter(band, core::BandParam::Enabled), 1.0f);

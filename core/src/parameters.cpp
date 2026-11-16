@@ -114,6 +114,17 @@ struct Table
         // Compensación automática de ganancia (fase 5): al final. Apagada es el
         // comportamiento de los estados anteriores.
         set(kAutoGain, "auto_gain", "Auto Gain", {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
+
+        // Tiempos automáticos de la dinámica (fase 5): al final, uno por banda.
+        // Apagados es el comportamiento de los estados anteriores.
+        for (int band = 0; band < kNumBands; ++band)
+        {
+            char prefix[8];
+            std::snprintf(prefix, sizeof prefix, "b%02d_", band + 1);
+            set(autoTimingParameter(band), std::string(prefix) + "autotime",
+                "Band " + std::to_string(band + 1) + " Auto Timing",
+                {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
+        }
     }
 };
 

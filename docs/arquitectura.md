@@ -114,7 +114,7 @@ Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/sr
 
 ## Parámetros: una sola fuente de verdad
 
-`core::parameters()` es la única lista de parámetros, 340 en total, en este orden:
+`core::parameters()` es la única lista de parámetros, 364 en total, en este orden:
 
 1. 2 globales: `output_gain`, `bypass`.
 2. 6 por cada una de las 24 bandas (`bNN_on`, `bNN_type`, `bNN_freq`, `bNN_gain`, `bNN_q`, `bNN_slope`), con índice `core::bandParameter()`.
@@ -122,6 +122,7 @@ Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/sr
 4. 1 de canal por cada banda (`bNN_chan`), con índice `core::channelParameter()`. Añadido en la fase 4 ([ADR 0007](decisiones/0007-canal-por-banda.md)).
 5. 1 global de modo de fase (`phase_mode`), con índice `core::kPhaseMode`. Añadido en la fase 5 ([ADR 0012](decisiones/0012-modos-de-fase.md)).
 6. 1 global de compensación automática de ganancia (`auto_gain`), con índice `core::kAutoGain`. Añadido en la fase 5 ([ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)).
+7. 1 de tiempos automáticos de la dinámica por cada banda (`bNN_autotime`), con índice `core::autoTimingParameter()`. Añadido en la fase 5 ([ADR 0016](decisiones/0016-tiempos-automaticos-en-la-dinamica.md)).
 
  `plugin/` genera los parámetros del host recorriéndola (incluidos el texto que muestran y la escala logarítmica de frecuencia y Q), y el estado se serializa recorriéndola. Para añadir un parámetro:
 
@@ -192,7 +193,7 @@ entrada ─► cola "pre" ─► ┤                                            
 sidechain (bus opcional) ──────────────────────────────────────────┘
 ```
 
-Cada bloque, el procesador lee los 340 parámetros y, si alguno ha cambiado, los traduce con `core::allBandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de control; con `auto_gain` encendido, pide también la compensación de las bandas a `dsp::AutoGain`. En IIR, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). La rampa de salida (20 ms) aplica `output_gain` más la compensación, si está encendida; apagada, o con la curva plana, la compensación suma exactamente 0 dB. Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida, compensación incluida, vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en IIR; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
+Cada bloque, el procesador lee los 364 parámetros y, si alguno ha cambiado, los traduce con `core::allBandSettings` y `core::phaseModeFromChoice` y se los pasa a `dsp::PhaseEqualizer`, que decide qué suavizar, qué fundir y qué FIR pedir al hilo de control; con `auto_gain` encendido, pide también la compensación de las bandas a `dsp::AutoGain`. En IIR, suena el `Equalizer` IIR, igual que en la 0.1: las bandas desactivadas no consumen CPU, cada banda procesa los dos canales, uno solo, la suma (Mid) o la diferencia (Side), y los detectores de las bandas dinámicas escuchan la entrada del ecualizador o, si así se elige, el bus de sidechain, por el mismo canal que la banda. En fase lineal, la parte estática de las bandas va en un FIR simétrico y la dinámica, en el `Equalizer` en modo solo dinámica, con los detectores y el sidechain retrasados como el audio ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)). La rampa de salida (20 ms) aplica `output_gain` más la compensación, si está encendida; apagada, o con la curva plana, la compensación suma exactamente 0 dB. Con bypass, el ecualizador hace un fundido a la señal seca (retrasada en fase lineal, para que la latencia no cambie) y la ganancia de salida, compensación incluida, vuelve a 0 dB. Mono y estéreo, con el mismo número de canales de entrada y salida; el sidechain puede estar desconectado, ser mono o estéreo. Latencia: 0 en IIR; 1280, 4608 o 17408 muestras a 48 kHz en Low, Medium y High (26,7, 96 y 362,7 ms, los mismos a 96 y 192 kHz).
 
 El búfer que entrega el host contiene los canales de todos los buses: el procesador toma el bus principal con `getBusBuffer` y el sidechain como solo lectura.
 

@@ -361,6 +361,25 @@ TEST_CASE("Estado: los estados anteriores a la compensacion la cargan apagada")
     CHECK((*restored)[kAutoGain] == 1.0f);
 }
 
+TEST_CASE("Estado: los estados anteriores a los tiempos automaticos los cargan apagados")
+{
+    // Si se encendieran solos, la dinamica de un proyecto anterior cambiaria.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt", "v3_classic.txt", "v3_matched.txt"})
+    {
+        INFO(name);
+        const auto state = deserializePluginState(readFixture(name));
+        REQUIRE(state.has_value());
+        for (int band = 0; band < kNumBands; ++band)
+            CHECK(state->parameters[autoTimingParameter(band)] == 0.0f);
+    }
+
+    auto values = defaultValues();
+    values[autoTimingParameter(23)] = 1.0f;
+    const auto restored = deserializeState(serializeState(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[autoTimingParameter(23)] == 1.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Version 3: algoritmo de filtro de la instancia (ADR 0013 y 0014)
 

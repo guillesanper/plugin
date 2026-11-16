@@ -240,6 +240,7 @@ TEST_CASE("Vista: una banda nueva no hereda la dinamica ni el canal de antes")
     values[core::dynamicParameter(band, DynParam::Threshold)] = -50.0f;
     values[core::dynamicParameter(band, DynParam::Source)] = 1.0f;
     values[core::channelParameter(band)] = 4.0f;
+    values[core::autoTimingParameter(band)] = 1.0f;
 
     const auto changes = newBandChanges(values, band, 2500.0, -4.0);
     REQUIRE_FALSE(changes.empty());
@@ -255,6 +256,7 @@ TEST_CASE("Vista: una banda nueva no hereda la dinamica ni el canal de antes")
     CHECK(settings.channel == dsp::ChannelMode::Stereo);
     CHECK_FALSE(settings.dynamics.enabled);
     CHECK_FALSE(settings.dynamics.external);
+    CHECK_FALSE(settings.dynamics.autoTiming);
     for (int i = 0; i < 6; ++i)
         if (i != static_cast<int>(BandParam::Frequency) && i != static_cast<int>(BandParam::Gain) &&
             i != static_cast<int>(BandParam::Enabled))

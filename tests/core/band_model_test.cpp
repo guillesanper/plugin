@@ -143,6 +143,20 @@ TEST_CASE("Modelo: traduce el canal de una banda")
     CHECK(channelModeFromChoice(-1.0f) == dsp::ChannelMode::Stereo);
 }
 
+TEST_CASE("Modelo: traduce los tiempos automaticos de una banda")
+{
+    auto values = defaultValues();
+    CHECK_FALSE(bandSettings(values, 5).dynamics.autoTiming);
+
+    values[autoTimingParameter(5)] = 1.0f;
+    CHECK(bandSettings(values, 5).dynamics.autoTiming);
+    CHECK_FALSE(bandSettings(values, 4).dynamics.autoTiming);
+    CHECK_FALSE(bandSettings(values, 6).dynamics.autoTiming);
+    // Los tiempos fijos se conservan: al apagar vuelven a mandar.
+    CHECK(bandSettings(values, 5).dynamics.attackMs == 5.0);
+    CHECK(bandSettings(values, 5).dynamics.releaseMs == 100.0);
+}
+
 TEST_CASE("Modelo: modo de fase")
 {
     CHECK(phaseModeFromChoice(0.0f) == esceq::dsp::PhaseMode::Iir);

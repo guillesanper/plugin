@@ -84,7 +84,9 @@ enum ParameterIndex : std::size_t
     kPhaseMode = kFirstChannelParameter + static_cast<std::size_t>(kNumBands),
     /// Compensación automática de ganancia (fase 5), global: tras el modo de fase.
     kAutoGain,
-    kNumParameters,
+    /// Tiempos automáticos de la dinámica (fase 5): un interruptor por banda.
+    kFirstAutoTimingParameter,
+    kNumParameters = kFirstAutoTimingParameter + static_cast<std::size_t>(kNumBands),
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
@@ -104,6 +106,13 @@ constexpr std::size_t dynamicParameter(int band, DynParam param) noexcept
 constexpr std::size_t channelParameter(int band) noexcept
 {
     return kFirstChannelParameter + static_cast<std::size_t>(band);
+}
+
+/// Índice en parameters() del interruptor de tiempos automáticos
+/// (`bNN_autotime`) de la banda `band`.
+constexpr std::size_t autoTimingParameter(int band) noexcept
+{
+    return kFirstAutoTimingParameter + static_cast<std::size_t>(band);
 }
 
 /// Tipos de filtro. El índice coincide con dsp::FilterType (lo comprueba band_model.cpp).
