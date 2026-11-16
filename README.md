@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (natural y fase lineal en tres resoluciones), deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -34,6 +34,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Deshacer y rehacer | Flechas de la barra superior, o Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z. Un arrastre es una sola acción |
 | Cargar o guardar un preset | Nombre del preset en la barra superior; las flechas de los lados pasan al anterior o al siguiente |
 | Elegir el modo de fase | Desplegable de la barra superior (ver abajo); su ayuda dice la latencia |
+| Elegir la precisión en agudos | Botón de opciones (tres deslizadores) de la barra superior → *HF accuracy*: *Classic* o *Matched* (ver abajo). Se puede deshacer |
 | Cambiar el tamaño de la ventana | Botones S, M, L de la barra superior, o arrastrar la esquina |
 | Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
@@ -49,6 +50,17 @@ Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96
 | **Linear High** | FIR de 32768 coeficientes | 362,7 ms | Mastering y render: máxima resolución en graves |
 
 En fase lineal todas las frecuencias se retrasan lo mismo y la forma de onda no se deforma; a cambio hay latencia (el host la compensa) y algo de preeco. La curva es la misma en los cuatro modos, y la dinámica funciona en todos. Cambiar de modo silencia la salida un momento. Elegir un preset no cambia el modo. Detalles en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md).
+
+### Precisión en agudos
+
+Los filtros digitales clásicos se deforman cerca de la mitad de la frecuencia de muestreo: a 44,1 o 48 kHz, una campana a 15 kHz sale más estrecha que la de un ecualizador analógico, un shelf de agudos cae antes de tiempo y un corte de agudos se hunde de más. esceQ tiene dos algoritmos de filtro, que se eligen en el menú de opciones (*HF accuracy*):
+
+| Algoritmo | Qué es | Cuándo se usa |
+|---|---|---|
+| **Matched** | La magnitud de cada filtro se ajusta a la del analógico, también cerca de Nyquist. Con bandas entre 1 y 16 kHz a 44,1 kHz, el peor error frente al analógico baja de 10,7 a 1,75 dB en campanas y de 87 a 3,8 dB en cortes de agudos | Por defecto en cada instancia nueva |
+| **Classic** | El de la 0.1 | Los proyectos guardados con versiones anteriores, que así suenan exactamente igual |
+
+Por debajo de unos 2 kHz (a 48 kHz) los dos suenan prácticamente igual. Se guarda con el proyecto, cambiarlo se puede deshacer y los presets no lo cambian. La curva se dibuja siempre con el algoritmo elegido. Detalles en [docs/dsp/filtros.md](docs/dsp/filtros.md).
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
 

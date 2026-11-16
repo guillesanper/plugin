@@ -6,17 +6,21 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Añadido
 
+- **Precisión en agudos: filtros fieles al analógico cerca de Nyquist.** Un algoritmo de filtro nuevo, *Matched* (M. Vicanek), ajusta la magnitud de cada banda a la del filtro analógico. A 44,1 o 48 kHz, las campanas y los shelves en agudos ya no se estrechan ni caen antes de tiempo, y los cortes de agudos no se hunden de más: con bandas entre 1 y 16 kHz a 44,1 kHz, el peor error frente al analógico baja de 10,7 a 1,75 dB en campanas y de 87 a 3,8 dB en cortes de agudos. Se elige por instancia en el nuevo botón de opciones de la barra superior (*HF accuracy*: *Classic* o *Matched*), se guarda con el proyecto y se puede deshacer. Los presets no lo cambian. La curva se dibuja con el algoritmo elegido, y la dinámica y la fase lineal lo usan también. Ver la [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md) y [docs/dsp/filtros.md](docs/dsp/filtros.md).
+
+  **Compatibilidad: el estado guardado pasa a la versión 3** (una línea nueva, `filter_algorithm`; [ADR 0014](docs/decisiones/0014-estado-v3-algoritmo-de-filtro.md)). **Los proyectos guardados con versiones anteriores, incluida la 0.1, abren en *Classic* y suenan exactamente igual que antes;** solo cambian a *Matched* si se elige en el menú. Las instancias nuevas empiezan en *Matched*. Una versión anterior de esceQ abre un proyecto de la versión 3 con todos sus valores, pero suena siempre en *Classic*, el único algoritmo que tiene.
+
 - **Cuatro modos de fase.** Desplegable en la barra superior y parámetro automatizable `phase_mode`:
   - *IIR*: los filtros IIR de siempre, latencia cero. Suena exactamente igual que la 0.1.
   - *Linear Low*, *Linear Medium* y *Linear High*: fase lineal con FIR simétricos de 2048, 8192 y 32768 coeficientes (a 48 kHz), con 26,7, 96 y 362,7 ms de latencia que se comunican al host. Más coeficientes, más resolución en graves.
 
-  La curva es la misma en todos los modos, y la dinámica, el sidechain y el canal por banda (L, R, M, S) funcionan también en fase lineal. Cambiar de modo silencia la salida un momento mientras el host recalcula la compensación de latencia. Al renderizar sin tiempo real, cada cambio de ajustes se aplica en su bloque exacto. Los proyectos anteriores abren en *IIR*. El estado sigue en la versión 2 (un parámetro más), y elegir un preset no cambia el modo de fase. Ver [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md) y la [ADR 0012](docs/decisiones/0012-modos-de-fase.md).
+  La curva es la misma en todos los modos, y la dinámica, el sidechain y el canal por banda (L, R, M, S) funcionan también en fase lineal. Cambiar de modo silencia la salida un momento mientras el host recalcula la compensación de latencia. Al renderizar sin tiempo real, cada cambio de ajustes se aplica en su bloque exacto. Los proyectos anteriores abren en *IIR*. El modo de fase es un parámetro más, sin cambio de formato en el estado, y elegir un preset no lo cambia. Ver [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md) y la [ADR 0012](docs/decisiones/0012-modos-de-fase.md).
 
 - **Comparar con otras pistas y detectar colisiones.** El botón *Compare* de la barra superior superpone el espectro de otras instancias de esceQ del proyecto, con el nombre y el color de su pista, y marca en rojo dónde tapan a la pista actual, con etiquetas como "Bass · 113 Hz". Facilita la ecualización por ranuras: abrir hueco en una pista justo donde suena otra, y ver el efecto al momento. Funciona con las instancias que el host carga en el mismo proceso y del mismo formato (VST3 con VST3, CLAP con CLAP). No cuesta nada mientras no se usa. No cambia el estado guardado, los parámetros ni el sonido.
 
 ### Cambiado
 
-- El ancho mínimo de la ventana pasa de 960 a 1080 px, y el tamaño S, de 960 × 580 a 1080 × 580, para que quepa el selector del modo de fase. Una ventana guardada más estrecha abre con el ancho mínimo.
+- El ancho mínimo de la ventana pasa de 960 a 1120 px, y el tamaño S, de 960 × 580 a 1120 × 580, para que quepan el selector del modo de fase y el botón de opciones. Una ventana guardada más estrecha abre con el ancho mínimo.
 
 ## [0.1.0] - 2026-11-12
 

@@ -34,6 +34,7 @@ add_executable(esceq_tests
     ui/curve_mapping_test.cpp
     ui/layout_test.cpp
     ui/meter_logic_test.cpp
+    ui/options_menu_test.cpp
     ui/session_overlay_test.cpp)
 
 target_compile_definitions(esceq_tests PRIVATE

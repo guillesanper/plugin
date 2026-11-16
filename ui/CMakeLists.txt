@@ -11,6 +11,7 @@ add_library(esceq_ui_logic STATIC
     logic/src/curve_mapping.cpp
     logic/src/layout.cpp
     logic/src/meter_logic.cpp
+    logic/src/options_menu.cpp
     logic/src/session_overlay.cpp)
 
 # Quien use la biblioteca necesita C++20 para sus cabeceras.

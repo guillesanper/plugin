@@ -72,7 +72,7 @@ WindowSize windowSize(SizePreset preset) noexcept
     switch (preset)
     {
     case SizePreset::Small:
-        return {1080, 580};
+        return {1120, 580};
     case SizePreset::Large:
         return {1480, 860};
     case SizePreset::Medium:
@@ -134,6 +134,8 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     layout.analyzer = takeRight(row, 124.0f);
     takeRight(row, kS2);
     layout.phase = takeRight(row, 112.0f); // "Linear Medium" sin estrecharse
+    takeRight(row, kS2);
+    layout.options = takeRight(row, kIconButton);
     takeRight(row, kS2);
     layout.compare = takeRight(row, kIconButton);
     takeRight(row, kS4);

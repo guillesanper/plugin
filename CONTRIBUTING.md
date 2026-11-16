@@ -61,8 +61,8 @@ Cuando cambie el aspecto de la interfaz, regenera las imágenes de la documentac
 S=./build/tools/snapshot/esceq_snapshot_artefacts/Release/esceq_snapshot
 $S docs/img/esceq.png --hover 6
 $S docs/img/ui/controles.png --gallery
-$S docs/img/ui/fuera-de-rango.png 1080 580 --overflow --hover 3 --select 3
-$S docs/img/ui/sin-seleccion.png 1080 580 --select 0
+$S docs/img/ui/fuera-de-rango.png 1120 580 --overflow --hover 3 --select 3
+$S docs/img/ui/sin-seleccion.png 1120 580 --select 0
 $S docs/img/ui/comparar.png 1180 700 --compare --select 0
 ```
 

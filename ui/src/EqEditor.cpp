@@ -8,6 +8,7 @@
 
 #include "esceq/core/parameters.h"
 #include "esceq/ui/control_logic.h"
+#include "esceq/ui/options_menu.h"
 #include "esceq/ui/session_overlay.h"
 
 #include <algorithm>
@@ -60,6 +61,10 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(compare_);
     updateCompareButton();
 
+    options_.onClick = [this] { showOptionsMenu(); };
+    addAndMakeVisible(options_);
+    updateOptionsTooltip();
+
     phase_.attach(owner.parameter(core::kPhaseMode), core::parameters()[core::kPhaseMode]);
     addAndMakeVisible(phase_);
     updatePhaseTooltip();
@@ -100,9 +105,9 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     // Orden de tabulación: barra superior, curva y panel.
     int order = 1;
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &phase_,
-                                                                      &analyzer_, &range_, &size_, &output_, &bypass_,
-                                                                      &curve_, &panel_})
+    for (juce::Component* c :
+         std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &options_, &phase_, &analyzer_,
+                                                 &range_, &size_, &output_, &bypass_, &curve_, &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -211,6 +216,7 @@ void EqEditor::resized()
     undo_.setBounds(toInt(topBar_.undo));
     redo_.setBounds(toInt(topBar_.redo).withTrimmedLeft(-1)); // comparten el borde central
     compare_.setBounds(toInt(topBar_.compare));
+    options_.setBounds(toInt(topBar_.options));
     phase_.setBounds(toInt(topBar_.phase));
     analyzer_.setBounds(toInt(topBar_.analyzer));
     range_.setBounds(toInt(topBar_.range));
@@ -242,6 +248,7 @@ void EqEditor::timerCallback()
     presets_.refresh();
     updateCompareButton(); // la curva quita de la selección las instancias que se van
     updatePhaseTooltip();
+    updateOptionsTooltip(); // el algoritmo cambia también al deshacer o al cargar un proyecto
     undo_.setEnabled(processor_.history().canUndo());
     redo_.setEnabled(processor_.history().canRedo());
 }
@@ -254,6 +261,34 @@ void EqEditor::updatePhaseTooltip()
         return;
     shownLatency_ = latency;
     phase_.setTooltip(toJuce(phaseModeTooltip(latency, processor_.currentSampleRate())));
+}
+
+void EqEditor::updateOptionsTooltip()
+{
+    const auto algorithm = processor_.filterAlgorithm();
+    if (algorithm == shownAlgorithm_)
+        return;
+    shownAlgorithm_ = algorithm;
+    options_.setTooltip(toJuce(optionsTooltip(algorithm)));
+}
+
+void EqEditor::showOptionsMenu()
+{
+    juce::PopupMenu menu;
+    menu.setLookAndFeel(&getLookAndFeel());
+    menu.addSectionHeader(kHfAccuracyHeading);
+    for (const auto& item : filterAlgorithmItems(processor_.filterAlgorithm()))
+        menu.addItem(item.menuId, toJuce(item.label), true, item.ticked);
+
+    juce::Component::SafePointer<EqEditor> safe(this);
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&options_), [safe](int result) {
+        if (safe == nullptr)
+            return;
+        // Una acción que se puede deshacer, como cualquier cambio de la interfaz.
+        if (const auto algorithm = filterAlgorithmForMenuId(result))
+            safe->processor_.changeFilterAlgorithm(*algorithm);
+        safe->updateOptionsTooltip();
+    });
 }
 
 void EqEditor::updateCompareButton()

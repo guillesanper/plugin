@@ -73,7 +73,7 @@ TEST_CASE("Disposicion: tamanos predefinidos dentro de los limites y distintos")
     CHECK_FALSE(matchingPreset({1001, 601}).has_value());
     CHECK(clampWindow({10, 10}) == kMinWindow);
     CHECK(clampWindow({99999, 99999}) == kMaxWindow);
-    CHECK(clampWindow({1100, 99999}) == WindowSize{1100, kMaxWindow.height});
+    CHECK(clampWindow({1200, 99999}) == WindowSize{1200, kMaxWindow.height});
 }
 
 TEST_CASE("Disposicion: las zonas de la ventana no se solapan en ningun tamano")
@@ -103,6 +103,7 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"deshacer", bar.undo},
                              {"rehacer", bar.redo},
                              {"comparar", bar.compare},
+                             {"opciones", bar.options},
                              {"fase", bar.phase},
                              {"analizador", bar.analyzer},
                              {"rango", bar.range},
@@ -116,6 +117,8 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
         // Los botones de icono son cuadrados y del mismo tamaño.
         CHECK(bar.compare.width == bar.undo.width);
         CHECK(bar.compare.width == bar.compare.height);
+        CHECK(bar.options.width == bar.compare.width);
+        CHECK(bar.options.height == bar.compare.height);
     }
 }
 

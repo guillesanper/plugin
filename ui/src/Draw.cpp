@@ -231,6 +231,18 @@ void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, con
         path.cubicTo(c.x + 4.5f, c.y - 1.0f, c.x + 4.5f, c.y + 4.5f, c.x + 7.0f, c.y + 4.5f);
         break;
     }
+    case Icon::Options:
+    {
+        // Tres deslizadores: líneas con su mando en distintas posiciones.
+        for (const auto& [y, knob] : {std::pair{-4.5f, 2.5f}, std::pair{0.0f, -3.0f}, std::pair{4.5f, 0.5f}})
+        {
+            path.startNewSubPath(c.x - 7.0f, c.y + y);
+            path.lineTo(c.x + 7.0f, c.y + y);
+            path.startNewSubPath(c.x + knob, c.y + y - 2.0f);
+            path.lineTo(c.x + knob, c.y + y + 2.0f);
+        }
+        break;
+    }
     case Icon::Undo:
     case Icon::Redo:
     {

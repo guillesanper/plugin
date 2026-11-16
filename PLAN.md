@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal y, adelantada de la fase 6, la detección de colisiones entre instancias. La corrección en agudos va por la mitad: el algoritmo Matched está hecho y probado en `dsp`, y falta guardarlo en el estado y elegirlo desde la interfaz (sección 4.1). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. Lo siguiente es la compensación automática de ganancia (sección 5.5). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -155,7 +155,7 @@ Los hosts exigen una lista de parámetros fija. Se declaran las 24 bandas desde 
 - **Pendientes:** de 6 a 96 dB/oct encadenando secciones de primer y segundo orden (Butterworth para los cortes).
 - **Deformación cerca de Nyquist ("cramping"):** la transformada bilineal estrecha las campanas en agudos. Opciones: coeficientes ajustados a la respuesta analógica (Vicanek, Orfanidis) o sobremuestreo ×2. Empezar sin corrección, medir, y añadir la de Vicanek en la fase 5.
 
-**En curso.** Hecho en `dsp`: el algoritmo Matched (Vicanek, con atenuaciones como inversa del realce, el high shelf a partir del low shelf y los shelves resonantes en dos secciones), junto al Classic de la 0.1, que no cambia ni un bit. Mejora el error frente al analógico de 10,7 a 1,75 dB en campanas a 44,1 kHz y de 87 a 3,8 dB en cortes de agudos. Falta la versión en el estado (versión 3: lo guardado carga en Classic y las instancias nuevas arrancan en Matched, sin que los presets la cambien) y el menú para elegirla. Decisiones en la [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md); derivación y medidas en [docs/dsp/filtros.md](docs/dsp/filtros.md).
+**Hecho (fase 5).** El algoritmo Matched (Vicanek, con atenuaciones como inversa del realce, el high shelf a partir del low shelf y los shelves resonantes en dos secciones), junto al Classic de la 0.1, que no cambia ni un bit. Mejora el error frente al analógico de 10,7 a 1,75 dB en campanas a 44,1 kHz y de 87 a 3,8 dB en cortes de agudos. Cada instancia guarda su algoritmo en el estado, que pasa a la versión 3: lo guardado antes carga en Classic y suena igual, las instancias nuevas arrancan en Matched y los presets no lo cambian. Se elige en el menú de opciones de la barra superior (*HF accuracy*), con deshacer. Decisiones en las ADR [0013](docs/decisiones/0013-correccion-en-agudos.md) y [0014](docs/decisiones/0014-estado-v3-algoritmo-de-filtro.md); derivación y medidas en [docs/dsp/filtros.md](docs/dsp/filtros.md).
 - **Curva dibujada:** se calcula analíticamente a partir de los coeficientes, no midiendo el audio.
 
 ### 4.2 Banda dinámica
@@ -477,7 +477,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos, fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (5.5), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
+| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (5.5), tiempos automáticos en la dinámica (5.4), escala de notas (5.1), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
 | **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
 
 ---
