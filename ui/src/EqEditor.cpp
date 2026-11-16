@@ -10,6 +10,7 @@
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/auto_gain.h"
 #include "esceq/ui/control_logic.h"
+#include "esceq/ui/notes.h"
 #include "esceq/ui/options_menu.h"
 #include "esceq/ui/session_overlay.h"
 
@@ -94,6 +95,8 @@ EqEditor::EqEditor(PluginProcessor& owner)
 
     curve_.onSelectionChanged = [this](int band) { panel_.setBand(band); };
     addAndMakeVisible(curve_);
+    keyboard_.onHoveredNoteChanged = [this](std::optional<int> midi) { curve_.setMarkedNote(midi); };
+    addChildComponent(keyboard_);
     addAndMakeVisible(meter_);
     addAndMakeVisible(panel_);
 
@@ -122,6 +125,7 @@ void EqEditor::applyUiSettings()
 
     analyzer_.setSelectedId(ui.analyzerMode + 1, juce::sendNotificationSync);
     range_.setSelectedId(ui.displayRangeDb, juce::sendNotificationSync);
+    setNoteScale(ui.pianoKeyboard, ui.a4Hz);
 
     const auto size = ui.windowWidth > 0 ? clampWindow({ui.windowWidth, ui.windowHeight}) : windowSize(kDefaultSizePreset);
     setSize(size.width, size.height);
@@ -137,6 +141,8 @@ void EqEditor::storeUiSettings()
     ui.displayRangeDb = range_.getSelectedId();
     ui.windowWidth = getWidth();
     ui.windowHeight = getHeight();
+    ui.pianoKeyboard = showKeyboard_;
+    ui.a4Hz = a4Hz_;
     processor_.setUiSettings(ui);
 }
 
@@ -168,6 +174,9 @@ EqEditor::~EqEditor()
     // Los controles cierran sus gestos al destruirse; esto es la red de
     // seguridad para que el historial nunca se quede esperando uno.
     processor_.history().abandonOpenGestures();
+    // El diálogo de la afinación usa el aspecto del editor, que está a punto de desaparecer.
+    if (tuningDialog_ != nullptr)
+        delete tuningDialog_.getComponent();
     setLookAndFeel(nullptr);
 }
 
@@ -203,7 +212,7 @@ void EqEditor::paint(juce::Graphics& g)
 
 void EqEditor::resized()
 {
-    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()));
+    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()), showKeyboard_);
     topBar_ = topBarLayout(layout_.topBar);
 
     presets_.setBounds(toInt(topBar_.presets));
@@ -220,6 +229,7 @@ void EqEditor::resized()
     bypass_.setBounds(toInt(topBar_.bypass));
 
     curve_.setBounds(toInt(layout_.curve));
+    keyboard_.setBounds(toInt(layout_.keyboard));
     meter_.setBounds(toInt(layout_.meter));
     panel_.setBounds(toInt(layout_.panel));
 
@@ -290,6 +300,13 @@ void EqEditor::showOptionsMenu()
     menu.addSectionHeader(kWindowSizeHeading);
     for (const auto& item : windowSizeItems(matchingPreset({getWidth(), getHeight()})))
         menu.addItem(item.menuId, toJuce(item.label), true, item.ticked);
+    menu.addSectionHeader(kNotesHeading);
+    const auto keyboard = pianoKeyboardItem(showKeyboard_);
+    menu.addItem(keyboard.menuId, toJuce(keyboard.label), true, keyboard.ticked);
+    juce::PopupMenu tuning;
+    for (const auto& item : tuningItems(a4Hz_))
+        tuning.addItem(item.menuId, toJuce(item.label), true, item.ticked);
+    menu.addSubMenu(toJuce(tuningMenuTitle(a4Hz_)), tuning);
 
     juce::Component::SafePointer<EqEditor> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&options_), [safe](int result) {
@@ -303,8 +320,55 @@ void EqEditor::showOptionsMenu()
             const auto size = windowSize(*preset);
             safe->setSize(size.width, size.height);
         }
+        // Preferencias de la interfaz: no son acciones que se deshagan (ADR 0009).
+        if (isPianoKeyboardMenuId(result))
+            safe->setNoteScale(!safe->showKeyboard_, safe->a4Hz_);
+        if (const auto a4 = tuningForMenuId(result))
+            safe->setNoteScale(safe->showKeyboard_, *a4);
+        if (isCustomTuningMenuId(result))
+            safe->showTuningDialog();
         safe->updateOptionsTooltip();
     });
+}
+
+void EqEditor::setNoteScale(bool keyboard, double a4Hz)
+{
+    const bool resize = keyboard != showKeyboard_;
+    showKeyboard_ = keyboard;
+    a4Hz_ = a4Hz;
+    if (!keyboard)
+        keyboard_.setHoveredNote(std::nullopt); // y la curva deja de marcarla
+    keyboard_.setVisible(keyboard);
+    keyboard_.setA4(a4Hz);
+    curve_.setNoteScale(keyboard, a4Hz);
+    panel_.setNoteScale(keyboard, a4Hz);
+    if (resize)
+        resized(); // también guarda las preferencias
+    else
+        storeUiSettings();
+}
+
+void EqEditor::showTuningDialog()
+{
+    // Como los diálogos de los presets: una ventana aparte con el aspecto del editor.
+    if (tuningDialog_ != nullptr)
+        delete tuningDialog_.getComponent();
+    auto* window =
+        new juce::AlertWindow("Tuning", "Frequency of A4, from 400 to 480 Hz:", juce::MessageBoxIconType::NoIcon, this);
+    window->setLookAndFeel(&getLookAndFeel());
+    tuningDialog_ = window;
+    window->addTextEditor("a4", toJuce(tuningText(a4Hz_)));
+    window->addButton("OK", 1, juce::KeyPress(juce::KeyPress::returnKey));
+    window->addButton("Cancel", 0, juce::KeyPress(juce::KeyPress::escapeKey));
+    juce::Component::SafePointer<EqEditor> safe(this);
+    window->enterModalState(true, juce::ModalCallbackFunction::create([safe, window](int result) {
+                                if (safe == nullptr || result != 1)
+                                    return;
+                                // Lo que no se entiende, o se sale del rango, no cambia la afinación.
+                                if (const auto a4 = parseTuning(window->getTextEditorContents("a4").toStdString()))
+                                    safe->setNoteScale(safe->showKeyboard_, *a4);
+                            }),
+                            true);
 }
 
 void EqEditor::updateCompareButton()

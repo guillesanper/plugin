@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/state.h"
 #include "esceq/dsp/spectrum_analyzer.h"
 #include "esceq/ui/curve_mapping.h"
 #include "esceq/ui/meter_logic.h"
@@ -33,12 +34,14 @@ enum class AnalyzerMode
 /// Interacción:
 ///  - Doble clic en un hueco: añade una banda (campana) en ese punto, con el
 ///    resto de ajustes por defecto (sin dinámica, en Stereo).
-///  - Arrastrar un nodo: frecuencia y ganancia. Con Mayús, ajuste fino.
+///  - Arrastrar un nodo: frecuencia y ganancia. Con Mayús, ajuste fino; con
+///    Alt (Option en macOS), la frecuencia salta a la nota temperada más cercana.
 ///  - Rueda sobre un nodo o con una banda seleccionada: Q.
 ///  - Doble clic en un nodo: elimina (desactiva) la banda.
 ///  - Clic derecho en un nodo: menú con el tipo de filtro, el canal, la dinámica y eliminar.
 ///  - Teclado: izquierda y derecha eligen banda; arriba y abajo, su ganancia;
-///    Ctrl/Cmd + izquierda y derecha, su frecuencia; Mayús, ajuste fino; Supr la elimina.
+///    Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono
+///    (con Mayús, en pasos finos); Supr la elimina.
 ///
 /// Al señalar o arrastrar un nodo aparece una etiqueta flotante con su
 /// frecuencia, ganancia y Q. Las bandas dinámicas dibujan la curva que suena
@@ -64,6 +67,15 @@ public:
     /// Banda señalada por el ratón (-1 = ninguna). Lo fija el propio ratón;
     /// es público para la herramienta de capturas.
     void setHoveredBand(int band);
+
+    /// Escala de notas (esceq/ui/notes.h): la afinación, con la que se ajusta
+    /// a semitonos, y si se ve el teclado; entonces la etiqueta flotante dice
+    /// también la nota de la frecuencia.
+    void setNoteScale(bool visible, double a4Hz);
+
+    /// Nota que se marca con una línea vertical (la tecla señalada en el
+    /// teclado de notas), o nullopt.
+    void setMarkedNote(std::optional<int> midi);
 
     void setRangeDb(double rangeDb);
     void setAnalyzerMode(AnalyzerMode mode);
@@ -114,6 +126,7 @@ private:
     void drawCurves(juce::Graphics& g, const CurveMapping& m) const;
     void drawNodes(juce::Graphics& g, const CurveMapping& m) const;
     void drawReadout(juce::Graphics& g, const CurveMapping& m) const;
+    void drawMarkedNote(juce::Graphics& g, const CurveMapping& m) const;
 
     /// Lee la sesión y rehace los espectros superpuestos y las colisiones.
     /// true si hay que repintar.
@@ -135,6 +148,13 @@ private:
     bool draggingGain_ = false;
     bool keyboardFocus_ = false;
     juce::Point<float> dragLast_;
+    /// Frecuencia del arrastre sin ajustar a semitonos: con Alt, la banda
+    /// suena en la nota más cercana a ella, y el ratón no se queda pegado.
+    double dragFrequencyHz_ = 0.0;
+
+    bool notesVisible_ = false;
+    double a4Hz_ = core::kDefaultA4Hz;
+    std::optional<int> markedNote_;
 
     double rangeDb_ = 18.0;
     AnalyzerMode analyzerMode_ = AnalyzerMode::Post;

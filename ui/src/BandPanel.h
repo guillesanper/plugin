@@ -3,6 +3,7 @@
 
 #include "Controls.h"
 
+#include "esceq/core/state.h"
 #include "esceq/ui/layout.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -38,6 +39,11 @@ public:
     /// sin efecto, aviso del sidechain, medidor). La llama el temporizador del editor.
     void refresh();
 
+    /// Escala de notas: la afinación, con la que se entienden las notas
+    /// escritas en la frecuencia, y si se ve el teclado; entonces la etiqueta
+    /// de la frecuencia dice su nota ("A3 +0 ct").
+    void setNoteScale(bool visible, double a4Hz);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -66,6 +72,9 @@ private:
     ParamControl attack_{ParamControl::Style::Knob, "Attack"};
     ParamControl release_{ParamControl::Style::Knob, "Release"};
     ParamControl knee_{ParamControl::Style::Knob, "Knee"};
+
+    bool notesVisible_ = false;
+    double a4Hz_ = core::kDefaultA4Hz;
 
     // Estado que se pinta; se actualiza en refresh().
     juce::String typeName_;

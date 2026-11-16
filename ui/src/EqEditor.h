@@ -6,9 +6,11 @@
 #include "CurveView.h"
 #include "EsceqLookAndFeel.h"
 #include "OutputMeter.h"
+#include "PianoKeyboard.h"
 #include "PresetBar.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/state.h"
 #include "esceq/dsp/filter_design.h"
 #include "esceq/ui/layout.h"
 
@@ -39,6 +41,7 @@ public:
     bool keyPressed(const juce::KeyPress& key) override;
 
     CurveView& curve() noexcept { return curve_; }
+    PianoKeyboard& keyboard() noexcept { return keyboard_; }
 
 private:
     void timerCallback() override;
@@ -49,9 +52,15 @@ private:
     void storeUiSettings();
     /// Menú para elegir con qué instancias de la sesión comparar.
     void showCompareMenu();
-    /// Menú de opciones: el algoritmo de filtro ("HF accuracy") y el tamaño
-    /// de la ventana ("Window size").
+    /// Menú de opciones: el algoritmo de filtro ("HF accuracy"), el tamaño
+    /// de la ventana ("Window size") y la escala de notas ("Notes": el
+    /// teclado y la afinación).
     void showOptionsMenu();
+    /// Pide la afinación escrita a mano ("Other..." en el menú de opciones).
+    void showTuningDialog();
+    /// Muestra u oculta el teclado de notas y cambia la afinación, en la
+    /// curva, el teclado y el panel, y lo guarda en las preferencias.
+    void setNoteScale(bool keyboard, double a4Hz);
     /// Pone en la ayuda del botón de opciones el algoritmo que suena.
     void updateOptionsTooltip();
     /// Pone el botón Compare de acuerdo con la selección del procesador.
@@ -67,6 +76,10 @@ private:
     TopBarLayout topBar_{};
 
     CurveView curve_;
+    PianoKeyboard keyboard_;
+    bool showKeyboard_ = false;
+    double a4Hz_ = core::kDefaultA4Hz;
+    juce::Component::SafePointer<juce::AlertWindow> tuningDialog_; ///< Abierto con "Other...".
     OutputMeter meter_;
     BandPanel panel_;
 

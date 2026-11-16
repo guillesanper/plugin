@@ -6,6 +6,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Añadido
 
+- **Escala de notas.** En el botón de opciones, una sección nueva, *Notes*: *Piano keyboard* muestra bajo la curva un teclado de piano a lo largo del eje de frecuencias (de E0 a D#10, con la octava en cada do); al pasar el ratón por una tecla, la curva marca su frecuencia. Con el teclado visible, la etiqueta de cada nodo dice la nota más cercana y su desviación ("220 Hz · A3 +0 ct"), y la etiqueta del potenciómetro de frecuencia, esa nota. Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana, y en el campo de frecuencia se puede escribir una nota ("A3", "C#2", "Eb4"). La afinación es ajustable (*Tuning*: A4 de 400 a 480 Hz, en pasos de 0,1; 440 por defecto). Ver la [ADR 0017](docs/decisiones/0017-escala-de-notas.md).
+
+  **Compatibilidad:** no hay parámetros nuevos ni cambia el sonido. El teclado y la afinación son preferencias de la interfaz, dos líneas nuevas del estado (`ui.notes`, `ui.a4`) que solo se escriben si no tienen su valor por defecto: el estado sigue en la versión 3, **los proyectos anteriores se cargan igual y se ven igual** (teclado oculto, A4 = 440 Hz), y una versión anterior de esceQ ignora esas líneas. Los presets no las guardan.
+
 - **Tiempos automáticos en la dinámica.** Un interruptor *Auto* en el panel de dinámica de cada banda (parámetro automatizable `bNN_autotime`, "Band N Auto Timing") con el que la banda elige sola su ataque y su relajación según su frecuencia y la señal. El ataque es de dos periodos de la frecuencia de la banda (de 0,5 a 50 ms): en graves la ganancia ya no sigue la forma de onda (con un tono de 80 Hz, 0,15 dB de rizado) y en agudos atrapa las sibilantes (el 90 % de la reducción en 2,5 ms). La relajación depende de la señal: tras un golpe aislado se recupera deprisa (de 23 a 71 ms) y tras una nota larga se suelta despacio, sin bombear. Los tiempos siguen a la frecuencia aunque se automatice, y encenderlos o apagarlos no produce chasquidos. Encendidos, los potenciómetros de ataque y relajación dicen "Auto" y conservan su valor, que vuelve a mandar al apagar. Funciona igual en los cuatro modos de fase y no cuesta CPU extra (con las 24 bandas dinámicas, algo menos que con los tiempos fijos). Ver la [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md) y [docs/dsp/dinamica.md](docs/dsp/dinamica.md).
 
   **Compatibilidad:** son 24 parámetros nuevos, al final de la tabla, y el estado sigue en la versión 3. **Están apagados por defecto: los proyectos y presets anteriores los cargan apagados y suenan exactamente igual** (con el interruptor apagado, la dinámica da las mismas muestras, bit a bit). A diferencia de la compensación automática, los presets sí los guardan, como el ataque o la relajación.
@@ -28,6 +32,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Cambiado
 
+- Ctrl/Cmd + izquierda/derecha en la curva avanza la frecuencia de la banda seleccionada un semitono, hasta la nota siguiente o la anterior (antes, un 1 % del recorrido, unos 1,2 semitonos). Con Mayús sigue el paso fino de siempre.
 - El selector del tamaño de la ventana (S, M, L) sale de la barra superior y pasa al menú de opciones (*Window size*), para dejar sitio al botón *Auto*. Los tamaños son los mismos, y la ventana se sigue pudiendo redimensionar desde la esquina.
 - El ancho mínimo de la ventana pasa de 960 a 1120 px, y el tamaño S, de 960 × 580 a 1120 × 580, para que quepan el selector del modo de fase y el botón de opciones. Una ventana guardada más estrecha abre con el ancho mínimo.
 

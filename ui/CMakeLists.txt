@@ -40,6 +40,8 @@ set(ESCEQ_UI_SOURCES
     ${ESCEQ_UI_DIR}/EsceqLookAndFeel.h
     ${ESCEQ_UI_DIR}/OutputMeter.cpp
     ${ESCEQ_UI_DIR}/OutputMeter.h
+    ${ESCEQ_UI_DIR}/PianoKeyboard.cpp
+    ${ESCEQ_UI_DIR}/PianoKeyboard.h
     ${ESCEQ_UI_DIR}/PresetBar.cpp
     ${ESCEQ_UI_DIR}/PresetBar.h
     ${ESCEQ_UI_DIR}/Theme.cpp

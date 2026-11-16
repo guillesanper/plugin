@@ -118,6 +118,14 @@ void ParamControl::setValueOverride(const juce::String& text)
     repaint();
 }
 
+void ParamControl::setLabel(const juce::String& label)
+{
+    if (label_ == label)
+        return;
+    label_ = label;
+    repaint();
+}
+
 juce::String ParamControl::valueText() const
 {
     if (valueOverride_.isNotEmpty())
@@ -135,7 +143,7 @@ bool ParamControl::setTextFromUser(const juce::String& text)
 {
     if (spec_ == nullptr)
         return false;
-    const auto value = commitText(*spec_, text.toStdString());
+    const auto value = commitText(*spec_, text.toStdString(), a4Hz_);
     if (!value)
         return false;
     setValueFromUser(*value);

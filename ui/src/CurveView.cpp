@@ -8,6 +8,7 @@
 
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/meter_logic.h"
+#include "esceq/ui/notes.h"
 
 #include "esceq/core/band_model.h"
 #include "esceq/dsp/filter_design.h"
@@ -97,6 +98,24 @@ void CurveView::setHoveredBand(int band)
 void CurveView::setRangeDb(double rangeDb)
 {
     rangeDb_ = rangeDb;
+    repaint();
+}
+
+void CurveView::setNoteScale(bool visible, double a4Hz)
+{
+    // Solo cambia cuando el usuario la elige: se repinta siempre.
+    notesVisible_ = visible;
+    a4Hz_ = a4Hz;
+    if (!visible)
+        markedNote_.reset();
+    repaint();
+}
+
+void CurveView::setMarkedNote(std::optional<int> midi)
+{
+    if (midi == markedNote_)
+        return;
+    markedNote_ = midi;
     repaint();
 }
 
@@ -270,6 +289,7 @@ void CurveView::paint(juce::Graphics& g)
         drawGrid(g, m);
         updateCurveCache(m);
         drawCurves(g, m);
+        drawMarkedNote(g, m);
         drawNodes(g, m);
         drawCollisionLabels(g, m);
         drawReadout(g, m);
@@ -734,7 +754,7 @@ void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
     if (!settings.enabled)
         return;
 
-    const auto readout = nodeReadout(values_, band);
+    const auto readout = nodeReadout(values_, band, notesVisible_ ? std::optional(a4Hz_) : std::nullopt);
     const auto titleFont = captionFont();
     const auto valueFont = font(type::body, Weight::Medium, true);
 
@@ -801,6 +821,33 @@ void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
         g.setColour(colour);
         g.drawText(dynamicText, content, juce::Justification::centredLeft, false);
     }
+}
+
+void CurveView::drawMarkedNote(juce::Graphics& g, const CurveMapping& m) const
+{
+    // La tecla señalada en el teclado de notas: su frecuencia y su nombre.
+    if (!markedNote_)
+        return;
+    const double hz = frequencyForNote(*markedNote_, a4Hz_);
+    const auto area = m.area();
+    const float x = std::round(m.xForFrequency(hz));
+    g.setColour(colour::accent.withAlpha(0.8f));
+    g.fillRect(juce::Rectangle<float>(x, area.y, 1.0f, area.height));
+
+    const auto text = toJuce(noteName(*markedNote_)) + juce::String::fromUTF8(" \xC2\xB7 ") +
+                      toJuce(core::formatValue(core::parameters()[core::bandParameter(0, core::BandParam::Frequency)],
+                                               static_cast<float>(hz)));
+    const auto labelFont = font(type::small, Weight::Medium, true);
+    const float width = std::ceil(juce::GlyphArrangement::getStringWidth(labelFont, text)) + 2.0f * space::x2;
+    constexpr float kHeight = 18.0f;
+    // Junto a la línea, a la derecha si cabe, y en lo alto de la curva.
+    const float left = x + space::x1 + width <= area.x + area.width ? x + space::x1 : x - space::x1 - width;
+    const juce::Rectangle<float> box(left, area.y + space::x2, width, kHeight);
+    g.setColour(colour::card.withAlpha(0.92f));
+    g.fillRoundedRectangle(box, radius::small);
+    g.setColour(colour::accent);
+    g.setFont(labelFont);
+    g.drawText(text, box, juce::Justification::centred, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -882,6 +929,7 @@ void CurveView::mouseDown(const juce::MouseEvent& e)
     setSelectedBand(*band);
     dragging_ = *band;
     dragLast_ = e.position;
+    dragFrequencyHz_ = core::bandSettings(values_, *band).filter.frequencyHz;
     draggingGain_ = core::usesGain(core::bandSettings(values_, *band).filter.type);
     beginGesture(dragging_, core::BandParam::Frequency);
     if (draggingGain_)
@@ -901,9 +949,18 @@ void CurveView::mouseDrag(const juce::MouseEvent& e)
     const juce::Point<float> delta = (e.position - dragLast_) * scale;
     dragLast_ = e.position;
 
-    const float x = m.xForFrequency(settings.filter.frequencyHz) + delta.x;
-
-    setParameter(dragging_, core::BandParam::Frequency, static_cast<float>(m.frequencyForX(x)));
+    // Con Alt, la banda va a la nota más cercana a donde estaría sin ajustar.
+    const auto& frequency = core::parameters()[core::bandParameter(dragging_, core::BandParam::Frequency)];
+    dragFrequencyHz_ = std::clamp(m.frequencyForX(m.xForFrequency(dragFrequencyHz_) + delta.x),
+                                  static_cast<double>(frequency.min), static_cast<double>(frequency.max));
+    if (e.mods.isAltDown())
+        setParameter(dragging_, core::BandParam::Frequency,
+                     static_cast<float>(snapToSemitone(dragFrequencyHz_, a4Hz_, frequency.min, frequency.max)));
+    else
+    {
+        setParameter(dragging_, core::BandParam::Frequency, static_cast<float>(dragFrequencyHz_));
+        dragFrequencyHz_ = values_[core::bandParameter(dragging_, core::BandParam::Frequency)];
+    }
     if (draggingGain_)
         setParameter(dragging_, core::BandParam::Gain,
                      static_cast<float>(draggedGain(m, settings.filter.gainDb, delta.y)));
@@ -1004,7 +1061,16 @@ bool CurveView::keyPressed(const juce::KeyPress& key)
     }
     if (left || right)
     {
-        nudge(core::BandParam::Frequency, right ? 1 : -1);
+        // De semitono en semitono; con Mayús, en pasos finos como cualquier valor.
+        if (mods.isShiftDown())
+            nudge(core::BandParam::Frequency, right ? 1 : -1);
+        else
+        {
+            const auto index = core::bandParameter(selected_, core::BandParam::Frequency);
+            const auto& spec = core::parameters()[index];
+            setParameterAsGesture(
+                index, static_cast<float>(stepSemitones(values_[index], a4Hz_, right ? 1 : -1, spec.min, spec.max)));
+        }
         return true;
     }
     return false;

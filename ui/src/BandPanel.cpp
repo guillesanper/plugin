@@ -9,6 +9,7 @@
 #include "esceq/core/parameters.h"
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/meter_logic.h"
+#include "esceq/ui/notes.h"
 
 #include <cmath>
 #include <initializer_list>
@@ -122,6 +123,14 @@ void BandPanel::setBand(int band)
     repaint();
 }
 
+void BandPanel::setNoteScale(bool visible, double a4Hz)
+{
+    notesVisible_ = visible;
+    a4Hz_ = a4Hz;
+    frequency_.setA4(a4Hz);
+    refresh();
+}
+
 void BandPanel::refresh()
 {
     if (band_ < 0)
@@ -155,6 +164,9 @@ void BandPanel::refresh()
             c->setValueOverride(timeText);
     }
     autoTiming_.setTooltip(toJuce(autoTimingTooltip(settings.filter.frequencyHz)));
+    // Con la escala de notas, la etiqueta de la frecuencia dice su nota: en la
+    // línea del valor no cabe junto a él ("1.20 kHz · D6 +37 ct", ADR 0017).
+    frequency_.setLabel(notesVisible_ ? toJuce(noteText(settings.filter.frequencyHz, a4Hz_)) : juce::String("Freq"));
 
     const auto typeName = toJuce(core::parameters()[core::bandParameter(band_, core::BandParam::Type)]
                                      .choices[static_cast<std::size_t>(type)]);

@@ -100,6 +100,7 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 │                                                          │           │
 │                         curva                            │  medidor  │
 │                                                          │  52 px    │
+│ (teclado de notas, 14 px, si está visible)               │           │
 ├──────────────┬─────────────────┬─────────────────────────┴───────────┤
 │ banda        │ EQ              │ dinámica                            │ 168 px
 └──────────────┴─────────────────┴─────────────────────────────────────┘
@@ -113,9 +114,9 @@ Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **opciones** (ver más abajo); **modo de fase** (IIR, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; rango de la curva; ganancia de salida; **compensación automática de ganancia** (ver más abajo) y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px.
 
-### Opciones: precisión en agudos y tamaño de la ventana
+### Opciones: precisión en agudos, tamaño de la ventana y escala de notas
 
-El botón con tres deslizadores, entre Compare y el modo de fase, abre el menú de opciones de la instancia. Tiene dos secciones. La primera, **HF accuracy**, elige el algoritmo de filtro de todas las bandas ([ADR 0013](decisiones/0013-correccion-en-agudos.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md)):
+El botón con tres deslizadores, entre Compare y el modo de fase, abre el menú de opciones de la instancia. Tiene tres secciones. La primera, **HF accuracy**, elige el algoritmo de filtro de todas las bandas ([ADR 0013](decisiones/0013-correccion-en-agudos.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md)):
 
 - **Classic (as in esceQ 0.1):** el de la 0.1. Cerca de Nyquist estrecha campanas y shelves y hunde los cortes de agudos.
 - **Matched (analog-accurate highs):** magnitud ajustada a la del filtro analógico, también cerca de Nyquist.
@@ -123,6 +124,8 @@ El botón con tres deslizadores, entre Compare y el modo de fase, abre el menú 
 Está marcado el que suena, y la ayuda del botón lo dice ("Options · HF accuracy: Matched"). Una instancia nueva empieza en Matched; un proyecto guardado antes de la versión 3 del estado abre en Classic y suena igual que entonces. Se guarda con el proyecto, cambiarlo se puede deshacer, y los presets no lo cambian. La curva se dibuja con el algoritmo elegido.
 
 La segunda, **Window size**, cambia la ventana a uno de los tamaños predefinidos: *Small (1120 × 580)*, *Medium (1180 × 700)* o *Large (1480 × 860)*, con el actual marcado si la ventana lo tiene exactamente. Estaba en la barra (S, M, L) y pasó aquí para dejar sitio al botón Auto ([ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)).
+
+La tercera, **Notes**, es la escala de notas ([ADR 0017](decisiones/0017-escala-de-notas.md)): *Piano keyboard*, marcada si se ve el teclado bajo la curva, y el submenú *Tuning: A4 = 440.0 Hz*, con las afinaciones habituales (415, 432, 440, 442, 443 y 444 Hz) y *Other...*, que abre un diálogo para escribir cualquiera de 400 a 480 Hz en pasos de 0,1. Las dos cosas se guardan con el proyecto (`ui.notes`, `ui.a4`), no con los presets, y no se deshacen: son preferencias de la interfaz.
 
 Los textos y la correspondencia entre entradas y acciones están en `ui/logic` (`options_menu.h`), con tests.
 
@@ -134,6 +137,8 @@ El botón **Auto**, entre la ganancia de salida y el bypass, enciende y apaga la
 
 Tres tarjetas: **banda** (color y número, activación, tipo, pendiente y canal), **EQ** (frecuencia, ganancia y Q) y **dinámica** (activación, fuente del detector con su aviso debajo, el interruptor *Auto* de los tiempos automáticos, umbral, rango, ataque, relajación, rodilla y un medidor de la ganancia dinámica). Los controles que no influyen con el tipo de filtro actual se desactivan; los de la dinámica apagada se atenúan pero se pueden editar. Con *Auto* encendido, el ataque y la relajación se atenúan y dicen "Auto" (también al lector de pantalla): conservan su valor, se pueden editar y vuelven a mandar al apagarlo. La ayuda del interruptor dice los tiempos que corresponden a la frecuencia de la banda ("attack 2.00 ms, release 20.0 ms (200 ms after long notes)", `autoTimingTooltip`; [ADR 0016](decisiones/0016-tiempos-automaticos-en-la-dinamica.md)).
 
+Con el teclado de notas visible, la etiqueta del potenciómetro de frecuencia dice la nota de la banda en lugar de "FREQ" ("A3 +0 CT"): junto al valor no cabe en los tamaños S y M. En el campo de frecuencia se puede escribir una nota ("A3", "C#2", "Eb4", con `#`/`♯` o `b`/`♭`), que suena a su frecuencia con la afinación elegida.
+
 Sin banda seleccionada, el panel muestra los gestos de la curva:
 
 ![Sin banda seleccionada](img/ui/sin-seleccion.png)
@@ -144,9 +149,16 @@ Sin banda seleccionada, el panel muestra los gestos de la curva:
 - **Etiqueta flotante:** al señalar o arrastrar un nodo, muestra la banda, su tipo, y frecuencia, ganancia y Q; en las bandas dinámicas, también la ganancia dinámica del momento. Se coloca sobre el nodo, o debajo si arriba no cabe, y nunca se sale de la curva (`floatingLabelRect`).
 - **Canal:** una insignia con la letra (L, R, M, S) en las bandas que no son estéreo.
 - **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba).
+- **Escala de notas:** con el teclado visible, la etiqueta flotante añade a la frecuencia la nota más cercana y su desviación ("220 Hz · A3 +0 ct"). Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana a donde estaría sin ajustar, así que el nodo no se queda pegado; vale con el teclado oculto también.
 - **Fuera de rango:** si la ganancia de una banda no cabe en el rango visible, el nodo se queda junto al borde con una flecha que indica hacia dónde sigue.
 
 ![Banda fuera del rango visible, en el tamaño mínimo](img/ui/fuera-de-rango.png)
+
+### Teclado de notas
+
+Una franja de 14 px bajo la curva, con su misma x y su mismo ancho; la curva cede 18 px de alto y lo demás no se mueve (sin el teclado, la disposición es la de antes, píxel a píxel: lo comprueba `tests/ui/layout_test.cpp`). Las teclas siguen el eje logarítmico, así que cada semitono mide lo mismo: las negras ocupan su semitono y el 60 % del alto; las blancas, además, la mitad de cada negra vecina, por debajo. Van de E0 (20,6 Hz) a D#10 (19,9 kHz) con A4 = 440 Hz, y cada do lleva su octava donde cabe (de C1 a C9; C10, junto al borde, en ventanas anchas como L). Al pasar el ratón, la tecla se ilumina con el color de acento y la curva dibuja su frecuencia como una línea vertical con su nombre ("A3 · 220 Hz"). Las teclas y la tecla bajo el ratón se calculan en `esceq/ui/notes.h`; `PianoKeyboard` solo pinta, y solo se repinta al cambiar la tecla señalada, la afinación o el tamaño.
+
+![Escala de notas, en el tamaño mínimo](img/ui/notas.png)
 
 ### Comparar con otras pistas
 
@@ -177,13 +189,16 @@ Cuánto cuesta, medido con `esceq_snapshot --bench` (ver [CONTRIBUTING.md](../CO
 | L (1480 × 860), escala 1 | 16–18 ms | 12,5–13,5 ms |
 | Máxima (2400 × 1400), escala 2 | 75–81 ms | 67–74 ms |
 
+Con el teclado de notas visible, la misma medida (L, escala 1, dos tandas) da una mediana de 12,6–13,0 ms frente a 12,5–12,6 ms sin él: dentro del ruido, con una curva 18 px más baja. El teclado no se repinta en el arrastre (solo al cambiar la tecla señalada, la afinación o el tamaño), y la línea de la tecla señalada es un rectángulo y una etiqueta.
+
 Lo que queda es casi todo rasterizar los rellenos y los trazos (más del 60 % del tiempo a escala 1, más a escala 2): reducirlo exige dibujar otra cosa. En Windows (Direct2D, el renderizador por defecto de JUCE 9) y en macOS (CoreGraphics) la rasterización la hace el sistema; ahí no se ha medido.
 
 ## Accesibilidad
 
 - Todos los controles tienen nombre y rol para los lectores de pantalla; los potenciómetros exponen su rango, su valor y su valor como texto ("1.20 kHz").
 - Tabulador recorre la barra superior, la curva y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
-- En la curva: izquierda y derecha eligen banda; arriba y abajo cambian su ganancia; Ctrl/Cmd + izquierda y derecha, su frecuencia; Mayús, ajuste fino; Supr la elimina.
+- En la curva: izquierda y derecha eligen banda; arriba y abajo cambian su ganancia; Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono (con Mayús, en pasos finos); Mayús, ajuste fino; Supr la elimina.
+- El teclado de notas no recibe el foco: es una referencia visual, y la nota se lee en la etiqueta y se escribe en el campo de frecuencia.
 - Limitación: los nodos no son elementos accesibles individuales.
 
 ## Antes y después

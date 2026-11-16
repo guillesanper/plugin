@@ -8,6 +8,8 @@
 //   --bypass      con el bypass activado.
 //   --auto-gain   con la compensación automática de ganancia encendida.
 //   --auto-timing con los tiempos automáticos en la banda dinámica (la 6).
+//   --notes       con el teclado de la escala de notas bajo la curva.
+//   --key N       con el teclado, la tecla de la nota N (MIDI, 69 = A4) señalada.
 //   --gallery     en vez del editor, la galería de estados de los controles.
 //   --compare     con otras dos instancias en la sesión ("Bass" y "Keys"), superpuestas
 //                 y con las colisiones marcadas.
@@ -256,15 +258,16 @@ int main(int argc, char** argv)
 {
     if (argc < 2)
     {
-        std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] "
-                     "[--overflow] [--bypass] [--auto-gain] [--auto-timing] [--gallery] [--compare] [--bench N]\n";
+        std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
+                     "[--bypass] [--auto-gain] [--auto-timing] [--notes] [--key N] [--gallery] [--compare] [--bench N]\n";
         return 2;
     }
 
-    int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0;
+    int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0, key = -1;
     std::string desktop;
     float scale = 2.0f;
-    bool overflow = false, bypass = false, autoGain = false, autoTiming = false, gallery = false, compare = false;
+    bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
+         compare = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -284,6 +287,13 @@ int main(int argc, char** argv)
             autoGain = true;
         else if (arg == "--auto-timing")
             autoTiming = true;
+        else if (arg == "--notes")
+            notes = true;
+        else if (arg == "--key")
+        {
+            notes = true;
+            key = std::atoi(next());
+        }
         else if (arg == "--gallery")
             gallery = true;
         else if (arg == "--compare")
@@ -417,6 +427,12 @@ int main(int argc, char** argv)
         }
     };
 
+    if (notes)
+    {
+        auto ui = processor->uiSettings();
+        ui.pianoKeyboard = true;
+        processor->setUiSettings(ui);
+    }
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor->createEditor());
     if (width > 0 && height > 0)
         editor->setSize(width, height);
@@ -434,6 +450,8 @@ int main(int argc, char** argv)
         juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
     }
     curve.setHoveredBand(hover - 1);
+    if (key >= 0)
+        static_cast<esceq::ui::EqEditor&>(*editor).keyboard().setHoveredNote(key);
 
     if (bench > 0)
     {

@@ -4,6 +4,7 @@
 #include "Draw.h"
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/state.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -55,6 +56,14 @@ public:
     /// mostrar el valor. El parámetro no cambia y se puede seguir editando.
     void setValueOverride(const juce::String& text);
 
+    /// Cambia la etiqueta que se ve sobre el potenciómetro (por ejemplo, la
+    /// nota de la frecuencia). El nombre accesible sigue siendo el del parámetro.
+    void setLabel(const juce::String& label);
+
+    /// Afinación (la del A4, en Hz) con la que se entiende una nota escrita
+    /// en un parámetro en Hz ("A3"), ver esceq/ui/notes.h.
+    void setA4(double a4Hz) noexcept { a4Hz_ = a4Hz; }
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void enablementChanged() override { repaint(); }
@@ -91,6 +100,7 @@ private:
     juce::Colour accent_ = theme::colour::accent;
     bool dimmed_ = false;
     juce::String valueOverride_;
+    double a4Hz_ = core::kDefaultA4Hz;
 
     const core::ParameterSpec* spec_ = nullptr;
     std::unique_ptr<juce::ParameterAttachment> attachment_;

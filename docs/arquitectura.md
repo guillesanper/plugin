@@ -103,11 +103,12 @@ El diseño (`designBand`) y el procesado (`BandFilter`) están separados a prop�
 
 | Cabecera | Qué ofrece |
 |---|---|
-| `curve_mapping.h` | Frecuencia y ganancia ↔ píxeles, posición y selección de nodos, rejillas, etiqueta flotante, indicador de ganancia fuera de rango, valores de una banda nueva, navegación con el teclado y Q con la rueda |
-| `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto; textos de ayuda del modo de fase y del botón de la compensación automática de ganancia; texto y ayuda de los tiempos automáticos de la dinámica |
+| `notes.h` | Escala de notas: frecuencia ↔ nota temperada con una afinación dada, desviación en cents, ajuste a semitonos, notas y afinación escritas como texto, y las teclas del teclado de piano en el eje de la curva ([ADR 0017](decisiones/0017-escala-de-notas.md)) |
+| `curve_mapping.h` | Frecuencia y ganancia ↔ píxeles, posición y selección de nodos, rejillas, etiqueta flotante (con la nota, si se ve la escala de notas), indicador de ganancia fuera de rango, valores de una banda nueva, navegación con el teclado y Q con la rueda |
+| `control_logic.h` | De arrastre, rueda y teclas a valor; ajuste fino; arco de valor; edición del valor como texto (en Hz, también una nota); textos de ayuda del modo de fase y del botón de la compensación automática de ganancia; texto y ayuda de los tiempos automáticos de la dinámica |
 | `meter_logic.h` | Escala y balística del medidor de salida; balística del analizador; fracción del medidor de dinámica |
-| `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control |
-| `options_menu.h` | Menú de opciones: entradas de la precisión en agudos y del tamaño de la ventana, qué marca y qué hace cada una |
+| `layout.h` | Tamaños de ventana (S, M, L y límites) y posición de cada zona y control, con el teclado de notas o sin él |
+| `options_menu.h` | Menú de opciones: entradas de la precisión en agudos, del tamaño de la ventana y de la escala de notas (teclado y afinación), qué marca y qué hace cada una |
 | `session_overlay.h` | Comparación con otras instancias: entradas del menú, colisiones con varias a la vez y colocación de sus etiquetas |
 
 Nada de esto depende de JUCE ni de una ventana: se testea en `tests/ui/`. `ui/src` solo pinta y traduce gestos ([ADR 0008](decisiones/0008-sistema-visual.md), [ui.md](ui.md)).
@@ -147,9 +148,11 @@ ui.range 18
 ui.width 1180
 ui.height 700
 ui.preset Vocal
+ui.notes 1
+ui.a4 432
 ```
 
-Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Los estados de versiones anteriores se migran paso a paso (`migrate1to2`, `migrate2to3`): los anteriores a la 3 cargan en Classic, el algoritmo de la 0.1, y suenan bit a bit igual; una instancia nueva usa Matched. Al subir `kStateVersion` se añade una migración en `core/src/state.cpp` y un fixture nuevo; los fixtures antiguos no se tocan. Un preset es este mismo formato con solo parámetros: no lleva el algoritmo, y cargarlo no lo cambia. Ver [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md).
+`ui.notes` (teclado de la escala de notas) y `ui.a4` (afinación, en Hz) solo se escriben si no tienen su valor por defecto (oculto, 440 Hz), así que un proyecto que no los usa se guarda igual que antes ([ADR 0017](decisiones/0017-escala-de-notas.md)). Reglas de lectura: lo ausente toma el valor por defecto, lo desconocido se ignora, lo inválido se sanea, y una cabecera incorrecta hace que se conserve el estado actual. Los estados de versiones anteriores se migran paso a paso (`migrate1to2`, `migrate2to3`): los anteriores a la 3 cargan en Classic, el algoritmo de la 0.1, y suenan bit a bit igual; una instancia nueva usa Matched. Al subir `kStateVersion` se añade una migración en `core/src/state.cpp` y un fixture nuevo; los fixtures antiguos no se tocan. Un preset es este mismo formato con solo parámetros: no lleva el algoritmo, y cargarlo no lo cambia. Ver [ADR 0003](decisiones/0003-formato-de-estado.md), [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) y [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md).
 
 ## Deshacer, rehacer y presets
 
