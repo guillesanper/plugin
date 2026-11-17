@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)) los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)) y la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)). Lo siguiente es el analizador ampliado (sección 5.2). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 4 completadas; fase 5 en curso.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)) y el analizador ampliado (sección 5.2, [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)). Lo siguiente son las bandas desde el espectro (sección 5.3). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -200,7 +200,7 @@ Reglas comunes a todas:
 | Función | Sección | Fase | Parámetros nuevos | Latencia |
 |---|---|---|---|---|
 | Escala de notas ✅ | 5.1 | 5 | Ninguno (preferencias) | No |
-| Analizador ampliado | 5.2 | 5 | Ninguno (preferencias) | No |
+| Analizador ampliado ✅ | 5.2 | 5 | Ninguno (preferencias) | No |
 | Bandas desde el espectro | 5.3 | 5 | Ninguno | No |
 | Tiempos automáticos en la dinámica ✅ | 5.4 | 5 | 24 (uno por banda) | No |
 | Compensación automática de ganancia ✅ | 5.5 | 5 | 1 global | No |
@@ -236,6 +236,8 @@ Reglas comunes a todas:
 - Con la franja oculta la disposición es la de ahora, píxel a píxel (test de `layout`).
 
 ### 5.2 Analizador ampliado
+
+**Hecho** (noviembre de 2026): [ADR 0018](docs/decisiones/0018-analizador-ampliado.md). Cada criterio de aceptación tiene su test (`tests/ui/layout_test.cpp`, `tests/ui/options_menu_test.cpp`, `tests/ui/meter_logic_test.cpp`, `tests/ui/curve_mapping_test.cpp` y `tests/core/state_test.cpp`), salvo el de coste, que se ha medido. Lo que cambió respecto a lo previsto, con sus motivos y medidas en la ADR: los ajustes del analizador van en el menú de opciones (sección *Analyzer*) y no en un menú propio junto al selector, porque en la barra solo cabía un botón, el de ampliar, y eso estrechando el rango (de 92 a 72 px) y el bypass (de 76 a 64) sin tocar la ventana mínima; la etiqueta con el canal y la dinámica aparece al señalar o arrastrar un nodo, no fija sobre el seleccionado, que tapaba los nodos vecinos; los picos se mantienen solo del espectro post; y con 16384 puntos no hace falta bajar el ritmo (0,36 ms por espectro). Las cuatro preferencias solo se escriben si no son las de por defecto, así que un proyecto que no las usa se guarda igual que antes. El coste de pintar la vista ampliada a 2400 × 1400 se ha medido con el renderizador por software de JUCE en Linux (20,6–21,3 ms, frente a 17,6–21,3 de la vista normal); falta medirlo en el portátil de referencia, que es donde se fija el límite de 4 ms.
 
 **Qué es.** La curva y el analizador ocupan toda la ventana del plugin, para trabajar el espectro con detalle. No es pantalla completa del sistema: dentro de un host no es fiable (FL Studio gestiona sus propias ventanas). Combinado con el tamaño L o con arrastrar la esquina, ocupa lo que el usuario quiera.
 
@@ -483,7 +485,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **2. EQ estático** ✅ | 24 bandas (adelantadas de la fase 4, ver ADR 0005), parámetros, estado, interfaz con curva y nodos arrastrables, analizador | Se puede mezclar una pista real con él | 4 a 6 semanas |
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
-| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (hechos, ver [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), escala de notas (hecha, ver [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), analizador ampliado (5.2), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
+| **5. Calidad** | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (hechos, ver [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), escala de notas (hecha, ver [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), analizador ampliado (hecho, ver [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)), bandas desde el espectro (5.3), optimización SIMD, macOS y Linux | Versión 0.5 | 8 a 12 semanas |
 | **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
 
 ---

@@ -243,6 +243,23 @@ void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, con
         }
         break;
     }
+    case Icon::Expand:
+    {
+        // Cuatro esquinas: hacia fuera para ampliar; encendido, hacia dentro para volver.
+        constexpr float kOuter = 6.5f;
+        constexpr float kInner = 2.0f;
+        constexpr float kArm = 3.5f;
+        for (const float sx : {-1.0f, 1.0f})
+            for (const float sy : {-1.0f, 1.0f})
+            {
+                const juce::Point<float> corner{c.x + sx * (on ? kInner : kOuter), c.y + sy * (on ? kInner : kOuter)};
+                const float toward = on ? 1.0f : -1.0f; // hacia fuera del centro (volver) o hacia él (ampliar)
+                path.startNewSubPath(corner.x + toward * sx * kArm, corner.y);
+                path.lineTo(corner);
+                path.lineTo(corner.x, corner.y + toward * sy * kArm);
+            }
+        break;
+    }
     case Icon::Undo:
     case Icon::Redo:
     {

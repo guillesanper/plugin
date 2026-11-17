@@ -41,7 +41,10 @@ enum class AnalyzerMode
 ///  - Clic derecho en un nodo: menú con el tipo de filtro, el canal, la dinámica y eliminar.
 ///  - Teclado: izquierda y derecha eligen banda; arriba y abajo, su ganancia;
 ///    Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono
-///    (con Mayús, en pasos finos); Supr la elimina.
+///    (con Mayús, en pasos finos); Supr la elimina. F amplía o reduce la vista
+///    (onExpandToggled) y Esc, en la vista ampliada, vuelve.
+///  - Clic en la escala de ganancia (a la derecha): borra los picos mantenidos
+///    del analizador.
 ///
 /// Al señalar o arrastrar un nodo aparece una etiqueta flotante con su
 /// frecuencia, ganancia y Q. Las bandas dinámicas dibujan la curva que suena
@@ -79,6 +82,19 @@ public:
 
     void setRangeDb(double rangeDb);
     void setAnalyzerMode(AnalyzerMode mode);
+
+    /// Ajustes del analizador (esceq/ui/meter_logic.h). Cambiar la resolución
+    /// rehace los analizadores (asigna memoria: solo en el hilo de la
+    /// interfaz); cambiar la resolución o la inclinación borra los picos.
+    void setAnalyzerView(const AnalyzerView& view);
+    const AnalyzerView& analyzerView() const noexcept { return analyzerView_; }
+
+    /// Vista ampliada (PLAN.md 5.2): la etiqueta flotante dice también el
+    /// canal y la dinámica de la banda, porque no se ve el panel.
+    void setExpanded(bool expanded);
+
+    /// Se llama al pulsar F, o Esc en la vista ampliada, con el foco en la curva.
+    std::function<void()> onExpandToggled;
 
     /// Lee parámetros y audio nuevo, y repinta si algo ha cambiado. La llama el temporizador del editor.
     void refresh();
@@ -127,6 +143,8 @@ private:
     void drawNodes(juce::Graphics& g, const CurveMapping& m) const;
     void drawReadout(juce::Graphics& g, const CurveMapping& m) const;
     void drawMarkedNote(juce::Graphics& g, const CurveMapping& m) const;
+    /// Aviso de que el analizador está congelado, arriba a la izquierda.
+    void drawFrozen(juce::Graphics& g, const CurveMapping& m) const;
 
     /// Lee la sesión y rehace los espectros superpuestos y las colisiones.
     /// true si hay que repintar.
@@ -159,11 +177,15 @@ private:
     double rangeDb_ = 18.0;
     AnalyzerMode analyzerMode_ = AnalyzerMode::Post;
 
+    AnalyzerView analyzerView_;
+    bool expanded_ = false;
+
     std::unique_ptr<dsp::SpectrumAnalyzer> preAnalyzer_;
     std::unique_ptr<dsp::SpectrumAnalyzer> postAnalyzer_;
     std::vector<double> analyzerFrequencies_;
     SpectrumBallistics preLevels_;
     SpectrumBallistics postLevels_;
+    SpectrumPeakHold postPeaks_; ///< Picos mantenidos del espectro post.
     std::vector<float> scratch_;
     std::vector<float> readBuffer_;
     double lastAnalyzerUpdateMs_ = 0.0;

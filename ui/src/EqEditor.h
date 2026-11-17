@@ -53,14 +53,19 @@ private:
     /// Menú para elegir con qué instancias de la sesión comparar.
     void showCompareMenu();
     /// Menú de opciones: el algoritmo de filtro ("HF accuracy"), el tamaño
-    /// de la ventana ("Window size") y la escala de notas ("Notes": el
-    /// teclado y la afinación).
+    /// de la ventana ("Window size"), la escala de notas ("Notes": el
+    /// teclado y la afinación) y los ajustes del analizador ("Analyzer").
     void showOptionsMenu();
     /// Pide la afinación escrita a mano ("Other..." en el menú de opciones).
     void showTuningDialog();
     /// Muestra u oculta el teclado de notas y cambia la afinación, en la
     /// curva, el teclado y el panel, y lo guarda en las preferencias.
     void setNoteScale(bool keyboard, double a4Hz);
+    /// Vista ampliada (PLAN.md 5.2): sin panel ni medidor, la curva ocupa la
+    /// ventana menos la barra superior. No se guarda con el proyecto.
+    void setExpanded(bool expanded);
+    /// Pone el botón de la vista ampliada (icono y ayuda) de acuerdo con ella.
+    void updateExpandButton();
     /// Pone en la ayuda del botón de opciones el algoritmo que suena.
     void updateOptionsTooltip();
     /// Pone el botón Compare de acuerdo con la selección del procesador.
@@ -93,6 +98,8 @@ private:
     Dropdown phase_{"Phase mode"};
     int shownLatency_ = -1;
     Dropdown analyzer_{"Analyzer"};
+    IconButton expand_{draw::Icon::Expand, "Expanded view"};
+    bool expanded_ = false;
     Dropdown range_{"Display range"};
     ParamControl output_{ParamControl::Style::Bar, "Output"};
     ToggleSwitch autoGain_{ToggleSwitch::Style::Pill, "Auto", "Auto gain"};

@@ -51,8 +51,8 @@ struct EditorLayout
 {
     Rect topBar;
     Rect curve;
-    Rect meter;    ///< Medidor de salida, a la derecha de la curva.
-    Rect panel;    ///< Panel de la banda seleccionada.
+    Rect meter;    ///< Medidor de salida, a la derecha de la curva; vacío en la vista ampliada.
+    Rect panel;    ///< Panel de la banda seleccionada; vacío en la vista ampliada.
     Rect keyboard; ///< Teclado de la escala de notas, bajo la curva; vacío si está oculto.
 };
 
@@ -60,7 +60,12 @@ struct EditorLayout
 /// (kPianoKeyboardHeight, de esceq/ui/notes.h) y una separación, y el teclado
 /// va ahí, con el mismo ancho y la misma x que la curva. Sin él, la
 /// disposición es la de antes de la escala de notas, píxel a píxel.
-EditorLayout editorLayout(float width, float height, bool pianoKeyboard = false) noexcept;
+///
+/// Con `expanded` (vista ampliada del analizador, PLAN.md 5.2), no hay panel
+/// ni medidor: la curva, con el teclado si se ve, ocupa toda la ventana menos
+/// la barra superior, con el margen de siempre a los lados y por abajo. Sin
+/// él, la disposición no cambia.
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard = false, bool expanded = false) noexcept;
 
 /// Barra superior, de izquierda a derecha.
 struct TopBarLayout
@@ -73,6 +78,7 @@ struct TopBarLayout
     Rect options; ///< Menú de opciones (botón con icono): el algoritmo de filtro y el tamaño de la ventana.
     Rect phase;   ///< Modo de fase.
     Rect analyzer;
+    Rect expand; ///< Vista ampliada del analizador (botón con icono).
     Rect range;
     Rect output;      ///< Barra de la ganancia de salida.
     Rect outputValue; ///< Su valor, editable.

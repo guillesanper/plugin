@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-Ecualizador de 24 bandas con curva interactiva, analizador de espectro, dinámica por banda con sidechain externo y tiempos automáticos, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro ajustable y con vista ampliada, dinámica por banda con sidechain externo y tiempos automáticos, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -39,6 +39,8 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Igualar la sonoridad al comparar con el bypass | Botón *Auto* de la barra superior, junto a la salida: encendido, dice la compensación ("Auto -2.3 dB"; ver abajo) |
 | Leer y fijar frecuencias como notas | Botón de opciones → *Notes* → *Piano keyboard* muestra un teclado bajo la curva; la afinación, en *Tuning* (ver abajo) |
 | Llevar una banda a una nota | Alt (Option en macOS) al arrastrar el nodo; Ctrl/Cmd + izquierda/derecha con la banda seleccionada avanza un semitono; o escribir la nota en el campo de frecuencia ("A3", "C#2", "Eb4") |
+| Ampliar la curva y el analizador | Botón de las cuatro esquinas, junto al selector del analizador, o F con el foco en la curva; Esc o el mismo botón vuelven (ver abajo) |
+| Ajustar el analizador | Botón de opciones → *Analyzer*: resolución, caída, inclinación, mantener picos y congelar (ver abajo) |
 | Cambiar el tamaño de la ventana | Botón de opciones → *Window size*: *Small*, *Medium* o *Large*; o arrastrar la esquina |
 | Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
@@ -76,13 +78,29 @@ Para ver qué nota es una resonancia o llevar una banda justo a la fundamental d
 
 Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana; Ctrl/Cmd + izquierda/derecha avanza un semitono (con Mayús, en pasos finos); y en el campo de frecuencia se puede escribir una nota en inglés, con `#` para el sostenido y `b` para el bemol: "A3", "C#2", "Eb4". La afinación es A4 = 440 Hz; *Tuning* ofrece las habituales (415, 432, 442, 443, 444 Hz) y *Other...* cualquiera de 400 a 480 Hz, en pasos de 0,1. El teclado y la afinación se guardan con el proyecto, no con el preset, y no cambian el sonido: la frecuencia de la banda se sigue guardando como número.
 
+### Analizador ampliado
+
+Para trabajar el espectro con detalle. El botón de las cuatro esquinas, a la derecha del selector del analizador (o la tecla F con el foco en la curva), oculta el panel de la banda y el medidor de salida: la curva y el analizador ocupan toda la ventana menos la barra superior. Combinado con el tamaño *Large* o arrastrando la esquina, ocupa lo que quieras. Las bandas se siguen editando en la curva (arrastre, rueda, menú contextual), y la etiqueta de un nodo dice también su canal y su dinámica (umbral, rango y tiempos). Esc o el mismo botón vuelven a la vista normal, igual que estaba. No es la pantalla completa del sistema, que dentro de un host no es fiable.
+
+En el botón de opciones → *Analyzer*, disponibles también sin ampliar:
+
+| Ajuste | Valores | Por defecto |
+|---|---|---|
+| *Resolution* | FFT de 4096, 8192 o 16384 puntos: más puntos, más detalle en graves y una respuesta más lenta | 4096 |
+| *Fall* | Lo que tarda en bajar: *Slow* (1 s), *Medium* (0,35 s) o *Fast* (0,12 s); la subida es siempre rápida | *Medium* |
+| *Tilt* | Inclinación: 0, 3, 4,5 o 6 dB/oct (con 4,5, la música suele verse plana) | 4,5 dB/oct |
+| *Peak hold* | Una línea fina con el máximo de cada frecuencia; un clic en la escala de dB, a la derecha de la curva, la borra | Apagado |
+| *Freeze* | Detiene el analizador para mirarlo con calma ("Analyzer frozen" en la curva) | Apagado |
+
+Los valores por defecto son los del analizador de siempre. Los cuatro primeros se guardan con el proyecto, no con el preset; ni la vista ampliada ni la congelación se guardan: un proyecto abre siempre en la vista normal y con el analizador en marcha. Nada de esto cambia el sonido.
+
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
 
 **Tiempos automáticos:** con el interruptor *Auto* de la dinámica (parámetro `bNN_autotime`, uno por banda), la banda elige sola su ataque y su relajación según su frecuencia: en graves, un ataque de dos periodos para que la ganancia no siga la forma de onda (no distorsiona); en agudos, medio milisegundo para atrapar las sibilantes. La relajación depende de la señal: un golpe aislado se suelta deprisa, y una nota larga se suelta despacio para que no bombee. Encendido, los potenciómetros de ataque y relajación dicen "Auto" y conservan su valor para cuando se apague. Está apagado por defecto y en los proyectos anteriores; los presets lo guardan. Detalles en [docs/dsp/dinamica.md](docs/dsp/dinamica.md).
 
 **Canal:** cada banda actúa en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid (lo que está en el centro) o Side (lo que está a los lados). Lo que la banda no toca pasa intacto. Una banda dinámica escucha ese mismo canal. El nodo de una banda que no es estéreo lleva su letra (L, R, M, S).
 
-**Presets:** vienen cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) como punto de partida. Los tuyos se guardan con "Save as..." como archivos `.esceq` en `%APPDATA%\esceQ\Presets` (Windows), `~/Library/Application Support/esceQ/Presets` (macOS) o `~/.config/esceQ/Presets` (Linux); "Open presets folder" abre esa carpeta. Un punto junto al nombre indica que has modificado el preset. El analizador, el rango, el tamaño de la ventana y la escala de notas se guardan con el proyecto, no con el preset.
+**Presets:** vienen cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) como punto de partida. Los tuyos se guardan con "Save as..." como archivos `.esceq` en `%APPDATA%\esceQ\Presets` (Windows), `~/Library/Application Support/esceQ/Presets` (macOS) o `~/.config/esceQ/Presets` (Linux); "Open presets folder" abre esa carpeta. Un punto junto al nombre indica que has modificado el preset. El analizador (modo y ajustes), el rango, el tamaño de la ventana y la escala de notas se guardan con el proyecto, no con el preset.
 
 **Sidechain en FL Studio** (pasos aún sin verificar en FL Studio): en el mezclador, haz clic derecho en la flecha de envío de la pista que debe controlar el EQ y elige "Sidechain to this track" en la pista donde está esceQ. Luego, en los ajustes del envoltorio del plugin (rueda dentada, pestaña *Processing*), asigna esa entrada al puerto de sidechain. Si eliges "External" sin nada conectado, el panel lo avisa con "No sidechain".
 

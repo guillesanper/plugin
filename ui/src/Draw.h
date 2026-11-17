@@ -43,11 +43,12 @@ void pill(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& 
           const ControlState& state, Corners corners = Corners::All);
 
 /// Iconos de los botones de la barra superior.
-enum class Icon { Undo, Redo, Previous, Next, Compare, Options };
+enum class Icon { Undo, Redo, Previous, Next, Compare, Options, Expand };
 
 /// Botón cuadrado con un icono. Encendido (`on`), el icono va en el color de
 /// acento; `badge` (por ejemplo, un número) se dibuja en una pastilla en la
-/// esquina superior derecha.
+/// esquina superior derecha. Expand, encendido, dibuja las esquinas hacia
+/// dentro (volver de la vista ampliada).
 void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state,
                 Corners corners = Corners::All, bool on = false, const juce::String& badge = {});
 

@@ -104,11 +104,24 @@ WindowSize clampWindow(WindowSize size) noexcept
             std::clamp(size.height, kMinWindow.height, kMaxWindow.height)};
 }
 
-EditorLayout editorLayout(float width, float height, bool pianoKeyboard) noexcept
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard, bool expanded) noexcept
 {
     Rect area{0.0f, 0.0f, std::max(width, 0.0f), std::max(height, 0.0f)};
     EditorLayout layout;
     layout.topBar = takeTop(area, kTopBarHeight);
+
+    if (expanded)
+    {
+        Rect middle = inset(area, kS3, 0.0f);
+        takeBottom(middle, kS3);
+        if (pianoKeyboard)
+        {
+            layout.keyboard = takeBottom(middle, kPianoKeyboardHeight);
+            takeBottom(middle, kS1);
+        }
+        layout.curve = middle;
+        return layout;
+    }
 
     Rect panel = area;
     panel.y = area.y + std::max(0.0f, area.height - kPanelHeight);
@@ -133,17 +146,21 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     Rect row = centredRow(inset(bounds, kS3, 0.0f), 28.0f);
     TopBarLayout layout;
 
+    // Los anchos de la marca, el rango y el bypass dejan sitio al botón de la
+    // vista ampliada sin tocar la ventana mínima (ADR 0018).
     layout.logo = takeLeft(row, 88.0f);
-    takeLeft(row, kS4);
+    takeLeft(row, kS3);
 
-    layout.bypass = takeRight(row, 76.0f);
+    layout.bypass = takeRight(row, 64.0f);
     takeRight(row, kS2);
     layout.autoGain = takeRight(row, 92.0f); // "Auto -12.0 dB" sin cortarse
     takeRight(row, kS3);
     layout.outputValue = takeRight(row, 60.0f);
     layout.output = takeRight(row, 96.0f);
     takeRight(row, kS3);
-    layout.range = takeRight(row, 92.0f);
+    layout.range = takeRight(row, 72.0f); // "±30 dB"
+    takeRight(row, kS2);
+    layout.expand = takeRight(row, kIconButton);
     takeRight(row, kS2);
     layout.analyzer = takeRight(row, 124.0f);
     takeRight(row, kS2);

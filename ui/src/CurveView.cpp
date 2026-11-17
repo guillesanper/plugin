@@ -25,7 +25,6 @@ constexpr int kAnalyzerPoints = 320;
 constexpr float kNodeRadius = 8.0f;
 constexpr float kHitRadius = 13.0f;
 constexpr float kNodeEdgeMargin = kNodeRadius + 10.0f; // sitio para la flecha de "fuera de rango"
-constexpr double kAnalyzerTiltDbPerOctave = 4.5;
 
 using namespace theme;
 
@@ -43,16 +42,17 @@ bool isDynamic(const dsp::BandSettings& settings)
 
 CurveView::CurveView(PluginProcessor& processor)
     : processor_(processor),
-      preAnalyzer_(std::make_unique<dsp::SpectrumAnalyzer>(12)),
-      postAnalyzer_(std::make_unique<dsp::SpectrumAnalyzer>(12)),
+      preAnalyzer_(std::make_unique<dsp::SpectrumAnalyzer>(analyzerFftOrder(analyzerView_.fftSize))),
+      postAnalyzer_(std::make_unique<dsp::SpectrumAnalyzer>(analyzerFftOrder(analyzerView_.fftSize))),
       analyzerFrequencies_(logFrequencies(kAnalyzerPoints)),
       preLevels_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
       postLevels_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
+      postPeaks_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
       scratch_(kAnalyzerPoints, 0.0f),
       readBuffer_(4096, 0.0f)
 {
-    preAnalyzer_->setTiltDbPerOctave(kAnalyzerTiltDbPerOctave);
-    postAnalyzer_->setTiltDbPerOctave(kAnalyzerTiltDbPerOctave);
+    preAnalyzer_->setTiltDbPerOctave(analyzerView_.tiltDbPerOctave);
+    postAnalyzer_->setTiltDbPerOctave(analyzerView_.tiltDbPerOctave);
     values_ = processor_.currentValues();
     // Con el editor cerrado, las colas del analizador se llenan y se quedan con
     // el audio de cuando se cerró. Se vacían para no dibujarlo al abrir.
@@ -65,7 +65,8 @@ CurveView::CurveView(PluginProcessor& processor)
     setTitle("Equalizer curve");
     setHelpText("Double-click to add a band. Drag a node to set frequency and gain; use the wheel for Q. "
                 "With the keyboard: left and right select a band, up and down change its gain, "
-                "Ctrl or Cmd with left and right change its frequency, Delete removes it.");
+                "Ctrl or Cmd with left and right change its frequency, Delete removes it. "
+                "F expands the view and Escape returns. With peak hold on, click the gain scale to clear the peaks.");
 }
 
 CurveView::~CurveView()
@@ -122,6 +123,37 @@ void CurveView::setMarkedNote(std::optional<int> midi)
 void CurveView::setAnalyzerMode(AnalyzerMode mode)
 {
     analyzerMode_ = mode;
+    repaint();
+}
+
+void CurveView::setAnalyzerView(const AnalyzerView& view)
+{
+    if (view == analyzerView_)
+        return;
+    const bool resolution = view.fftSize != analyzerView_.fftSize;
+    // Uno de unos pocos valores exactos.
+    const bool tilt = !juce::exactlyEqual(view.tiltDbPerOctave, analyzerView_.tiltDbPerOctave);
+    if (resolution)
+    {
+        // Empiezan vacíos: en lo que tarda en llenarse la FFT (de 85 a 341 ms
+        // a 48 kHz), el espectro baja con la caída, sin saltos.
+        preAnalyzer_ = std::make_unique<dsp::SpectrumAnalyzer>(analyzerFftOrder(view.fftSize));
+        postAnalyzer_ = std::make_unique<dsp::SpectrumAnalyzer>(analyzerFftOrder(view.fftSize));
+    }
+    preAnalyzer_->setTiltDbPerOctave(view.tiltDbPerOctave);
+    postAnalyzer_->setTiltDbPerOctave(view.tiltDbPerOctave);
+    preLevels_.setFallSeconds(analyzerFallSeconds(view.fallMs));
+    postLevels_.setFallSeconds(analyzerFallSeconds(view.fallMs));
+    // Los picos de antes no se comparan con el espectro nuevo.
+    if (resolution || tilt || !view.peakHold)
+        postPeaks_.clear();
+    analyzerView_ = view;
+    repaint();
+}
+
+void CurveView::setExpanded(bool expanded)
+{
+    expanded_ = expanded;
     repaint();
 }
 
@@ -187,11 +219,13 @@ bool CurveView::updateAnalyzer()
                 analyzer.push(readBuffer_.data(), n);
     };
     // Siempre se vacían las colas, aunque el analizador esté apagado, para no
-    // mostrar audio viejo al encenderlo.
+    // mostrar audio viejo al encenderlo. Congelado, el audio sigue entrando en
+    // el historial (al descongelar, el espectro es el de ahora) pero no se
+    // calcula ni se mueve nada.
     drain(processor_.preAnalyzerFifo(), *preAnalyzer_);
     drain(processor_.postAnalyzerFifo(), *postAnalyzer_);
 
-    if (!active)
+    if (!active || analyzerView_.frozen)
         return false;
 
     // Devuelve true si algún punto se ha movido lo bastante para verse.
@@ -202,6 +236,8 @@ bool CurveView::updateAnalyzer()
     };
 
     bool moved = update(*postAnalyzer_, postLevels_);
+    if (analyzerView_.peakHold)
+        moved = postPeaks_.update(postLevels_.levels()) || moved;
     if (analyzerMode_ == AnalyzerMode::PreAndPost)
         moved = update(*preAnalyzer_, preLevels_) || moved;
     return moved;
@@ -293,6 +329,7 @@ void CurveView::paint(juce::Graphics& g)
         drawNodes(g, m);
         drawCollisionLabels(g, m);
         drawReadout(g, m);
+        drawFrozen(g, m);
     }
 
     const bool focused = keyboardFocus_ && hasKeyboardFocus(false);
@@ -334,7 +371,7 @@ void CurveView::drawGrid(juce::Graphics& g, const CurveMapping& m) const
         // Las etiquetas de los extremos se meten hacia dentro para no cortarse.
         const float labelY = std::clamp(y - 15.0f, area.y + 4.0f, area.y + area.height - 17.0f);
         g.setColour(zero ? colour::textMuted : colour::textDim);
-        g.drawText(label, juce::Rectangle<float>(area.x + area.width - 40.0f, labelY, 32.0f, 12.0f),
+        g.drawText(label, juce::Rectangle<float>(area.x + area.width - kGainScaleWidth, labelY, 32.0f, 12.0f),
                    juce::Justification::centredRight, false);
     }
 }
@@ -383,6 +420,22 @@ void CurveView::drawAnalyzer(juce::Graphics& g, const CurveMapping& m) const
         g.setColour(colour::analyzerPre.withAlpha(0.6f));
         g.strokePath(makePath(preLevels_.levels(), false), juce::PathStrokeType(stroke::hairline));
     }
+
+    // Picos mantenidos: una línea fina, más clara que el espectro.
+    if (analyzerView_.peakHold && postPeaks_.hasPeaks())
+    {
+        g.setColour(colour::analyzerPost.brighter(0.6f).withAlpha(0.7f));
+        g.strokePath(makePath(postPeaks_.levels(), false), juce::PathStrokeType(stroke::hairline));
+    }
+}
+
+void CurveView::drawFrozen(juce::Graphics& g, const CurveMapping& m) const
+{
+    if (!analyzerView_.frozen || analyzerMode_ == AnalyzerMode::Off)
+        return;
+    const auto area = m.area();
+    draw::caption(g, "Analyzer frozen", juce::Rectangle<float>(area.x + 12.0f, area.y + 8.0f, 160.0f, 12.0f),
+                  juce::Justification::centredLeft, colour::accent);
 }
 
 void CurveView::drawSession(juce::Graphics& g, const CurveMapping& m) const
@@ -746,7 +799,9 @@ void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const
 
 void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
 {
-    // Etiqueta flotante de la banda que se está tocando o señalando.
+    // Etiqueta flotante de la banda que se está tocando o señalando. En la
+    // vista ampliada, sin el panel, con detalle (canal y dinámica). Solo
+    // aparece al señalar: fija, taparía los nodos de alrededor.
     const int band = dragging_ >= 0 ? dragging_ : hovered_;
     if (band < 0)
         return;
@@ -754,7 +809,7 @@ void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
     if (!settings.enabled)
         return;
 
-    const auto readout = nodeReadout(values_, band, notesVisible_ ? std::optional(a4Hz_) : std::nullopt);
+    const auto readout = nodeReadout(values_, band, notesVisible_ ? std::optional(a4Hz_) : std::nullopt, expanded_);
     const auto titleFont = captionFont();
     const auto valueFont = font(type::body, Weight::Medium, true);
 
@@ -786,12 +841,21 @@ void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
         valuesWidth += width(valueFont, "Dyn -30.0 dB") + kFieldGap;
     valuesWidth -= kFieldGap;
 
+    // En la vista ampliada, una segunda fila con la dinámica.
+    const auto detailFont = font(type::small, Weight::Regular, true);
+    float detailWidth = 0.0f;
+    for (const auto& field : readout.dynamics)
+        detailWidth += width(detailFont, toJuce(field)) + kFieldGap;
+    detailWidth = std::max(0.0f, detailWidth - kFieldGap);
+    constexpr float kDetailHeight = 16.0f;
+
     const auto title = toJuce(readout.title).toUpperCase();
-    const float labelWidth = std::ceil(std::max(valuesWidth, width(titleFont, title)) + 2.0f * kPadding + 4.0f);
-    constexpr float kLabelHeight = 44.0f;
+    const float labelWidth =
+        std::ceil(std::max({valuesWidth, detailWidth, width(titleFont, title)}) + 2.0f * kPadding + 4.0f);
+    const float labelHeight = 44.0f + (readout.dynamics.empty() ? 0.0f : kDetailHeight);
 
     const auto node = nodePosition(m, settings, kNodeEdgeMargin);
-    const auto r = floatingLabelRect(m.area(), node, labelWidth, kLabelHeight, kNodeRadius + 12.0f);
+    const auto r = floatingLabelRect(m.area(), node, labelWidth, labelHeight, kNodeRadius + 12.0f);
     const juce::Rectangle<float> box(r.x, r.y, r.width, r.height);
     const auto colour = theme::band(band);
 
@@ -807,6 +871,20 @@ void CurveView::drawReadout(juce::Graphics& g, const CurveMapping& m) const
     g.setColour(colour::textMuted);
     g.drawText(title, content.removeFromTop(13.0f), juce::Justification::centredLeft, false);
     content.removeFromTop(3.0f);
+
+    if (!readout.dynamics.empty())
+    {
+        auto detail = content.removeFromBottom(kDetailHeight).withTrimmedTop(2.0f);
+        g.setFont(detailFont);
+        g.setColour(colour::textMuted);
+        for (const auto& field : readout.dynamics)
+        {
+            const auto text = toJuce(field);
+            const float w = width(detailFont, text);
+            g.drawText(text, detail.removeFromLeft(w + 1.0f), juce::Justification::centredLeft, false);
+            detail.removeFromLeft(kFieldGap - 1.0f);
+        }
+    }
 
     g.setFont(valueFont);
     g.setColour(colour::text);
@@ -922,6 +1000,12 @@ void CurveView::mouseDown(const juce::MouseEvent& e)
 
     if (!band)
     {
+        const auto m = mapping();
+        if (analyzerView_.peakHold && onGainScale(m.area(), {e.position.x, e.position.y}))
+        {
+            postPeaks_.clear();
+            repaint();
+        }
         setSelectedBand(-1);
         return;
     }
@@ -1022,6 +1106,15 @@ bool CurveView::keyPressed(const juce::KeyPress& key)
     const bool up = key.isKeyCode(juce::KeyPress::upKey);
     const bool down = key.isKeyCode(juce::KeyPress::downKey);
     const auto mods = key.getModifiers();
+
+    // F amplía o reduce la vista; Esc, ampliada, vuelve.
+    const bool expandKey = key.getKeyCode() == 'F' || key.getKeyCode() == 'f';
+    if ((expandKey && !mods.isAnyModifierKeyDown()) || (expanded_ && key.isKeyCode(juce::KeyPress::escapeKey)))
+    {
+        if (onExpandToggled)
+            onExpandToggled();
+        return true;
+    }
 
     // Izquierda y derecha, sin modificadores: banda anterior o siguiente (en orden de número).
     if ((left || right) && !mods.isCommandDown())

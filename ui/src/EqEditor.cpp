@@ -53,6 +53,11 @@ EqEditor::EqEditor(PluginProcessor& owner)
     };
     addAndMakeVisible(analyzer_);
 
+    expand_.onClick = [this] { setExpanded(!expanded_); };
+    addAndMakeVisible(expand_);
+    curve_.onExpandToggled = [this] { setExpanded(!expanded_); };
+    updateExpandButton();
+
     compare_.setTooltip("Compare with other esceQ instances: overlay their spectrum and show where it collides with this one");
     compare_.onClick = [this] { showCompareMenu(); };
     addAndMakeVisible(compare_);
@@ -104,7 +109,7 @@ EqEditor::EqEditor(PluginProcessor& owner)
     int order = 1;
     for (juce::Component* c :
          std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &options_, &phase_, &analyzer_,
-                                                 &range_, &output_, &autoGain_, &bypass_, &curve_, &panel_})
+                                                 &expand_, &range_, &output_, &autoGain_, &bypass_, &curve_, &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -126,6 +131,9 @@ void EqEditor::applyUiSettings()
     analyzer_.setSelectedId(ui.analyzerMode + 1, juce::sendNotificationSync);
     range_.setSelectedId(ui.displayRangeDb, juce::sendNotificationSync);
     setNoteScale(ui.pianoKeyboard, ui.a4Hz);
+    // La congelación no se guarda: se conserva la de la vista.
+    curve_.setAnalyzerView({ui.analyzerFftSize, ui.analyzerFallMs, ui.analyzerTiltDbPerOctave, ui.analyzerPeakHold,
+                            curve_.analyzerView().frozen});
 
     const auto size = ui.windowWidth > 0 ? clampWindow({ui.windowWidth, ui.windowHeight}) : windowSize(kDefaultSizePreset);
     setSize(size.width, size.height);
@@ -143,11 +151,23 @@ void EqEditor::storeUiSettings()
     ui.windowHeight = getHeight();
     ui.pianoKeyboard = showKeyboard_;
     ui.a4Hz = a4Hz_;
+    const auto& analyzer = curve_.analyzerView();
+    ui.analyzerFftSize = analyzer.fftSize;
+    ui.analyzerFallMs = analyzer.fallMs;
+    ui.analyzerTiltDbPerOctave = analyzer.tiltDbPerOctave;
+    ui.analyzerPeakHold = analyzer.peakHold;
     processor_.setUiSettings(ui);
 }
 
 bool EqEditor::keyPressed(const juce::KeyPress& key)
 {
+    // Esc vuelve de la vista ampliada tenga el foco quien lo tenga (la curva lo atiende antes).
+    if (expanded_ && key.isKeyCode(juce::KeyPress::escapeKey))
+    {
+        setExpanded(false);
+        return true;
+    }
+
     // Ctrl/Cmd+Z deshace; Ctrl/Cmd+Mayús+Z y Ctrl/Cmd+Y rehacen. Muchos hosts
     // se quedan con estas teclas: por eso están también los botones.
     const auto mods = key.getModifiers();
@@ -212,7 +232,7 @@ void EqEditor::paint(juce::Graphics& g)
 
 void EqEditor::resized()
 {
-    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()), showKeyboard_);
+    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()), showKeyboard_, expanded_);
     topBar_ = topBarLayout(layout_.topBar);
 
     presets_.setBounds(toInt(topBar_.presets));
@@ -222,6 +242,7 @@ void EqEditor::resized()
     options_.setBounds(toInt(topBar_.options));
     phase_.setBounds(toInt(topBar_.phase));
     analyzer_.setBounds(toInt(topBar_.analyzer));
+    expand_.setBounds(toInt(topBar_.expand));
     range_.setBounds(toInt(topBar_.range));
     // La barra y su valor son un solo control; a su izquierda va la etiqueta "OUT".
     output_.setBounds(toInt(topBar_.output).withTrimmedLeft(26).getUnion(toInt(topBar_.outputValue)));
@@ -307,6 +328,17 @@ void EqEditor::showOptionsMenu()
     for (const auto& item : tuningItems(a4Hz_))
         tuning.addItem(item.menuId, toJuce(item.label), true, item.ticked);
     menu.addSubMenu(toJuce(tuningMenuTitle(a4Hz_)), tuning);
+    menu.addSectionHeader(kAnalyzerHeading);
+    const auto analyzer = curve_.analyzerView();
+    for (const auto& submenu : analyzerSubmenus(analyzer))
+    {
+        juce::PopupMenu sub;
+        for (const auto& item : submenu.items)
+            sub.addItem(item.menuId, toJuce(item.label), true, item.ticked);
+        menu.addSubMenu(toJuce(submenu.title), sub);
+    }
+    for (const auto& item : {peakHoldItem(analyzer.peakHold), freezeItem(analyzer.frozen)})
+        menu.addItem(item.menuId, toJuce(item.label), true, item.ticked);
 
     juce::Component::SafePointer<EqEditor> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&options_), [safe](int result) {
@@ -327,8 +359,32 @@ void EqEditor::showOptionsMenu()
             safe->setNoteScale(safe->showKeyboard_, *a4);
         if (isCustomTuningMenuId(result))
             safe->showTuningDialog();
+        if (const auto view = analyzerViewForMenuId(safe->curve_.analyzerView(), result))
+        {
+            safe->curve_.setAnalyzerView(*view);
+            safe->storeUiSettings();
+        }
         safe->updateOptionsTooltip();
     });
+}
+
+void EqEditor::setExpanded(bool expanded)
+{
+    if (expanded == expanded_)
+        return;
+    expanded_ = expanded;
+    // El medidor y el panel se ocultan; la curva se queda con su sitio.
+    meter_.setVisible(!expanded);
+    panel_.setVisible(!expanded);
+    curve_.setExpanded(expanded);
+    updateExpandButton();
+    resized();
+}
+
+void EqEditor::updateExpandButton()
+{
+    expand_.setOn(expanded_);
+    expand_.setTooltip(expanded_ ? "Back to the normal view (F or Esc)" : "Expand the curve and analyzer (F)");
 }
 
 void EqEditor::setNoteScale(bool keyboard, double a4Hz)

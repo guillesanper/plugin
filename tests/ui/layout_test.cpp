@@ -107,6 +107,7 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"opciones", bar.options},
                              {"fase", bar.phase},
                              {"analizador", bar.analyzer},
+                             {"ampliar", bar.expand},
                              {"rango", bar.range},
                              {"salida", bar.output},
                              {"valor de salida", bar.outputValue},
@@ -282,4 +283,77 @@ TEST_CASE("Disposicion: tamanos absurdos no producen medidas negativas")
             CHECK(r.height >= 0.0f);
         }
     }
+}
+
+TEST_CASE("Disposicion: la vista ampliada es la ventana menos la barra superior")
+{
+    std::vector<WindowSize> sizes{kMinWindow};
+    for (int i = 0; i < kNumSizePresets; ++i)
+        sizes.push_back(windowSize(static_cast<SizePreset>(i)));
+    for (const auto size : sizesToCheck())
+        sizes.push_back(size);
+
+    for (const auto size : sizes)
+    {
+        INFO(size.width << " x " << size.height);
+        const auto w = static_cast<float>(size.width);
+        const auto h = static_cast<float>(size.height);
+        const Rect window{0.0f, 0.0f, w, h};
+        const auto normal = editorLayout(w, h);
+        const auto expanded = editorLayout(w, h, false, true);
+
+        // La barra se queda; la curva ocupa todo lo de debajo, con el margen de 12 px de siempre.
+        CHECK(same(expanded.topBar, normal.topBar));
+        CHECK(same(expanded.curve, {12.0f, 48.0f, w - 24.0f, h - 48.0f - 12.0f}));
+        CHECK(same(expanded.meter, {}));
+        CHECK(same(expanded.panel, {}));
+        CHECK(same(expanded.keyboard, {}));
+
+        // Con el teclado de notas, curva y teclado se reparten ese mismo sitio.
+        const auto withKeyboard = editorLayout(w, h, true, true);
+        checkDisjointInside(
+            {{"barra", withKeyboard.topBar}, {"curva", withKeyboard.curve}, {"teclado", withKeyboard.keyboard}},
+            window);
+        CHECK(withKeyboard.curve.x == expanded.curve.x);
+        CHECK(withKeyboard.curve.y == expanded.curve.y);
+        CHECK(withKeyboard.curve.width == expanded.curve.width);
+        CHECK(withKeyboard.keyboard.height == kPianoKeyboardHeight);
+        CHECK(withKeyboard.keyboard.width == expanded.curve.width);
+        CHECK(withKeyboard.keyboard.y + withKeyboard.keyboard.height == expanded.curve.y + expanded.curve.height);
+
+        // Al volver, la disposicion es identica a la de antes.
+        for (const bool keyboard : {false, true})
+        {
+            const auto before = editorLayout(w, h, keyboard);
+            const auto back = editorLayout(w, h, keyboard, false);
+            CHECK(same(back.topBar, before.topBar));
+            CHECK(same(back.curve, before.curve));
+            CHECK(same(back.meter, before.meter));
+            CHECK(same(back.panel, before.panel));
+            CHECK(same(back.keyboard, before.keyboard));
+        }
+    }
+}
+
+TEST_CASE("Disposicion: el boton de la vista ampliada va junto al analizador")
+{
+    for (const auto size : sizesToCheck())
+    {
+        INFO(size.width << " x " << size.height);
+        const auto bar =
+            topBarLayout(editorLayout(static_cast<float>(size.width), static_cast<float>(size.height)).topBar);
+        CHECK(bar.expand.width == bar.compare.width);
+        CHECK(bar.expand.height == bar.compare.height);
+        CHECK(bar.expand.x > bar.analyzer.x + bar.analyzer.width);
+        CHECK(bar.expand.x < bar.range.x);
+        // Los textos de siempre siguen cabiendo: "Analyzer pre + post", "Linear Medium", "±30 dB", "Bypass".
+        CHECK(bar.analyzer.width >= 124.0f);
+        CHECK(bar.phase.width >= 112.0f);
+        CHECK(bar.range.width >= 72.0f);
+        CHECK(bar.bypass.width >= 64.0f);
+    }
+    // En la ventana minima, el navegador de presets conserva sus 140 px.
+    const auto minimum =
+        topBarLayout(editorLayout(static_cast<float>(kMinWindow.width), static_cast<float>(kMinWindow.height)).topBar);
+    CHECK(minimum.presets.width == 140.0f);
 }

@@ -95,15 +95,19 @@ El analizador no está en el hilo de audio:
 
 1. El procesador escribe el audio en mono (media de los canales) en dos `SpscFifo` de 32768 muestras: antes y después del EQ.
 2. El editor, 30 veces por segundo, vacía las colas en dos `SpectrumAnalyzer`, aunque el analizador esté apagado, para no mostrar audio viejo al encenderlo. Al abrirse, las vacía sin analizarlas: con el editor cerrado se han llenado con el audio de cuando se cerró.
-3. `SpectrumAnalyzer` guarda las últimas 4096 muestras y calcula su FFT con ventana de Hann.
+3. `SpectrumAnalyzer` guarda las últimas 4096 muestras (8192 o 16384 con la resolución elegida) y calcula su FFT con ventana de Hann.
 4. Para cada uno de los 320 puntos de la pantalla toma el máximo de los bins dentro de ±1/24 de octava, o interpola entre los dos bins vecinos si no hay ninguno (graves).
-5. Aplica una inclinación de 4,5 dB/oct centrada en 1 kHz, para que la música suene "plana" en la pantalla.
-6. La interfaz suaviza el resultado en el tiempo: sube con una constante de 60 ms y baja con una de 350 ms.
+5. Aplica una inclinación de 4,5 dB/oct centrada en 1 kHz (0, 3 o 6 a elección), para que la música suene "plana" en la pantalla.
+6. La interfaz suaviza el resultado en el tiempo: sube con una constante de 60 ms y baja con una de 350 ms (1 s o 120 ms a elección). Con *Peak hold* guarda además el máximo de cada punto ya suavizado; congelado, no calcula nada pero sigue llenando el historial.
+
+Los ajustes y sus valores por defecto (los de siempre) están en la [ADR 0018](../decisiones/0018-analizador-ampliado.md). Coste de cada espectro en Release (x86-64, un núcleo): 0,09 ms con 4096 puntos, 0,17 con 8192 y 0,36 con 16384; con pre + post a 30 fotogramas por segundo, 2 % de un núcleo en el peor caso, así que no hace falta bajar el ritmo con la resolución alta.
+
+Con más puntos, un seno se lee al mismo nivel (la calibración no depende de la resolución), pero el ruido se lee más bajo, porque su energía se reparte entre más bins: medido con ruido blanco, de 1,6 a 2,4 dB menos por cada duplicación (de 4096 a 16384, 3,2 dB menos a 100 Hz, 3,3 a 1 kHz y 4,7 a 10 kHz).
 
 Calibración: un seno de amplitud 1 se lee a 0 dB (exacto si cae en un bin; con hasta 1,42 dB de pérdida entre bins, propia de la ventana de Hann). Escala de dibujo: 0 dB arriba, −90 dB abajo, independiente de la escala de la curva.
 
 ## Limitaciones conocidas
 
 - El analizador muestra la media de los canales, no L/R ni M/S por separado. La curva total de la interfaz suma todas las bandas sin distinguir su canal.
-- Resolución fija de 4096 puntos: unos 12 Hz por bin a 48 kHz, poca definición por debajo de 100 Hz.
+- Con la resolución por defecto, 4096 puntos, unos 12 Hz por bin a 48 kHz: poca definición por debajo de 100 Hz. Con 16384, 2,9 Hz, a cambio de una respuesta más lenta (la ventana abarca 341 ms).
 - Los fundidos de 10 ms son lineales en amplitud; entre señales poco correladas pueden notarse como una pequeña bajada de nivel.
