@@ -152,7 +152,7 @@ Tres tarjetas: **banda** (color y número, activación, tipo, pendiente y canal)
 
 Con el teclado de notas visible, la etiqueta del potenciómetro de frecuencia dice la nota de la banda en lugar de "FREQ" ("A3 +0 CT"): junto al valor no cabe en los tamaños S y M. En el campo de frecuencia se puede escribir una nota ("A3", "C#2", "Eb4", con `#`/`♯` o `b`/`♭`), que suena a su frecuencia con la afinación elegida.
 
-Sin banda seleccionada, el panel muestra los gestos de la curva:
+Sin banda seleccionada, el panel muestra los gestos de la curva, en dos filas de cuatro (también los de las bandas desde el espectro):
 
 ![Sin banda seleccionada](img/ui/sin-seleccion.png)
 
@@ -164,9 +164,12 @@ Sin banda seleccionada, el panel muestra los gestos de la curva:
 - **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba).
 - **Escala de notas:** con el teclado visible, la etiqueta flotante añade a la frecuencia la nota más cercana y su desviación ("220 Hz · A3 +0 ct"). Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana a donde estaría sin ajustar, así que el nodo no se queda pegado; vale con el teclado oculto también.
 - **Analizador:** el espectro post relleno y, en pre + post, el pre como línea. Con *Peak hold*, una línea fina más clara con el máximo de cada punto del espectro post (`SpectrumPeakHold`, en `meter_logic.h`); un clic en la escala de dB (la columna de 40 px de la derecha, `onGainScale`) la borra, y cambiar la resolución o la inclinación también. Con *Freeze*, el espectro se queda quieto y la curva dice "Analyzer frozen" arriba a la izquierda; el audio sigue entrando en el historial, así que al descongelar el espectro es el de ese momento.
+- **Bandas desde el espectro:** con el analizador encendido y el ratón en un hueco, se marca el pico del espectro más cercano a menos de 1/6 de octava: un círculo de color de acento en su nivel, una línea hasta abajo y una etiqueta con su frecuencia, su nota y su nivel sin la inclinación ("2.40 kHz · D7 +39 ct · -31.0 dB"), y el cursor pasa a ser la flecha vertical. Arrastrar desde ahí crea una campana en el pico, con el Q de su ancho a −3 dB, cuya ganancia sigue al arrastre vertical; al soltar queda seleccionada, y con Alt, dinámica (umbral 3 dB bajo el pico, la ganancia arrastrada como rango). Un clic sin arrastre solo deselecciona. Todo el gesto es una acción de deshacer. Si las 24 bandas están en uso no se marca nada y "No free bands" sale junto al ratón. Los picos se buscan en un promedio de 1 s del espectro post (el pre en pre + post), no en lo que se pinta, que en el ruido tiene picos de azar; congelado, también funciona. La lógica está en `esceq/ui/spectrum_peaks.h`; el algoritmo, en [dsp/picos.md](dsp/picos.md); las decisiones, en la [ADR 0019](decisiones/0019-bandas-desde-el-espectro.md).
 - **Fuera de rango:** si la ganancia de una banda no cabe en el rango visible, el nodo se queda junto al borde con una flecha que indica hacia dónde sigue.
 
 ![Banda fuera del rango visible, en el tamaño mínimo](img/ui/fuera-de-rango.png)
+
+![Pico del espectro marcado, listo para arrastrarlo](img/ui/pico.png)
 
 ### Teclado de notas
 
@@ -204,6 +207,8 @@ Cuánto cuesta, medido con `esceq_snapshot --bench` (ver [CONTRIBUTING.md](../CO
 | Máxima (2400 × 1400), escala 2 | 75–81 ms | 67–74 ms |
 
 Con el teclado de notas visible, la misma medida (L, escala 1, dos tandas) da una mediana de 12,6–13,0 ms frente a 12,5–12,6 ms sin él: dentro del ruido, con una curva 18 px más baja. El teclado no se repinta en el arrastre (solo al cambiar la tecla señalada, la afinación o el tamaño), y la línea de la tecla señalada es un rectángulo y una etiqueta.
+
+El marcador de las bandas desde el espectro ([ADR 0019](decisiones/0019-bandas-desde-el-espectro.md)) no cambia nada mientras el ratón no está en la curva: con `--bench` (L, escala 1, dos tandas, mediana), de 9,7 a 10,2 ms antes y de 9,9 a 10,1 ms después, con la misma huella del fotograma fijo. Con el ratón sobre la curva se dibujan un círculo, una línea y una etiqueta, y la búsqueda de picos (5,9 µs) solo se rehace si el espectro ha cambiado; el promedio en el que se buscan cuesta 9,3 µs por fotograma con el analizador en marcha.
 
 La vista ampliada ([ADR 0018](decisiones/0018-analizador-ampliado.md)) no cambia nada de esto: solo da más área a la curva. Medido en otra sesión (otra máquina, más rápida que la de la tabla; dos tandas, mediana): en L, la vista normal cuesta de 9,0 a 10,2 ms antes de existir la ampliada y de 9,9 a 10,3 ms con ella, con la misma huella del fotograma fijo; la ampliada en L (curva de 1456 × 800), de 10,3 a 11,8 ms; y en la ventana máxima a escala 1, la ampliada (2376 × 1340) de 20,6 a 21,3 ms, frente a 17,6–21,3 de la normal. Los picos mantenidos son un trazo más y no se notan.
 

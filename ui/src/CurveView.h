@@ -7,6 +7,7 @@
 #include "esceq/ui/curve_mapping.h"
 #include "esceq/ui/meter_logic.h"
 #include "esceq/ui/session_overlay.h"
+#include "esceq/ui/spectrum_peaks.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
@@ -45,6 +46,11 @@ enum class AnalyzerMode
 ///    (onExpandToggled) y Esc, en la vista ampliada, vuelve.
 ///  - Clic en la escala de ganancia (a la derecha): borra los picos mantenidos
 ///    del analizador.
+///  - Con el ratón en un hueco, se marca el pico del espectro más cercano
+///    (PLAN.md 5.3, esceq/ui/spectrum_peaks.h). Arrastrar desde ahí crea una
+///    campana en el pico, con su Q, cuya ganancia sigue al arrastre vertical;
+///    con Alt al soltar, queda dinámica. Todo el gesto es una acción de
+///    deshacer, y un clic sin arrastre no crea nada.
 ///
 /// Al señalar o arrastrar un nodo aparece una etiqueta flotante con su
 /// frecuencia, ganancia y Q. Las bandas dinámicas dibujan la curva que suena
@@ -70,6 +76,11 @@ public:
     /// Banda señalada por el ratón (-1 = ninguna). Lo fija el propio ratón;
     /// es público para la herramienta de capturas.
     void setHoveredBand(int band);
+
+    /// Posición del ratón sobre la curva (nullopt: fuera). La fija el propio
+    /// ratón; es pública para la herramienta de capturas. Decide la banda
+    /// señalada y el pico marcado.
+    void setPointer(std::optional<juce::Point<float>> position);
 
     /// Escala de notas (esceq/ui/notes.h): la afinación, con la que se ajusta
     /// a semitonos, y si se ve el teclado; entonces la etiqueta flotante dice
@@ -129,7 +140,17 @@ private:
     void setParameterAsGesture(std::size_t index, float value);
     void beginGesture(int band, core::BandParam param);
     void endGesture(int band, core::BandParam param);
+    /// Manda al host los cambios de una banda, cada uno en su gesto, salvo
+    /// el del parámetro `openGesture`, que ya tiene uno abierto.
+    void applyChanges(const std::vector<ParameterChange>& changes,
+                      std::optional<std::size_t> openGesture = std::nullopt);
     void addBandAt(juce::Point<float> position);
+    /// Crea la banda del pico pulsado y empieza a arrastrar su ganancia.
+    void createPeakBand(const SpectrumPeak& peak);
+    /// Busca el pico que se marca bajo el ratón (si el espectro ha cambiado,
+    /// rehace la lista). true si el marcador ha cambiado.
+    bool updatePeakMarker();
+    void updateCursor();
     void removeBand(int band);
     void showBandMenu(int band);
 
@@ -143,6 +164,8 @@ private:
     void drawNodes(juce::Graphics& g, const CurveMapping& m) const;
     void drawReadout(juce::Graphics& g, const CurveMapping& m) const;
     void drawMarkedNote(juce::Graphics& g, const CurveMapping& m) const;
+    /// El pico marcado y su etiqueta, o "No free bands" junto al ratón.
+    void drawPeakMarker(juce::Graphics& g, const CurveMapping& m) const;
     /// Aviso de que el analizador está congelado, arriba a la izquierda.
     void drawFrozen(juce::Graphics& g, const CurveMapping& m) const;
 
@@ -186,6 +209,20 @@ private:
     SpectrumBallistics preLevels_;
     SpectrumBallistics postLevels_;
     SpectrumPeakHold postPeaks_; ///< Picos mantenidos del espectro post.
+    /// Bandas desde el espectro (PLAN.md 5.3, ADR 0019): el promedio del
+    /// espectro en el que se buscan los picos (el post, o el pre en pre +
+    /// post), sus picos y si hay que volver a buscarlos.
+    SpectrumAverage peakSpectrum_;
+    std::vector<SpectrumPeak> peaks_;
+    bool peaksStale_ = true;
+    /// Ratón sobre la curva (para elegir el pico), el pico marcado y si hay
+    /// una banda libre para tomarlo.
+    std::optional<juce::Point<float>> pointer_;
+    std::optional<SpectrumPeak> peakMarker_;
+    bool freeBand_ = true;
+    /// Pico pulsado: un arrastre desde él crea su banda. Sigue puesto
+    /// mientras se arrastra esa banda (entonces solo cambia la ganancia).
+    std::optional<SpectrumPeak> pressedPeak_;
     std::vector<float> scratch_;
     std::vector<float> readBuffer_;
     double lastAnalyzerUpdateMs_ = 0.0;

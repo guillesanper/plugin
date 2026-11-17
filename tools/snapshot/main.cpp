@@ -12,6 +12,8 @@
 //   --key N       con el teclado, la tecla de la nota N (MIDI, 69 = A4) señalada.
 //   --expanded    en la vista ampliada (como al pulsar F en la curva).
 //   --peaks       con los picos del analizador mantenidos.
+//   --peak HZ     con una resonancia en HZ en el audio y el ratón junto a
+//                 ella: el pico marcado para crear una banda desde el espectro.
 //   --gallery     en vez del editor, la galería de estados de los controles.
 //   --compare     con otras dos instancias en la sesión ("Bass" y "Keys"), superpuestas
 //                 y con las colisiones marcadas.
@@ -94,6 +96,32 @@ struct PinkNoise
         b1 = 0.96300f * b1 + white * 0.2965164f;
         b2 = 0.57000f * b2 + white * 1.0526913f;
         return 0.08f * (b0 + b1 + b2 + white * 0.1848f);
+    }
+};
+
+/// Resonancia para --peak: ruido blanco por un paso banda de Q 8 (0 dB en f0).
+struct Resonance
+{
+    std::uint32_t state = 777u;
+    double b0 = 0.0, a1 = 0.0, a2 = 0.0, z1 = 0.0, z2 = 0.0;
+
+    Resonance(double f0, double sampleRate)
+    {
+        const double w = 2.0 * juce::MathConstants<double>::pi * f0 / sampleRate;
+        const double alpha = std::sin(w) / (2.0 * 8.0);
+        b0 = alpha / (1.0 + alpha);
+        a1 = -2.0 * std::cos(w) / (1.0 + alpha);
+        a2 = (1.0 - alpha) / (1.0 + alpha);
+    }
+
+    float next()
+    {
+        state = state * 1664525u + 1013904223u;
+        const double white = static_cast<double>(state >> 8) / 8388608.0 - 1.0;
+        const double y = b0 * white + z1;
+        z1 = -a1 * y + z2;
+        z2 = -b0 * white - a2 * y;
+        return static_cast<float>(1.5 * y);
     }
 };
 
@@ -261,12 +289,13 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
-                     "[--bypass] [--auto-gain] [--auto-timing] [--notes] [--key N] [--expanded] [--peaks] [--gallery] "
-                     "[--compare] [--bench N]\n";
+                     "[--bypass] [--auto-gain] [--auto-timing] [--notes] [--key N] [--expanded] [--peaks] [--peak HZ] "
+                     "[--gallery] [--compare] [--bench N]\n";
         return 2;
     }
 
     int width = 0, height = 0, select = 6, hover = 0, desktopSeconds = 0, bench = 0, key = -1;
+    double peakHz = 0.0;
     std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
@@ -301,6 +330,8 @@ int main(int argc, char** argv)
             expanded = true;
         else if (arg == "--peaks")
             peaks = true;
+        else if (arg == "--peak")
+            peakHz = std::atof(next());
         else if (arg == "--gallery")
             gallery = true;
         else if (arg == "--compare")
@@ -378,6 +409,7 @@ int main(int argc, char** argv)
     juce::MidiBuffer midi;
     PinkNoise noise, noiseRight;
     noiseRight.state = 98765u;
+    Resonance resonance(peakHz > 0.0 ? peakHz : 1000.0, sampleRate);
 
     // Con --compare, otras dos instancias en la misma sesión: un bajo (ruido
     // rosa con un corte de agudos) y unos teclados (ruido con cortes por los
@@ -413,7 +445,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < blockSize; ++i)
             {
                 // Algo de diferencia entre canales, para que el medidor no muestre dos barras idénticas.
-                const float centre = noise.next();
+                const float centre = noise.next() + (peakHz > 0.0 ? resonance.next() : 0.0f);
                 const float side = 0.35f * noiseRight.next();
                 buffer.setSample(0, i, centre + side);
                 buffer.setSample(1, i, centre - side);
@@ -459,6 +491,13 @@ int main(int argc, char** argv)
         juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
     }
     curve.setHoveredBand(hover - 1);
+    if (peakHz > 0.0)
+    {
+        // El ratón un poco a la derecha de la resonancia, a media altura (como CurveView::mapping).
+        const auto bounds = curve.getLocalBounds().toFloat().reduced(1.0f);
+        const esceq::ui::CurveMapping m({bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight()}, 18.0);
+        curve.setPointer(juce::Point<float>(m.xForFrequency(peakHz * 1.04), bounds.getCentreY()));
+    }
     if (key >= 0)
         static_cast<esceq::ui::EqEditor&>(*editor).keyboard().setHoveredNote(key);
 

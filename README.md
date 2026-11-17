@@ -23,6 +23,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Acción | Cómo |
 |---|---|
 | Añadir una banda | Doble clic en un hueco de la curva |
+| Atacar una resonancia que se ve | Con el ratón en un hueco, se marca el pico del espectro más cercano: arrastrar desde ahí crea una campana en él, con su Q; con Alt al soltar, dinámica (ver abajo) |
 | Mover frecuencia y ganancia | Arrastrar el nodo (con Mayús, ajuste fino) |
 | Cambiar el Q | Rueda del ratón sobre el nodo o con la banda seleccionada |
 | Cambiar el tipo de filtro | Clic derecho en el nodo, o el panel inferior |
@@ -93,6 +94,10 @@ En el botón de opciones → *Analyzer*, disponibles también sin ampliar:
 | *Freeze* | Detiene el analizador para mirarlo con calma ("Analyzer frozen" en la curva) | Apagado |
 
 Los valores por defecto son los del analizador de siempre. Los cuatro primeros se guardan con el proyecto, no con el preset; ni la vista ampliada ni la congelación se guardan: un proyecto abre siempre en la vista normal y con el analizador en marcha. Nada de esto cambia el sonido.
+
+### Bandas desde el espectro
+
+La forma más rápida de atacar una resonancia que se ve. Con el analizador encendido y el ratón en un hueco de la curva, se marca el pico del espectro más cercano, con su frecuencia, su nota y su nivel. Al arrastrar desde ahí se crea una campana en la frecuencia del pico, con el Q de su ancho (a −3 dB de su máximo, de 0,5 a 30), y la ganancia sigue al ratón: hacia abajo, recorte. Con Alt (Option en macOS) al soltar, la banda queda dinámica: no actúa hasta que la resonancia pasa de un umbral 3 dB por debajo del nivel del pico, y entonces baja como mucho lo arrastrado. Un clic sin arrastre no crea nada, y todo el gesto se deshace de una vez. Se usa el espectro post (el pre en pre + post), promediado durante un segundo para marcar lo que se mantiene, no el azar del ruido; con el analizador congelado se escoge con calma. Las bandas que crea son bandas normales: no hay parámetros nuevos ni cambia nada de lo que se guarda. Detalles en [docs/dsp/picos.md](docs/dsp/picos.md).
 
 **Dinámica:** las campanas, los shelves y el tilt pueden ser dinámicos. Cuando el nivel en su zona del espectro supera el umbral, la banda baja (rango negativo: de-esser, control de resonancias) o sube (rango positivo) hasta el rango indicado, con ataque, relajación y rodilla ajustables. La curva muestra en tiempo real la ganancia que se está aplicando, con la estática punteada como referencia. El detector escucha la entrada del plugin o, con "External", el sidechain.
 

@@ -33,6 +33,15 @@ juce::String frequencyLabel(double hz)
     return hz >= 1000.0 ? juce::String(hz / 1000.0, 0) + "k" : juce::String(static_cast<int>(hz));
 }
 
+/// Mismo pico (o ninguno en los dos): el marcador no ha cambiado.
+bool samePeak(const std::optional<SpectrumPeak>& a, const std::optional<SpectrumPeak>& b)
+{
+    if (!a || !b)
+        return a.has_value() == b.has_value();
+    return juce::exactlyEqual(a->frequencyHz, b->frequencyHz) && juce::exactlyEqual(a->levelDb, b->levelDb) &&
+           juce::exactlyEqual(a->q, b->q);
+}
+
 bool isDynamic(const dsp::BandSettings& settings)
 {
     return settings.dynamics.enabled && core::usesDynamics(settings.filter.type);
@@ -48,6 +57,7 @@ CurveView::CurveView(PluginProcessor& processor)
       preLevels_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
       postLevels_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
       postPeaks_(kAnalyzerPoints, dsp::SpectrumAnalyzer::kFloorDb),
+      peakSpectrum_(kAnalyzerPoints),
       scratch_(kAnalyzerPoints, 0.0f),
       readBuffer_(4096, 0.0f)
 {
@@ -66,7 +76,8 @@ CurveView::CurveView(PluginProcessor& processor)
     setHelpText("Double-click to add a band. Drag a node to set frequency and gain; use the wheel for Q. "
                 "With the keyboard: left and right select a band, up and down change its gain, "
                 "Ctrl or Cmd with left and right change its frequency, Delete removes it. "
-                "F expands the view and Escape returns. With peak hold on, click the gain scale to clear the peaks.");
+                "F expands the view and Escape returns. With peak hold on, click the gain scale to clear the peaks. "
+                "Drag from a marked spectrum peak to add a band there; hold Alt when releasing to make it dynamic.");
 }
 
 CurveView::~CurveView()
@@ -74,7 +85,8 @@ CurveView::~CurveView()
     // Si la ventana se cierra en mitad de un arrastre, el gesto se cierra aquí.
     if (dragging_ >= 0)
     {
-        endGesture(dragging_, core::BandParam::Frequency);
+        if (!pressedPeak_)
+            endGesture(dragging_, core::BandParam::Frequency);
         if (draggingGain_)
             endGesture(dragging_, core::BandParam::Gain);
     }
@@ -122,7 +134,14 @@ void CurveView::setMarkedNote(std::optional<int> midi)
 
 void CurveView::setAnalyzerMode(AnalyzerMode mode)
 {
+    if (mode != analyzerMode_)
+    {
+        // Los picos se buscan en otro espectro, o en ninguno.
+        peakSpectrum_.clear();
+        peaksStale_ = true;
+    }
     analyzerMode_ = mode;
+    updatePeakMarker();
     repaint();
 }
 
@@ -147,6 +166,11 @@ void CurveView::setAnalyzerView(const AnalyzerView& view)
     // Los picos de antes no se comparan con el espectro nuevo.
     if (resolution || tilt || !view.peakHold)
         postPeaks_.clear();
+    if (resolution || tilt)
+    {
+        peakSpectrum_.clear();
+        peaksStale_ = true;
+    }
     analyzerView_ = view;
     repaint();
 }
@@ -196,6 +220,8 @@ void CurveView::refresh()
         setSelectedBand(-1);
 
     changed = updateAnalyzer() || changed;
+    if (pointer_)
+        changed = updatePeakMarker() || changed;
     changed = updateSession(false) || changed;
     if (changed)
         repaint();
@@ -228,18 +254,26 @@ bool CurveView::updateAnalyzer()
     if (!active || analyzerView_.frozen)
         return false;
 
-    // Devuelve true si algún punto se ha movido lo bastante para verse.
-    auto update = [&](dsp::SpectrumAnalyzer& analyzer, SpectrumBallistics& levels) {
+    // Devuelve true si algún punto se ha movido lo bastante para verse. El
+    // espectro en el que se buscan los picos (el post, o el pre en pre +
+    // post) entra además en su promedio.
+    auto update = [&](dsp::SpectrumAnalyzer& analyzer, SpectrumBallistics& levels, bool peakSource) {
         analyzer.setSampleRate(sampleRate);
         analyzer.compute(analyzerFrequencies_, scratch_);
+        if (peakSource)
+        {
+            peakSpectrum_.update(scratch_, dt);
+            peaksStale_ = true;
+        }
         return levels.update(scratch_, dt);
     };
 
-    bool moved = update(*postAnalyzer_, postLevels_);
+    const bool preAndPost = analyzerMode_ == AnalyzerMode::PreAndPost;
+    bool moved = update(*postAnalyzer_, postLevels_, !preAndPost);
     if (analyzerView_.peakHold)
         moved = postPeaks_.update(postLevels_.levels()) || moved;
-    if (analyzerMode_ == AnalyzerMode::PreAndPost)
-        moved = update(*preAnalyzer_, preLevels_) || moved;
+    if (preAndPost)
+        moved = update(*preAnalyzer_, preLevels_, true) || moved;
     return moved;
 }
 
@@ -327,6 +361,7 @@ void CurveView::paint(juce::Graphics& g)
         drawCurves(g, m);
         drawMarkedNote(g, m);
         drawNodes(g, m);
+        drawPeakMarker(g, m);
         drawCollisionLabels(g, m);
         drawReadout(g, m);
         drawFrozen(g, m);
@@ -928,6 +963,51 @@ void CurveView::drawMarkedNote(juce::Graphics& g, const CurveMapping& m) const
     g.drawText(text, box, juce::Justification::centred, false);
 }
 
+void CurveView::drawPeakMarker(juce::Graphics& g, const CurveMapping& m) const
+{
+    if (!peakMarker_ || !pointer_)
+        return;
+    const auto area = m.area();
+    const auto labelFont = font(type::small, Weight::Medium, true);
+    constexpr float kHeight = 18.0f;
+    auto drawLabel = [&](const juce::String& text, juce::Rectangle<float> box, juce::Colour colour) {
+        g.setColour(colour::card.withAlpha(0.92f));
+        g.fillRoundedRectangle(box, radius::small);
+        g.setColour(colour);
+        g.setFont(labelFont);
+        g.drawText(text, box, juce::Justification::centred, false);
+    };
+    auto labelWidth = [&](const juce::String& text) {
+        return std::ceil(juce::GlyphArrangement::getStringWidth(labelFont, text)) + 2.0f * space::x2;
+    };
+
+    // Las 24 bandas en uso: no se marca el pico, y el aviso va junto al ratón.
+    if (!freeBand_)
+    {
+        const juce::String text("No free bands");
+        const auto r = floatingLabelRect(area, {pointer_->x, pointer_->y}, labelWidth(text), kHeight, 14.0f);
+        drawLabel(text, {r.x, r.y, r.width, r.height}, colour::textMuted);
+        return;
+    }
+
+    // El marcador va sobre el espectro que se pinta, con la inclinación.
+    const auto& peak = *peakMarker_;
+    const float x = m.xForFrequency(peak.frequencyHz);
+    const double shownDb =
+        peak.levelDb + dsp::SpectrumAnalyzer::tiltDb(peak.frequencyHz, analyzerView_.tiltDbPerOctave);
+    const float y = std::clamp(m.yForAnalyzerDb(shownDb), area.y, area.y + area.height);
+    constexpr float kRadius = 5.0f;
+    g.setColour(colour::accent.withAlpha(0.35f));
+    g.fillRect(
+        juce::Rectangle<float>(std::round(x), y + kRadius, 1.0f, std::max(0.0f, area.y + area.height - y - kRadius)));
+    g.setColour(colour::accent);
+    g.drawEllipse(juce::Rectangle<float>(2.0f * kRadius, 2.0f * kRadius).withCentre({x, y}), stroke::thin);
+
+    const auto text = toJuce(peakMarkerText(peak, a4Hz_));
+    const auto r = floatingLabelRect(area, {x, y}, labelWidth(text), kHeight, kRadius + 6.0f);
+    drawLabel(text, {r.x, r.y, r.width, r.height}, colour::text);
+}
+
 // ---------------------------------------------------------------------------
 // Ratón
 
@@ -973,15 +1053,53 @@ void CurveView::endGesture(int band, core::BandParam param)
     processor_.parameter(core::bandParameter(band, param)).endChangeGesture();
 }
 
+void CurveView::setPointer(std::optional<juce::Point<float>> position)
+{
+    const int hovered = position ? bandAt(*position).value_or(-1) : -1;
+    const bool hoverChanged = hovered != hovered_;
+    hovered_ = hovered;
+    pointer_ = position;
+    const bool markerChanged = updatePeakMarker();
+    updateCursor();
+    if (hoverChanged || markerChanged)
+        repaint();
+}
+
+void CurveView::updateCursor()
+{
+    if (hovered_ >= 0 || dragging_ >= 0)
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    else if (peakMarker_ && freeBand_)
+        setMouseCursor(juce::MouseCursor::UpDownResizeCursor); // arrastrar en vertical crea la banda
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+}
+
+bool CurveView::updatePeakMarker()
+{
+    // Solo con el ratón en un hueco de la curva y el analizador encendido.
+    std::optional<SpectrumPeak> marker;
+    bool freeBand = true;
+    if (pointer_ && analyzerMode_ != AnalyzerMode::Off && hovered_ < 0 && dragging_ < 0)
+    {
+        if (peaksStale_)
+        {
+            peaks_ = findPeaks(peakSpectrum_.levels(), analyzerFrequencies_,
+                               {.tiltDbPerOctave = analyzerView_.tiltDbPerOctave});
+            peaksStale_ = false;
+        }
+        marker = nearestPeak(peaks_, mapping().frequencyForX(pointer_->x));
+        freeBand = core::firstFreeBand(values_).has_value();
+    }
+    const bool changed = !samePeak(marker, peakMarker_) || (marker && freeBand != freeBand_);
+    peakMarker_ = marker;
+    freeBand_ = freeBand;
+    return changed;
+}
+
 void CurveView::mouseMove(const juce::MouseEvent& e)
 {
-    const int hovered = bandAt(e.position).value_or(-1);
-    if (hovered != hovered_)
-    {
-        hovered_ = hovered;
-        setMouseCursor(hovered_ >= 0 ? juce::MouseCursor::DraggingHandCursor : juce::MouseCursor::NormalCursor);
-        repaint();
-    }
+    setPointer(e.position);
 }
 
 void CurveView::mouseDown(const juce::MouseEvent& e)
@@ -1007,6 +1125,12 @@ void CurveView::mouseDown(const juce::MouseEvent& e)
             repaint();
         }
         setSelectedBand(-1);
+        // Desde un pico marcado, un arrastre crea su banda (un clic solo deselecciona).
+        if (peakMarker_ && freeBand_)
+        {
+            pressedPeak_ = peakMarker_;
+            dragLast_ = e.position;
+        }
         return;
     }
 
@@ -1022,6 +1146,13 @@ void CurveView::mouseDown(const juce::MouseEvent& e)
 
 void CurveView::mouseDrag(const juce::MouseEvent& e)
 {
+    if (pressedPeak_ && dragging_ < 0)
+    {
+        // La banda se crea cuando el ratón se ha movido algo, no al pulsar.
+        if (!e.mouseWasDraggedSinceMouseDown())
+            return;
+        createPeakBand(*pressedPeak_);
+    }
     if (dragging_ < 0)
         return;
 
@@ -1034,16 +1165,20 @@ void CurveView::mouseDrag(const juce::MouseEvent& e)
     dragLast_ = e.position;
 
     // Con Alt, la banda va a la nota más cercana a donde estaría sin ajustar.
-    const auto& frequency = core::parameters()[core::bandParameter(dragging_, core::BandParam::Frequency)];
-    dragFrequencyHz_ = std::clamp(m.frequencyForX(m.xForFrequency(dragFrequencyHz_) + delta.x),
-                                  static_cast<double>(frequency.min), static_cast<double>(frequency.max));
-    if (e.mods.isAltDown())
-        setParameter(dragging_, core::BandParam::Frequency,
-                     static_cast<float>(snapToSemitone(dragFrequencyHz_, a4Hz_, frequency.min, frequency.max)));
-    else
+    // La de un pico se queda en su frecuencia: solo cambia la ganancia.
+    if (!pressedPeak_)
     {
-        setParameter(dragging_, core::BandParam::Frequency, static_cast<float>(dragFrequencyHz_));
-        dragFrequencyHz_ = values_[core::bandParameter(dragging_, core::BandParam::Frequency)];
+        const auto& frequency = core::parameters()[core::bandParameter(dragging_, core::BandParam::Frequency)];
+        dragFrequencyHz_ = std::clamp(m.frequencyForX(m.xForFrequency(dragFrequencyHz_) + delta.x),
+                                      static_cast<double>(frequency.min), static_cast<double>(frequency.max));
+        if (e.mods.isAltDown())
+            setParameter(dragging_, core::BandParam::Frequency,
+                         static_cast<float>(snapToSemitone(dragFrequencyHz_, a4Hz_, frequency.min, frequency.max)));
+        else
+        {
+            setParameter(dragging_, core::BandParam::Frequency, static_cast<float>(dragFrequencyHz_));
+            dragFrequencyHz_ = values_[core::bandParameter(dragging_, core::BandParam::Frequency)];
+        }
     }
     if (draggingGain_)
         setParameter(dragging_, core::BandParam::Gain,
@@ -1051,14 +1186,27 @@ void CurveView::mouseDrag(const juce::MouseEvent& e)
     repaint();
 }
 
-void CurveView::mouseUp(const juce::MouseEvent&)
+void CurveView::mouseUp(const juce::MouseEvent& e)
 {
-    if (dragging_ < 0)
-        return;
-    endGesture(dragging_, core::BandParam::Frequency);
-    if (draggingGain_)
-        endGesture(dragging_, core::BandParam::Gain);
-    dragging_ = -1;
+    if (dragging_ >= 0)
+    {
+        if (pressedPeak_)
+        {
+            // Con Alt, la banda del pico queda dinámica. Va dentro del gesto
+            // de la ganancia, que sigue abierto: todo es una sola acción.
+            if (e.mods.isAltDown())
+                applyChanges(dynamicPeakChanges(values_, dragging_, *pressedPeak_),
+                             core::bandParameter(dragging_, core::BandParam::Gain));
+        }
+        else
+            endGesture(dragging_, core::BandParam::Frequency);
+        if (draggingGain_)
+            endGesture(dragging_, core::BandParam::Gain);
+        dragging_ = -1;
+    }
+    pressedPeak_.reset();
+    // Si se suelta fuera de la curva, el ratón ya no está en ella.
+    setPointer(getLocalBounds().toFloat().contains(e.position) ? std::optional(e.position) : std::nullopt);
     repaint();
 }
 
@@ -1091,12 +1239,7 @@ void CurveView::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheel
 
 void CurveView::mouseExit(const juce::MouseEvent&)
 {
-    if (hovered_ >= 0)
-    {
-        hovered_ = -1;
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-        repaint();
-    }
+    setPointer(std::nullopt);
 }
 
 bool CurveView::keyPressed(const juce::KeyPress& key)
@@ -1181,6 +1324,21 @@ void CurveView::focusLost(FocusChangeType)
     repaint();
 }
 
+void CurveView::applyChanges(const std::vector<ParameterChange>& changes, std::optional<std::size_t> openGesture)
+{
+    for (const auto& change : changes)
+    {
+        auto& p = processor_.parameter(change.index);
+        const bool ownGesture = change.index != openGesture;
+        if (ownGesture)
+            p.beginChangeGesture();
+        p.setValueNotifyingHost(p.convertTo0to1(change.value));
+        if (ownGesture)
+            p.endChangeGesture();
+        values_[change.index] = change.value;
+    }
+}
+
 void CurveView::addBandAt(juce::Point<float> position)
 {
     const auto band = core::firstFreeBand(values_);
@@ -1190,16 +1348,31 @@ void CurveView::addBandAt(juce::Point<float> position)
     // Una campana en el punto del doble clic, con el resto de ajustes por
     // defecto: la banda no hereda la dinámica ni el canal de cuando estuvo activa.
     const auto m = mapping();
-    for (const auto& change : newBandChanges(values_, *band, m.frequencyForX(position.x), m.gainForY(position.y)))
+    applyChanges(newBandChanges(values_, *band, m.frequencyForX(position.x), m.gainForY(position.y)));
+    setSelectedBand(*band);
+}
+
+void CurveView::createPeakBand(const SpectrumPeak& peak)
+{
+    // Una banda puede haberse ocupado desde el host entre pulsar y arrastrar.
+    const auto band = core::firstFreeBand(values_);
+    if (!band)
     {
-        auto& p = processor_.parameter(change.index);
-        p.beginChangeGesture();
-        p.setValueNotifyingHost(p.convertTo0to1(change.value));
-        p.endChangeGesture();
-        values_[change.index] = change.value;
+        pressedPeak_.reset();
+        return;
     }
 
+    // El gesto de la ganancia se abre el primero y se cierra al soltar: crear
+    // la banda, arrastrarla y, con Alt, hacerla dinámica es una sola acción
+    // de deshacer (EditHistory agrupa lo que pasa con algún gesto abierto).
+    const auto gain = core::bandParameter(*band, core::BandParam::Gain);
+    beginGesture(*band, core::BandParam::Gain);
+    applyChanges(peakBandChanges(values_, *band, peak, 0.0), gain);
     setSelectedBand(*band);
+    dragging_ = *band;
+    draggingGain_ = true;
+    peakMarker_.reset();
+    updateCursor();
 }
 
 void CurveView::removeBand(int band)

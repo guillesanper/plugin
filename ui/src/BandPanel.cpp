@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <initializer_list>
+#include <iterator>
 
 namespace esceq::ui {
 
@@ -315,14 +316,16 @@ void BandPanel::paintEmpty(juce::Graphics& g) const
         {"Wheel", "Q"},
         {"Right-click", "Type, channel, dynamics"},
         {"Double-click a node", "Remove it"},
+        {"Drag a marked peak", "Band on the peak"},
+        {"Alt on release", "Make that band dynamic"},
     };
 
-    constexpr int kColumns = 3;
+    constexpr int kColumns = 4;
     constexpr float kRowHeight = 40.0f;
     const auto grid = card.reduced(space::x6, 0.0f).withSizeKeepingCentre(card.getWidth() - 2.0f * space::x6, 2.0f * kRowHeight);
     const float columnWidth = grid.getWidth() / static_cast<float>(kColumns);
 
-    for (int i = 0; i < 6; ++i)
+    for (int i = 0; i < static_cast<int>(std::size(kHints)); ++i)
     {
         const auto cell = juce::Rectangle<float>(grid.getX() + columnWidth * static_cast<float>(i % kColumns),
                                                  grid.getY() + kRowHeight * static_cast<float>(i / kColumns), columnWidth,
