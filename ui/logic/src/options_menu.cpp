@@ -3,7 +3,12 @@
 
 #include "esceq/ui/notes.h"
 
+#include "esceq/core/state.h"
+
 #include <array>
+#include <iterator>
+#include <locale>
+#include <sstream>
 
 namespace esceq::ui {
 
@@ -18,6 +23,44 @@ constexpr int kFirstSizeId = 200;
 constexpr int kPianoKeyboardId = 300;
 constexpr int kFirstTuningId = 310;
 constexpr int kCustomTuningId = 330;
+/// El analizador: los valores de cada submenú, en el orden de sus tablas, y
+/// los dos interruptores.
+constexpr int kFirstFftId = 400;
+constexpr int kFirstFallId = 410;
+constexpr int kFirstTiltId = 420;
+constexpr int kPeakHoldId = 430;
+constexpr int kFreezeId = 431;
+
+const char* fallLabel(int fallMs)
+{
+    switch (fallMs)
+    {
+    case 1000:
+        return "Slow (1 s)";
+    case 120:
+        return "Fast (0.12 s)";
+    default:
+        return "Medium (0.35 s)";
+    }
+}
+
+std::string tiltLabel(double tilt)
+{
+    // 0, 3, 4,5 o 6: con el decimal solo si lo tiene, y siempre con punto.
+    std::ostringstream text;
+    text.imbue(std::locale::classic());
+    text << tilt << " dB/oct";
+    if (tilt == 0.0) // NOLINT(clang-diagnostic-float-equal): sin inclinación, exactamente
+        text << " (flat)";
+    return text.str();
+}
+
+/// Índice de `menuId` entre `count` entradas que empiezan en `first`, o -1.
+int indexFor(int menuId, int first, std::size_t count) noexcept
+{
+    const int index = menuId - first;
+    return index >= 0 && index < static_cast<int>(count) ? index : -1;
+}
 
 struct CommonTuning
 {
@@ -156,6 +199,63 @@ std::optional<double> tuningForMenuId(int menuId) noexcept
 bool isCustomTuningMenuId(int menuId) noexcept
 {
     return menuId == kCustomTuningId;
+}
+
+std::vector<AnalyzerSubmenu> analyzerSubmenus(const AnalyzerView& view)
+{
+    std::vector<AnalyzerSubmenu> submenus(3);
+
+    submenus[0].title = "Resolution: " + std::to_string(view.fftSize) + " points";
+    for (std::size_t i = 0; i < std::size(core::kAnalyzerFftSizes); ++i)
+    {
+        const int fft = core::kAnalyzerFftSizes[i];
+        submenus[0].items.push_back(
+            {kFirstFftId + static_cast<int>(i), std::to_string(fft) + " points", fft == view.fftSize});
+    }
+
+    submenus[1].title = std::string("Fall: ") + fallLabel(view.fallMs);
+    for (std::size_t i = 0; i < std::size(core::kAnalyzerFallTimesMs); ++i)
+    {
+        const int fall = core::kAnalyzerFallTimesMs[i];
+        submenus[1].items.push_back({kFirstFallId + static_cast<int>(i), fallLabel(fall), fall == view.fallMs});
+    }
+
+    submenus[2].title = "Tilt: " + tiltLabel(view.tiltDbPerOctave);
+    for (std::size_t i = 0; i < std::size(core::kAnalyzerTilts); ++i)
+    {
+        const double tilt = core::kAnalyzerTilts[i];
+        // NOLINTNEXTLINE(clang-diagnostic-float-equal): la inclinación es uno de esos valores exactos
+        const bool ticked = tilt == view.tiltDbPerOctave;
+        submenus[2].items.push_back({kFirstTiltId + static_cast<int>(i), tiltLabel(tilt), ticked});
+    }
+    return submenus;
+}
+
+ToggleItem peakHoldItem(bool on)
+{
+    return {kPeakHoldId, "Peak hold", on};
+}
+
+ToggleItem freezeItem(bool on)
+{
+    return {kFreezeId, "Freeze", on};
+}
+
+std::optional<AnalyzerView> analyzerViewForMenuId(AnalyzerView current, int menuId) noexcept
+{
+    if (const int i = indexFor(menuId, kFirstFftId, std::size(core::kAnalyzerFftSizes)); i >= 0)
+        current.fftSize = core::kAnalyzerFftSizes[static_cast<std::size_t>(i)];
+    else if (const int j = indexFor(menuId, kFirstFallId, std::size(core::kAnalyzerFallTimesMs)); j >= 0)
+        current.fallMs = core::kAnalyzerFallTimesMs[static_cast<std::size_t>(j)];
+    else if (const int k = indexFor(menuId, kFirstTiltId, std::size(core::kAnalyzerTilts)); k >= 0)
+        current.tiltDbPerOctave = core::kAnalyzerTilts[static_cast<std::size_t>(k)];
+    else if (menuId == kPeakHoldId)
+        current.peakHold = !current.peakHold;
+    else if (menuId == kFreezeId)
+        current.frozen = !current.frozen;
+    else
+        return std::nullopt;
+    return current;
 }
 
 std::string optionsTooltip(dsp::FilterAlgorithm current)

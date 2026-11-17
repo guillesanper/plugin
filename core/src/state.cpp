@@ -26,6 +26,10 @@ constexpr std::string_view kUiHeight = "ui.height";
 constexpr std::string_view kUiPreset = "ui.preset";
 constexpr std::string_view kUiNotes = "ui.notes";
 constexpr std::string_view kUiA4 = "ui.a4";
+constexpr std::string_view kUiAnalyzerFft = "ui.analyzer_fft";
+constexpr std::string_view kUiAnalyzerFall = "ui.analyzer_fall";
+constexpr std::string_view kUiAnalyzerTilt = "ui.analyzer_tilt";
+constexpr std::string_view kUiAnalyzerPeaks = "ui.analyzer_peaks";
 
 constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
 /// kLegacyFilterAlgorithm tal y como se escribe en el estado.
@@ -141,6 +145,17 @@ UiSettings sanitize(UiSettings settings)
 
     settings.presetName = cleanPresetName(settings.presetName);
     settings.a4Hz = validA4(settings.a4Hz).value_or(defaults.a4Hz);
+
+    const auto oneOf = [](const auto& allowed, auto value) {
+        return std::find(std::begin(allowed), std::end(allowed), value) != std::end(allowed);
+    };
+    if (!oneOf(kAnalyzerFftSizes, settings.analyzerFftSize))
+        settings.analyzerFftSize = defaults.analyzerFftSize;
+    if (!oneOf(kAnalyzerFallTimesMs, settings.analyzerFallMs))
+        settings.analyzerFallMs = defaults.analyzerFallMs;
+    // Comparación exacta a propósito: solo valen esos valores.
+    if (!oneOf(kAnalyzerTilts, settings.analyzerTiltDbPerOctave))
+        settings.analyzerTiltDbPerOctave = defaults.analyzerTiltDbPerOctave;
     return settings;
 }
 
@@ -178,6 +193,16 @@ std::string serializePluginState(const PluginState& state)
         extra << kUiNotes << " 1\n";
     if (ui.a4Hz != kDefaultA4Hz)
         extra << kUiA4 << ' ' << ui.a4Hz << '\n';
+    // Las del analizador ampliado, igual.
+    const UiSettings defaults{};
+    if (ui.analyzerFftSize != defaults.analyzerFftSize)
+        extra << kUiAnalyzerFft << ' ' << ui.analyzerFftSize << '\n';
+    if (ui.analyzerFallMs != defaults.analyzerFallMs)
+        extra << kUiAnalyzerFall << ' ' << ui.analyzerFallMs << '\n';
+    if (ui.analyzerTiltDbPerOctave != defaults.analyzerTiltDbPerOctave)
+        extra << kUiAnalyzerTilt << ' ' << ui.analyzerTiltDbPerOctave << '\n';
+    if (ui.analyzerPeakHold)
+        extra << kUiAnalyzerPeaks << " 1\n";
     return out + extra.str();
 }
 
@@ -235,6 +260,12 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             double a4 = 0.0;
             state.ui.a4Hz = parseNumber(entry.value, a4) ? a4 : kDefaultA4Hz;
         }
+        else if (entry.key == kUiAnalyzerTilt)
+        {
+            double tilt = 0.0;
+            if (parseNumber(entry.value, tilt))
+                state.ui.analyzerTiltDbPerOctave = tilt;
+        }
         else if (!parseNumber(entry.value, number))
             continue;
         else if (entry.key == kFilterAlgorithm)
@@ -249,6 +280,12 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             state.ui.windowHeight = number;
         else if (entry.key == kUiNotes && (number == 0 || number == 1))
             state.ui.pianoKeyboard = number == 1;
+        else if (entry.key == kUiAnalyzerFft)
+            state.ui.analyzerFftSize = number;
+        else if (entry.key == kUiAnalyzerFall)
+            state.ui.analyzerFallMs = number;
+        else if (entry.key == kUiAnalyzerPeaks && (number == 0 || number == 1))
+            state.ui.analyzerPeakHold = number == 1;
     }
 
     state.ui = sanitize(std::move(state.ui));

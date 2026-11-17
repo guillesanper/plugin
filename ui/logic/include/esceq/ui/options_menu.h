@@ -3,6 +3,7 @@
 
 #include "esceq/dsp/filter_design.h"
 #include "esceq/ui/layout.h"
+#include "esceq/ui/meter_logic.h"
 
 #include <optional>
 #include <string>
@@ -99,6 +100,33 @@ std::optional<double> tuningForMenuId(int menuId) noexcept;
 
 /// true si `menuId` es la entrada "Other...", que pide escribir la afinación.
 bool isCustomTuningMenuId(int menuId) noexcept;
+
+/// Título de la sección del analizador (PLAN.md 5.2, ADR 0018).
+inline constexpr const char* kAnalyzerHeading = "Analyzer";
+
+/// Un submenú de la sección "Analyzer": un ajuste con sus valores, el
+/// actual marcado y en el título ("Resolution: 4096 points").
+struct AnalyzerSubmenu
+{
+    std::string title;
+    std::vector<ToggleItem> items;
+};
+
+/// Los submenús de la resolución (puntos de la FFT), la caída y la
+/// inclinación, en ese orden, con los valores de `view` marcados. Ofrecen
+/// los valores que acepta el estado (core::kAnalyzerFftSizes...), en su orden.
+std::vector<AnalyzerSubmenu> analyzerSubmenus(const AnalyzerView& view);
+
+/// Entrada que enciende o apaga el mantenimiento de picos.
+ToggleItem peakHoldItem(bool on);
+
+/// Entrada que congela o descongela el analizador.
+ToggleItem freezeItem(bool on);
+
+/// Los ajustes que quedan al elegir la entrada `menuId` de la sección
+/// "Analyzer" partiendo de `current` (un valor de un submenú, o cambiar uno
+/// de los dos interruptores), o nullopt si `menuId` no es una de esas entradas.
+std::optional<AnalyzerView> analyzerViewForMenuId(AnalyzerView current, int menuId) noexcept;
 
 /// Ayuda del botón de opciones, con el algoritmo que suena:
 /// "Options · HF accuracy: Matched".

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/meter_logic.h"
 
+#include "esceq/core/state.h"
+
 #include <algorithm>
 #include <cmath>
 
@@ -71,7 +73,7 @@ SpectrumBallistics::SpectrumBallistics(std::size_t points, float floorDb)
 bool SpectrumBallistics::update(const std::vector<float>& target, double dtSeconds) noexcept
 {
     const auto rise = static_cast<float>(1.0 - std::exp(-dtSeconds / kRiseSeconds));
-    const auto fall = static_cast<float>(1.0 - std::exp(-dtSeconds / kFallSeconds));
+    const auto fall = static_cast<float>(1.0 - std::exp(-dtSeconds / fallSeconds_));
     bool moved = false;
     const std::size_t n = std::min(levels_.size(), target.size());
     for (std::size_t i = 0; i < n; ++i)
@@ -85,6 +87,63 @@ bool SpectrumBallistics::update(const std::vector<float>& target, double dtSecon
         moved = moved || std::abs(level - before) > kRepaintDb;
     }
     return moved;
+}
+
+void SpectrumBallistics::setFallSeconds(double seconds) noexcept
+{
+    if (std::isfinite(seconds) && seconds > 0.0)
+        fallSeconds_ = seconds;
+}
+
+SpectrumPeakHold::SpectrumPeakHold(std::size_t points, float floorDb)
+    : levels_(points, floorDb),
+      floorDb_(floorDb)
+{
+}
+
+bool SpectrumPeakHold::update(const std::vector<float>& levels) noexcept
+{
+    bool rose = false;
+    const std::size_t n = std::min(levels_.size(), levels.size());
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        if (levels[i] <= levels_[i])
+            continue;
+        rose = rose || levels[i] - levels_[i] > SpectrumBallistics::kRepaintDb;
+        levels_[i] = levels[i];
+    }
+    return rose;
+}
+
+void SpectrumPeakHold::clear() noexcept
+{
+    std::fill(levels_.begin(), levels_.end(), floorDb_);
+}
+
+bool SpectrumPeakHold::hasPeaks() const noexcept
+{
+    return std::any_of(levels_.begin(), levels_.end(), [this](float level) { return level > floorDb_; });
+}
+
+int analyzerFftOrder(int fftSize) noexcept
+{
+    switch (fftSize)
+    {
+    case 8192:
+        return 13;
+    case 16384:
+        return 14;
+    default:
+        return 12;
+    }
+}
+
+double analyzerFallSeconds(int fallMs) noexcept
+{
+    for (const int valid : core::kAnalyzerFallTimesMs)
+        if (fallMs == valid)
+            return static_cast<double>(fallMs) / 1000.0;
+    return SpectrumBallistics::kFallSeconds;
 }
 
 } // namespace esceq::ui

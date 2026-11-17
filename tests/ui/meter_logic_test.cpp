@@ -190,3 +190,69 @@ TEST_CASE("Analizador: solo pide repintar si algun punto se mueve lo bastante pa
     CHECK(b.update({-40.0f, -30.0f}, 0.033));
     CHECK_FALSE(b.update({-40.0f, -30.0f}, 0.0)); // sin tiempo no se mueve
 }
+
+TEST_CASE("Analizador: la caida se puede elegir y la subida no cambia")
+{
+    CHECK(SpectrumBallistics(1, -120.0f).fallSeconds() == SpectrumBallistics::kFallSeconds);
+    const float path = 1.0f - std::exp(-1.0f);
+    for (const double fall : {1.0, 0.35, 0.12})
+    {
+        INFO(fall);
+        SpectrumBallistics b(2, -120.0f);
+        b.setFallSeconds(fall);
+        CHECK(b.fallSeconds() == fall);
+        b.update({-20.0f, -40.0f}, 0.0);
+        b.update({-40.0f, -40.0f}, fall);
+        CHECK_THAT(b.levels()[0], WithinAbs(-20.0 - 20.0 * path, 1e-4));
+
+        SpectrumBallistics up(1, -120.0f);
+        up.setFallSeconds(fall);
+        up.update({-40.0f}, 0.0);
+        up.update({-20.0f}, SpectrumBallistics::kRiseSeconds);
+        CHECK_THAT(up.levels()[0], WithinAbs(-40.0 + 20.0 * path, 1e-4));
+    }
+
+    // Lo que no es una constante de tiempo valida no cambia nada.
+    SpectrumBallistics b(1, -120.0f);
+    b.setFallSeconds(0.0);
+    b.setFallSeconds(-1.0);
+    b.setFallSeconds(std::numeric_limits<double>::quiet_NaN());
+    CHECK(b.fallSeconds() == SpectrumBallistics::kFallSeconds);
+}
+
+TEST_CASE("Analizador: los ajustes guardados se traducen a la FFT y la caida")
+{
+    CHECK(analyzerFftOrder(4096) == 12);
+    CHECK(analyzerFftOrder(8192) == 13);
+    CHECK(analyzerFftOrder(16384) == 14);
+    CHECK(analyzerFftOrder(1000) == 12); // lo que no vale, la de siempre
+    CHECK(analyzerFallSeconds(1000) == 1.0);
+    CHECK(analyzerFallSeconds(350) == 0.35);
+    CHECK(analyzerFallSeconds(120) == 0.12);
+    CHECK(analyzerFallSeconds(7) == SpectrumBallistics::kFallSeconds);
+}
+
+TEST_CASE("Analizador: mantener picos guarda el maximo de cada punto hasta borrarlo")
+{
+    constexpr float kFloor = -120.0f;
+    SpectrumPeakHold peaks(3, kFloor);
+    CHECK(peaks.levels() == std::vector<float>{kFloor, kFloor, kFloor});
+    CHECK_FALSE(peaks.hasPeaks());
+
+    CHECK(peaks.update({-30.0f, -50.0f, kFloor}));
+    CHECK(peaks.hasPeaks());
+    CHECK_FALSE(peaks.update({-40.0f, -60.0f, kFloor})); // nada sube: no hay que repintar
+    CHECK(peaks.levels() == std::vector<float>{-30.0f, -50.0f, kFloor});
+    CHECK_FALSE(peaks.update({-30.0f, -49.99f, kFloor})); // menos de lo que se ve
+    CHECK(peaks.update({-35.0f, -20.0f, -70.0f}));
+    CHECK(peaks.levels() == std::vector<float>{-30.0f, -20.0f, -70.0f});
+
+    peaks.clear();
+    CHECK(peaks.levels() == std::vector<float>{kFloor, kFloor, kFloor});
+    CHECK_FALSE(peaks.hasPeaks());
+    CHECK(peaks.update({-45.0f, kFloor, kFloor}));
+    CHECK(peaks.levels()[0] == -45.0f);
+
+    // Un dato mas corto no se sale.
+    CHECK_FALSE(peaks.update({-90.0f}));
+}

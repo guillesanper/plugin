@@ -371,3 +371,56 @@ TEST_CASE("Vista: la curva de una banda dinamica suma la ganancia dinamica")
     REQUIRE(core::bandSettings(values, 1).filter.type == dsp::FilterType::LowCut);
     CHECK(soundingBandSettings(values, 1, kAlgorithm, -5.0).filter.gainDb == 2.0);
 }
+
+TEST_CASE("Vista: la escala de ganancia, a la derecha de la curva, se distingue del resto")
+{
+    const Rect area{10.0f, 20.0f, 1000.0f, 400.0f};
+    CHECK(onGainScale(area, {area.x + area.width - 1.0f, 200.0f}));
+    CHECK(onGainScale(area, {area.x + area.width - kGainScaleWidth, 30.0f}));
+    CHECK_FALSE(onGainScale(area, {area.x + area.width - kGainScaleWidth - 1.0f, 200.0f}));
+    CHECK_FALSE(onGainScale(area, {area.x + 5.0f, 200.0f}));
+    CHECK_FALSE(onGainScale(area, {area.x + area.width + 1.0f, 200.0f})); // fuera de la curva
+    CHECK_FALSE(onGainScale(area, {area.x + area.width - 5.0f, area.y - 1.0f}));
+    CHECK_FALSE(onGainScale(area, {area.x + area.width - 5.0f, area.y + area.height + 1.0f}));
+}
+
+TEST_CASE("Vista: en la vista ampliada, la etiqueta dice tambien el canal y la dinamica")
+{
+    auto values = core::defaultValues();
+    auto dyn = [&](int band, core::DynParam p, float v) { values[core::dynamicParameter(band, p)] = v; };
+    values[core::bandParameter(2, core::BandParam::Frequency)] = 1200.0f;
+
+    // Sin detalle, como siempre: sin dinamica, y el canal solo si no es estereo.
+    auto readout = nodeReadout(values, 2);
+    CHECK(readout.title == "Band 3 \xC2\xB7 Bell");
+    CHECK(readout.dynamics.empty());
+
+    readout = nodeReadout(values, 2, std::nullopt, true);
+    CHECK(readout.title == "Band 3 \xC2\xB7 Bell \xC2\xB7 Stereo");
+    CHECK(readout.frequency == nodeReadout(values, 2).frequency);
+    CHECK(readout.gain == nodeReadout(values, 2).gain);
+    CHECK(readout.q == nodeReadout(values, 2).q);
+    CHECK(readout.dynamics == std::vector<std::string>{"Dynamics off"});
+
+    dyn(2, core::DynParam::Enabled, 1.0f);
+    dyn(2, core::DynParam::Threshold, -20.0f);
+    dyn(2, core::DynParam::Range, -6.0f);
+    dyn(2, core::DynParam::Attack, 5.0f);
+    dyn(2, core::DynParam::Release, 80.0f);
+    readout = nodeReadout(values, 2, std::nullopt, true);
+    CHECK(readout.dynamics == std::vector<std::string>{"Thr -20.0 dB", "Range -6.0 dB", "Att 5.00 ms", "Rel 80.0 ms"});
+    // Sin detalle no cambia nada.
+    CHECK(nodeReadout(values, 2).dynamics.empty());
+
+    // Con los tiempos automaticos y el detector en el sidechain.
+    values[core::autoTimingParameter(2)] = 1.0f;
+    dyn(2, core::DynParam::Source, 1.0f);
+    values[core::channelParameter(2)] = 3.0f;
+    readout = nodeReadout(values, 2, std::nullopt, true);
+    CHECK(readout.title == "Band 3 \xC2\xB7 Bell \xC2\xB7 Mid");
+    CHECK(readout.dynamics == std::vector<std::string>{"Thr -20.0 dB", "Range -6.0 dB", "Auto times", "Sidechain"});
+
+    // Un tipo sin dinamica (corte) no dice nada de ella.
+    values[core::bandParameter(0, core::BandParam::Type)] = 3.0f;
+    CHECK(nodeReadout(values, 0, std::nullopt, true).dynamics.empty());
+}

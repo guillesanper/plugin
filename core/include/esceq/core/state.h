@@ -49,8 +49,21 @@ struct UiSettings
     /// si no es kDefaultA4Hz. Solo cambia cómo se leen y se escriben las
     /// frecuencias como notas, nunca el sonido.
     double a4Hz = 440.0;
+    /// Analizador ampliado (PLAN.md 5.2, ADR 0018). Solo cambian cómo se ve el
+    /// espectro, nunca el sonido, y cada una se escribe solo si no tiene su
+    /// valor por defecto, que es el del analizador de antes de existir:
+    ///  - puntos de la FFT, uno de kAnalyzerFftSizes (línea `ui.analyzer_fft`);
+    int analyzerFftSize = 4096;
+    ///  - constante de tiempo de bajada, en ms, una de kAnalyzerFallTimesMs
+    ///    (línea `ui.analyzer_fall`);
+    int analyzerFallMs = 350;
+    ///  - inclinación en dB por octava, una de kAnalyzerTilts (`ui.analyzer_tilt`);
+    double analyzerTiltDbPerOctave = 4.5;
+    ///  - mantener los picos (línea `ui.analyzer_peaks`, 0 o 1).
+    bool analyzerPeakHold = false;
 
-    /// Igualdad exacta a propósito: a4Hz está redondeada a 0,1 Hz por sanitize().
+    /// Igualdad exacta a propósito: a4Hz está redondeada a 0,1 Hz por
+    /// sanitize(), y la inclinación es uno de unos pocos valores exactos.
     // NOLINTNEXTLINE(clang-diagnostic-float-equal)
     friend bool operator==(const UiSettings&, const UiSettings&) = default;
 };
@@ -60,6 +73,11 @@ inline constexpr int kMaxPresetNameLength = 64;
 inline constexpr double kDefaultA4Hz = 440.0;
 inline constexpr double kMinA4Hz = 400.0;
 inline constexpr double kMaxA4Hz = 480.0;
+/// Valores válidos de los ajustes del analizador (UiSettings), en el orden en
+/// que se ofrecen. Cualquier otro se lee como el valor por defecto.
+inline constexpr int kAnalyzerFftSizes[] = {4096, 8192, 16384};
+inline constexpr int kAnalyzerFallTimesMs[] = {1000, 350, 120}; ///< Lenta, media y rápida.
+inline constexpr double kAnalyzerTilts[] = {0.0, 3.0, 4.5, 6.0};
 
 /// La afinación `a4Hz` redondeada a 0,1 Hz, o nullopt si no es un número
 /// finito o, redondeada, queda fuera de kMinA4Hz..kMaxA4Hz.
@@ -96,6 +114,10 @@ struct PluginState
 ///     ui.preset Vocal
 ///     ui.notes 1
 ///     ui.a4 432
+///     ui.analyzer_fft 8192
+///     ui.analyzer_fall 1000
+///     ui.analyzer_tilt 3
+///     ui.analyzer_peaks 1
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
 /// independientemente de la configuración regional. `filter_algorithm` (el

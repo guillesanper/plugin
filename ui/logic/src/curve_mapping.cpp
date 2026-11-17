@@ -99,7 +99,7 @@ Rect floatingLabelRect(Rect area, Point node, float width, float height, float g
     return {x, y, w, h};
 }
 
-NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz)
+NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz, bool detailed)
 {
     const auto& specs = core::parameters();
     auto text = [&](std::size_t index) { return core::formatValue(specs[index], values[index]); };
@@ -109,7 +109,7 @@ NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::opti
 
     NodeReadout out;
     out.title = "Band " + std::to_string(band + 1) + " \xC2\xB7 " + text(core::bandParameter(band, core::BandParam::Type));
-    if (settings.channel != dsp::ChannelMode::Stereo)
+    if (detailed || settings.channel != dsp::ChannelMode::Stereo)
         out.title += " \xC2\xB7 " + text(core::channelParameter(band));
 
     out.frequency = text(core::bandParameter(band, core::BandParam::Frequency));
@@ -122,7 +122,34 @@ NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::opti
     if (core::usesSlope(type))
         out.q = out.q.empty() ? text(core::bandParameter(band, core::BandParam::Slope))
                               : text(core::bandParameter(band, core::BandParam::Slope)) + "  " + out.q;
+
+    if (detailed && core::usesDynamics(type))
+    {
+        auto dyn = [&](core::DynParam p) { return text(core::dynamicParameter(band, p)); };
+        if (!settings.dynamics.enabled)
+            out.dynamics.emplace_back("Dynamics off");
+        else
+        {
+            out.dynamics.push_back("Thr " + dyn(core::DynParam::Threshold));
+            out.dynamics.push_back("Range " + dyn(core::DynParam::Range));
+            if (values[core::autoTimingParameter(band)] >= 0.5f)
+                out.dynamics.emplace_back("Auto times");
+            else
+            {
+                out.dynamics.push_back("Att " + dyn(core::DynParam::Attack));
+                out.dynamics.push_back("Rel " + dyn(core::DynParam::Release));
+            }
+            if (values[core::dynamicParameter(band, core::DynParam::Source)] >= 0.5f)
+                out.dynamics.emplace_back("Sidechain");
+        }
+    }
     return out;
+}
+
+bool onGainScale(Rect area, Point p) noexcept
+{
+    const float right = area.x + area.width;
+    return p.x >= right - kGainScaleWidth && p.x <= right && p.y >= area.y && p.y <= area.y + area.height;
 }
 
 dsp::BandSettings soundingBandSettings(const core::ParameterValues& values, int band, dsp::FilterAlgorithm algorithm,

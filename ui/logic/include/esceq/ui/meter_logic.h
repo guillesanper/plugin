@@ -71,6 +71,7 @@ class SpectrumBallistics
 {
 public:
     static constexpr double kRiseSeconds = 0.06;
+    /// Constante de tiempo de bajada por defecto (la "media" de los ajustes).
     static constexpr double kFallSeconds = 0.35;
     /// Por debajo de esto un punto no se mueve en pantalla.
     static constexpr float kRepaintDb = 0.05f;
@@ -82,12 +83,71 @@ public:
     /// Devuelve true si algún punto se ha movido más de kRepaintDb.
     bool update(const std::vector<float>& target, double dtSeconds) noexcept;
 
+    /// Constante de tiempo de bajada, en segundos (> 0). Un valor que no es
+    /// un número positivo y finito se ignora. La subida no cambia.
+    void setFallSeconds(double seconds) noexcept;
+    double fallSeconds() const noexcept { return fallSeconds_; }
+
+    const std::vector<float>& levels() const noexcept { return levels_; }
+
+private:
+    std::vector<float> levels_;
+    float floorDb_;
+    double fallSeconds_ = kFallSeconds;
+};
+
+/// Picos mantenidos del analizador: el máximo que ha alcanzado cada punto del
+/// espectro que se pinta (ya suavizado por SpectrumBallistics) desde el último
+/// clear(). Se dibuja como una línea fina sobre el espectro.
+///
+/// No es segura entre hilos: la usa solo el hilo de la interfaz.
+class SpectrumPeakHold
+{
+public:
+    /// `points` niveles, todos en `floorDb` (sin picos).
+    SpectrumPeakHold(std::size_t points, float floorDb);
+
+    /// Sube cada pico hasta `levels` si lo supera. Devuelve true si alguno ha
+    /// subido más de SpectrumBallistics::kRepaintDb (hay que repintar).
+    bool update(const std::vector<float>& levels) noexcept;
+
+    /// Borra los picos: todos al suelo.
+    void clear() noexcept;
+
+    /// true si algún punto está por encima del suelo (hay algo que dibujar).
+    bool hasPeaks() const noexcept;
+
     const std::vector<float>& levels() const noexcept { return levels_; }
 
 private:
     std::vector<float> levels_;
     float floorDb_;
 };
+
+/// Ajustes del analizador en la interfaz (PLAN.md 5.2, ADR 0018). Los cuatro
+/// primeros se guardan en las preferencias (core::UiSettings, mismos valores
+/// por defecto y mismos valores válidos); `frozen` no se guarda: un proyecto
+/// siempre abre con el analizador en marcha.
+struct AnalyzerView
+{
+    int fftSize = 4096;           ///< Puntos de la FFT: uno de core::kAnalyzerFftSizes.
+    int fallMs = 350;             ///< Constante de tiempo de bajada: una de core::kAnalyzerFallTimesMs.
+    double tiltDbPerOctave = 4.5; ///< Inclinación: una de core::kAnalyzerTilts.
+    bool peakHold = false;        ///< Mantener los picos.
+    bool frozen = false;          ///< Congelado: el espectro no se actualiza.
+
+    /// Igualdad exacta a propósito: la inclinación es uno de unos pocos valores exactos.
+    // NOLINTNEXTLINE(clang-diagnostic-float-equal)
+    friend bool operator==(const AnalyzerView&, const AnalyzerView&) = default;
+};
+
+/// Orden de la FFT (log2 de los puntos) de un tamaño guardado: 12, 13 o 14.
+/// Un tamaño que no es uno de core::kAnalyzerFftSizes da 12 (4096 puntos).
+int analyzerFftOrder(int fftSize) noexcept;
+
+/// Constante de tiempo de bajada, en segundos, de una caída guardada en ms.
+/// Una que no es una de core::kAnalyzerFallTimesMs da SpectrumBallistics::kFallSeconds.
+double analyzerFallSeconds(int fallMs) noexcept;
 
 /// Medidor de la dinámica de una banda: cuánto del rango se está usando,
 /// de 0 (nada) a 1 (todo el rango). Vale para reducción y para realce: el

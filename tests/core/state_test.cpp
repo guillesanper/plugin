@@ -394,6 +394,102 @@ TEST_CASE("Estado: preferencias de la escala de notas absurdas toman el valor po
     CHECK(stored->ui.a4Hz == 441.3);
 }
 
+TEST_CASE("Estado: preferencias del analizador ampliado")
+{
+    // Por defecto no se escriben: un estado sin tocarlas es identico al de antes.
+    const auto defaults = serializePluginState(PluginState{});
+    CHECK(defaults.find("ui.analyzer_") == std::string::npos);
+
+    // Los valores por defecto son los del analizador de antes de existir los ajustes.
+    const UiSettings ui;
+    CHECK(ui.analyzerFftSize == 4096);
+    CHECK(ui.analyzerFallMs == 350);
+    CHECK(ui.analyzerTiltDbPerOctave == 4.5);
+    CHECK_FALSE(ui.analyzerPeakHold);
+
+    PluginState state;
+    state.ui.analyzerFftSize = 16384;
+    state.ui.analyzerFallMs = 1000;
+    state.ui.analyzerTiltDbPerOctave = 0.0;
+    state.ui.analyzerPeakHold = true;
+    const auto text = serializePluginState(state);
+    CHECK(text.find("\nui.analyzer_fft 16384\n") != std::string::npos);
+    CHECK(text.find("\nui.analyzer_fall 1000\n") != std::string::npos);
+    CHECK(text.find("\nui.analyzer_tilt 0\n") != std::string::npos);
+    CHECK(text.find("\nui.analyzer_peaks 1\n") != std::string::npos);
+    const auto restored = deserializePluginState(text);
+    REQUIRE(restored.has_value());
+    CHECK(*restored == state);
+
+    // Cada una por separado, con todos sus valores.
+    for (const int fft : kAnalyzerFftSizes)
+    {
+        PluginState one;
+        one.ui.analyzerFftSize = fft;
+        const auto written = serializePluginState(one);
+        CHECK((written.find("ui.analyzer_fft") != std::string::npos) == (fft != 4096));
+        CHECK(written.find("ui.analyzer_fall") == std::string::npos);
+        CHECK(deserializePluginState(written)->ui == one.ui);
+    }
+    for (const int fall : kAnalyzerFallTimesMs)
+    {
+        PluginState one;
+        one.ui.analyzerFallMs = fall;
+        const auto written = serializePluginState(one);
+        CHECK((written.find("ui.analyzer_fall") != std::string::npos) == (fall != 350));
+        CHECK(deserializePluginState(written)->ui == one.ui);
+    }
+    for (const double tilt : kAnalyzerTilts)
+    {
+        PluginState one;
+        one.ui.analyzerTiltDbPerOctave = tilt;
+        const auto written = serializePluginState(one);
+        // NOLINTNEXTLINE(clang-diagnostic-float-equal)
+        CHECK((written.find("ui.analyzer_tilt") != std::string::npos) == (tilt != 4.5));
+        CHECK(deserializePluginState(written)->ui == one.ui);
+    }
+
+    // Los estados anteriores (que no las tienen) cargan con el analizador de siempre.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt", "v3_classic.txt", "v3_matched.txt"})
+    {
+        INFO(name);
+        const auto old = deserializePluginState(readFixture(name));
+        REQUIRE(old.has_value());
+        CHECK(old->ui.analyzerFftSize == 4096);
+        CHECK(old->ui.analyzerFallMs == 350);
+        CHECK(old->ui.analyzerTiltDbPerOctave == 4.5);
+        CHECK_FALSE(old->ui.analyzerPeakHold);
+    }
+
+    // Son preferencias de la version 2 en adelante, sin subir de version (ADR 0009).
+    const auto v2 = deserializePluginState("esceQ-state 2\nui.analyzer_fft 8192\nui.analyzer_tilt 3\n");
+    REQUIRE(v2.has_value());
+    CHECK(v2->ui.analyzerFftSize == 8192);
+    CHECK(v2->ui.analyzerTiltDbPerOctave == 3.0);
+}
+
+TEST_CASE("Estado: preferencias del analizador absurdas toman el valor por defecto")
+{
+    for (const char* text :
+         {"esceQ-state 3\nui.analyzer_fft 4095\nui.analyzer_fall 351\nui.analyzer_tilt 4.4\nui.analyzer_peaks 2\n",
+          "esceQ-state 3\nui.analyzer_fft 32768\nui.analyzer_fall 0\nui.analyzer_tilt -3\nui.analyzer_peaks -1\n",
+          "esceQ-state 3\nui.analyzer_fft abc\nui.analyzer_fall abc\nui.analyzer_tilt nan\nui.analyzer_peaks abc\n",
+          "esceQ-state 3\nui.analyzer_fft\nui.analyzer_fall -350\nui.analyzer_tilt inf\nui.analyzer_peaks\n",
+          "esceQ-state 3\nui.analyzer_fft 0\nui.analyzer_tilt 4.50001\n"})
+    {
+        INFO(text);
+        const auto state = deserializePluginState(text);
+        REQUIRE(state.has_value());
+        CHECK(state->ui == UiSettings{});
+    }
+
+    UiSettings ui;
+    ui.analyzerFftSize = 1000;
+    ui.analyzerFallMs = 7;
+    ui.analyzerTiltDbPerOctave = std::numeric_limits<double>::quiet_NaN();
+    CHECK(sanitize(ui) == UiSettings{});
+}
+
 TEST_CASE("Estado: los estados anteriores al modo de fase abren en IIR")
 {
     for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt"})

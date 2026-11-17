@@ -154,3 +154,103 @@ TEST_CASE("Opciones: afinaciones habituales y otra a mano, con la actual marcada
         CHECK_FALSE(isCustomTuningMenuId(id));
     }
 }
+
+TEST_CASE("Opciones: ajustes del analizador, con los actuales marcados")
+{
+    // Por defecto, el analizador de siempre, el de las preferencias por defecto.
+    const AnalyzerView view;
+    const core::UiSettings ui;
+    CHECK(view.fftSize == ui.analyzerFftSize);
+    CHECK(view.fallMs == ui.analyzerFallMs);
+    CHECK(view.tiltDbPerOctave == ui.analyzerTiltDbPerOctave);
+    CHECK(view.peakHold == ui.analyzerPeakHold);
+    CHECK_FALSE(view.frozen);
+
+    const auto submenus = analyzerSubmenus(view);
+    REQUIRE(submenus.size() == 3);
+    CHECK(submenus[0].title == "Resolution: 4096 points");
+    CHECK(submenus[1].title == "Fall: Medium (0.35 s)");
+    CHECK(submenus[2].title == "Tilt: 4.5 dB/oct");
+    REQUIRE(submenus[0].items.size() == 3);
+    CHECK(submenus[0].items[0].label == "4096 points");
+    CHECK(submenus[0].items[1].label == "8192 points");
+    CHECK(submenus[0].items[2].label == "16384 points");
+    REQUIRE(submenus[1].items.size() == 3);
+    CHECK(submenus[1].items[0].label == "Slow (1 s)");
+    CHECK(submenus[1].items[1].label == "Medium (0.35 s)");
+    CHECK(submenus[1].items[2].label == "Fast (0.12 s)");
+    REQUIRE(submenus[2].items.size() == 4);
+    CHECK(submenus[2].items[0].label == "0 dB/oct (flat)");
+    CHECK(submenus[2].items[1].label == "3 dB/oct");
+    CHECK(submenus[2].items[2].label == "4.5 dB/oct");
+    CHECK(submenus[2].items[3].label == "6 dB/oct");
+    CHECK(peakHoldItem(false).label == "Peak hold");
+    CHECK(freezeItem(false).label == "Freeze");
+    CHECK(peakHoldItem(true).ticked);
+    CHECK(freezeItem(true).ticked);
+
+    // Una marcada en cada submenu, la actual; cada entrada lleva a su valor, y
+    // ninguna se confunde con las de las demas secciones.
+    std::set<int> ids{pianoKeyboardItem(false).menuId, peakHoldItem(false).menuId, freezeItem(false).menuId};
+    for (const auto& item : tuningItems(440.0))
+        ids.insert(item.menuId);
+    std::size_t entries = ids.size();
+    for (std::size_t s = 0; s < submenus.size(); ++s)
+    {
+        int ticked = 0;
+        for (const auto& item : submenus[s].items)
+        {
+            INFO(item.label);
+            CHECK(item.menuId > 0);
+            ids.insert(item.menuId);
+            ++entries;
+            ticked += item.ticked ? 1 : 0;
+            const auto chosen = analyzerViewForMenuId(view, item.menuId);
+            REQUIRE(chosen.has_value());
+            CHECK_FALSE(filterAlgorithmForMenuId(item.menuId).has_value());
+            CHECK_FALSE(windowSizeForMenuId(item.menuId).has_value());
+            CHECK_FALSE(tuningForMenuId(item.menuId).has_value());
+            CHECK_FALSE(isPianoKeyboardMenuId(item.menuId));
+            // Cambia solo su ajuste, y el resultado se marca en el submenu.
+            const auto again = analyzerSubmenus(*chosen);
+            for (std::size_t other = 0; other < submenus.size(); ++other)
+                for (std::size_t i = 0; i < again[other].items.size(); ++i)
+                    CHECK(again[other].items[i].ticked ==
+                          (other == s ? again[other].items[i].menuId == item.menuId : submenus[other].items[i].ticked));
+            CHECK(chosen->peakHold == view.peakHold);
+            CHECK(chosen->frozen == view.frozen);
+        }
+        CHECK(ticked == 1);
+    }
+    CHECK(ids.size() == entries); // sin identificadores repetidos
+
+    // Todos los valores que se ofrecen son los que el estado acepta.
+    for (const int fft : core::kAnalyzerFftSizes)
+    {
+        AnalyzerView v;
+        v.fftSize = fft;
+        CHECK(analyzerSubmenus(v)[0].title == "Resolution: " + std::to_string(fft) + " points");
+    }
+    AnalyzerView chosen = view;
+    chosen = *analyzerViewForMenuId(chosen, analyzerSubmenus(chosen)[0].items[2].menuId);
+    CHECK(chosen.fftSize == 16384);
+    chosen = *analyzerViewForMenuId(chosen, analyzerSubmenus(chosen)[1].items[0].menuId);
+    CHECK(chosen.fallMs == 1000);
+    chosen = *analyzerViewForMenuId(chosen, analyzerSubmenus(chosen)[2].items[0].menuId);
+    CHECK(chosen.tiltDbPerOctave == 0.0);
+    CHECK(analyzerSubmenus(chosen)[1].title == "Fall: Slow (1 s)");
+    CHECK(analyzerSubmenus(chosen)[2].title == "Tilt: 0 dB/oct (flat)");
+
+    // Los interruptores cambian de estado.
+    chosen = *analyzerViewForMenuId(chosen, peakHoldItem(chosen.peakHold).menuId);
+    CHECK(chosen.peakHold);
+    chosen = *analyzerViewForMenuId(chosen, freezeItem(chosen.frozen).menuId);
+    CHECK(chosen.frozen);
+    chosen = *analyzerViewForMenuId(chosen, freezeItem(chosen.frozen).menuId);
+    CHECK_FALSE(chosen.frozen);
+    CHECK(chosen.fftSize == 16384);
+
+    // Lo que no es una entrada del analizador no cambia nada.
+    for (const int id : {0, -1, 100, 200, 300, 310, 330, 1000})
+        CHECK_FALSE(analyzerViewForMenuId(view, id).has_value());
+}

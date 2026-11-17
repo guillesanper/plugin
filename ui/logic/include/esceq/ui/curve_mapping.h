@@ -85,15 +85,31 @@ Rect floatingLabelRect(Rect area, Point node, float width, float height, float g
 /// con el tipo de filtro actual quedan vacíos.
 struct NodeReadout
 {
-    std::string title;     ///< "Band 3 · Bell" o "Band 3 · Bell · Mid".
+    std::string title;     ///< "Band 3 · Bell" o "Band 3 · Bell · Mid"; con detalle, siempre con el canal.
     std::string frequency; ///< "1.20 kHz"; con la escala de notas, "1.20 kHz · D6 +37 ct".
     std::string gain;      ///< "+3.0 dB"; vacío en los tipos sin ganancia.
     std::string q;         ///< "Q 1.50", o la pendiente en los cortes de 6 dB/oct.
+    /// Solo con detalle y en los tipos con dinámica: "Dynamics off", o sus
+    /// ajustes ("Thr -20.0 dB", "Range -6.0 dB", "Att 5.00 ms", "Rel 80.0 ms";
+    /// "Auto times" en lugar de los tiempos si son automáticos, y "Sidechain"
+    /// si el detector escucha la entrada externa).
+    std::vector<std::string> dynamics;
 };
 
 /// Con `a4Hz` (la escala de notas visible, con esa afinación), la frecuencia
 /// lleva detrás la nota más cercana y su desviación (esceq/ui/notes.h).
-NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz = std::nullopt);
+/// Con `detailed` (la vista ampliada, sin el panel de la banda), el título
+/// dice siempre el canal y se rellena `dynamics`.
+NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::optional<double> a4Hz = std::nullopt,
+                        bool detailed = false);
+
+/// Ancho, en píxeles, de la columna de la escala de ganancia, a la derecha
+/// de la curva (donde van las etiquetas "+6", "0", "-6"...).
+inline constexpr float kGainScaleWidth = 40.0f;
+
+/// true si `p` cae en la escala de ganancia de la curva `area`: un clic ahí
+/// borra los picos mantenidos del analizador.
+bool onGainScale(Rect area, Point p) noexcept;
 
 /// Ajustes de la banda tal y como suenan ahora, para dibujar su curva: los
 /// que recibe el procesador (core::bandSettings con el algoritmo de filtro de
