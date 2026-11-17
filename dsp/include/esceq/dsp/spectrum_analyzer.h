@@ -3,6 +3,7 @@
 
 #include "esceq/dsp/fft.h"
 
+#include <cmath>
 #include <complex>
 #include <span>
 #include <vector>
@@ -43,6 +44,13 @@ public:
     void compute(std::span<const double> frequencies, std::span<float> levelsDb);
 
     static constexpr float kFloorDb = -150.0f;
+
+    /// Lo que suma la inclinación en `frequencyHz` (> 0), en dB:
+    /// `tiltDbPerOctave` · log2(f / 1 kHz). compute() lo suma a cada punto.
+    static double tiltDb(double frequencyHz, double tiltDbPerOctave) noexcept
+    {
+        return tiltDbPerOctave * std::log2(frequencyHz / 1000.0);
+    }
 
 private:
     Fft fft_;

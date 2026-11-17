@@ -86,7 +86,7 @@ void SpectrumAnalyzer::compute(std::span<const double> frequencies, std::span<fl
             level = binDb_[below] + t * (binDb_[above] - binDb_[below]);
         }
 
-        level += tilt_ * std::log2(f / 1000.0);
+        level += tiltDb(f, tilt_);
         levelsDb[i] = std::max(static_cast<float>(level), kFloorDb);
     }
 }

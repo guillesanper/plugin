@@ -4,7 +4,9 @@
 # lo que une core con el host: el estado que entra y sale por
 # get/setStateInformation, el deshacer agrupado por gestos, los presets y
 # processBlock tal y como lo llama el host (buses, sidechain, mono, bypass).
-# No incluyen la interfaz: el editor se sustituye por uno vacío.
+# No incluyen la interfaz: el editor se sustituye por uno vacío. De ella
+# solo usan su lógica sin JUCE (ui/logic), para mandar al procesador los
+# mismos cambios que mandaría un gesto en la curva.
 juce_add_console_app(esceq_plugin_tests PRODUCT_NAME "esceq_plugin_tests")
 
 target_sources(esceq_plugin_tests PRIVATE
@@ -33,6 +35,7 @@ target_compile_definitions(esceq_plugin_tests PRIVATE
 target_link_libraries(esceq_plugin_tests PRIVATE
     esceq_core
     esceq_dsp
+    esceq_ui_logic
     juce::juce_audio_utils
     juce::juce_recommended_config_flags
     Catch2::Catch2)

@@ -2,6 +2,7 @@
 #include "esceq/ui/meter_logic.h"
 
 #include "esceq/core/state.h"
+#include "esceq/dsp/spectrum_analyzer.h"
 
 #include <algorithm>
 #include <cmath>
@@ -123,6 +124,34 @@ void SpectrumPeakHold::clear() noexcept
 bool SpectrumPeakHold::hasPeaks() const noexcept
 {
     return std::any_of(levels_.begin(), levels_.end(), [this](float level) { return level > floorDb_; });
+}
+
+SpectrumAverage::SpectrumAverage(std::size_t points)
+    : power_(points, 0.0),
+      levels_(points, dsp::SpectrumAnalyzer::kFloorDb)
+{
+}
+
+void SpectrumAverage::update(const std::vector<float>& levelsDb, double dtSeconds) noexcept
+{
+    if (levelsDb.size() != levels_.size())
+        return;
+    const double dt = std::isfinite(dtSeconds) ? std::max(dtSeconds, 0.0) : 0.0;
+    const double alpha = 1.0 - std::exp(-dt / kSeconds);
+    for (std::size_t i = 0; i < levels_.size(); ++i)
+    {
+        const double db = std::isfinite(levelsDb[i]) ? levelsDb[i] : dsp::SpectrumAnalyzer::kFloorDb;
+        const double power = std::pow(10.0, 0.1 * db);
+        power_[i] = empty_ ? power : power_[i] + alpha * (power - power_[i]);
+        levels_[i] = std::max(static_cast<float>(10.0 * std::log10(power_[i])), dsp::SpectrumAnalyzer::kFloorDb);
+    }
+    empty_ = false;
+}
+
+void SpectrumAverage::clear() noexcept
+{
+    std::fill(levels_.begin(), levels_.end(), dsp::SpectrumAnalyzer::kFloorDb);
+    empty_ = true;
 }
 
 int analyzerFftOrder(int fftSize) noexcept

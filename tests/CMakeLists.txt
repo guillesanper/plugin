@@ -37,7 +37,8 @@ add_executable(esceq_tests
     ui/meter_logic_test.cpp
     ui/notes_test.cpp
     ui/options_menu_test.cpp
-    ui/session_overlay_test.cpp)
+    ui/session_overlay_test.cpp
+    ui/spectrum_peaks_test.cpp)
 
 target_compile_definitions(esceq_tests PRIVATE
     ESCEQ_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")

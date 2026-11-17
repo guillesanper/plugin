@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "test_support.h"
 
+#include "esceq/core/band_model.h"
 #include "esceq/core/parameters.h"
+#include "esceq/ui/spectrum_peaks.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -235,4 +237,82 @@ TEST_CASE("Deshacer: un final de gesto sin principio no descuadra la agrupacion"
     REQUIRE(p->history().canUndo());
     p->history().undo();
     CHECK_FALSE(p->history().canUndo());
+}
+
+namespace {
+
+/// Lo que hace la curva al crear una banda desde un pico del espectro
+/// (CurveView, PLAN.md 5.3): abre el gesto de la ganancia, crea la banda
+/// (cada parámetro en su gesto), sigue el arrastre vertical y, con Alt, la
+/// hace dinámica antes de soltar. Devuelve los valores al soltar.
+core::ParameterValues takePeak(PluginProcessor& p, int band, const ui::SpectrumPeak& peak,
+                               std::initializer_list<float> gains, bool alt)
+{
+    const auto gainIndex = core::bandParameter(band, core::BandParam::Gain);
+    auto& gain = p.parameter(gainIndex);
+    auto apply = [&](const std::vector<ui::ParameterChange>& changes) {
+        for (const auto& change : changes)
+        {
+            auto& parameter = p.parameter(change.index);
+            // La ganancia ya está en su gesto, abierto todo el arrastre.
+            if (change.index != gainIndex)
+                parameter.beginChangeGesture();
+            parameter.setValueNotifyingHost(parameter.convertTo0to1(change.value));
+            if (change.index != gainIndex)
+                parameter.endChangeGesture();
+        }
+    };
+
+    gain.beginChangeGesture();
+    apply(ui::peakBandChanges(p.currentValues(), band, peak, 0.0));
+    for (const float value : gains)
+    {
+        pump(20); // el arrastre dura: el historial no debe cerrar la acción a medias
+        gain.setValueNotifyingHost(gain.convertTo0to1(value));
+    }
+    if (alt)
+        apply(ui::dynamicPeakChanges(p.currentValues(), band, peak));
+    gain.endChangeGesture();
+    return p.currentValues();
+}
+
+} // namespace
+
+TEST_CASE("Deshacer: crear una banda desde un pico y deshacerla deja el estado exactamente como estaba")
+{
+    for (const bool alt : {false, true})
+    {
+        CAPTURE(alt);
+        auto p = makeProcessor();
+        // Un estado cualquiera: dos bandas en uso y la 3 con ajustes de
+        // cuando estuvo activa (dinámica, canal), que la banda nueva no hereda.
+        drag(*p, core::bandParameter(0, core::BandParam::Enabled), {1.0f});
+        drag(*p, kFreq, {300.0f});
+        drag(*p, kGain, {-2.5f});
+        drag(*p, core::bandParameter(1, core::BandParam::Enabled), {1.0f});
+        drag(*p, core::dynamicParameter(2, core::DynParam::Enabled), {1.0f});
+        drag(*p, core::dynamicParameter(2, core::DynParam::Threshold), {-40.0f});
+        drag(*p, core::channelParameter(2), {3.0f});
+        settle();
+        const auto before = p->currentValues();
+        const int band = 2; // la primera libre
+        REQUIRE(core::firstFreeBand(before) == band);
+
+        const auto after = takePeak(*p, band, {2400.0, -20.0, 6.5}, {-1.0f, -3.5f, -6.0f}, alt);
+        settle();
+        const auto settings = core::bandSettings(after, band);
+        REQUIRE(settings.enabled);
+        CHECK(settings.dynamics.enabled == alt);
+        CHECK(settings.filter.gainDb == (alt ? 0.0 : -6.0));
+
+        // Una sola acción: deshacer vuelve exactamente al estado de antes.
+        REQUIRE(p->history().canUndo());
+        p->history().undo();
+        CHECK(p->currentValues() == before);
+        p->history().undo(); // la acción anterior es la de los arrastres de antes, no un trozo del gesto
+        CHECK(p->currentValues() != before);
+        p->history().redo();
+        p->history().redo();
+        CHECK(p->currentValues() == after);
+    }
 }

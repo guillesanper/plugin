@@ -124,6 +124,42 @@ private:
     float floorDb_;
 };
 
+/// Promedio del espectro en el que se buscan los picos (PLAN.md 5.3, ADR
+/// 0019): media exponencial de la potencia de cada punto, igual al subir que
+/// al bajar, con una constante de tiempo de kSeconds. El espectro que se
+/// pinta sigue cada fotograma (una sola FFT, suavizada con
+/// SpectrumBallistics) y en el ruido tiene un rizado de más de 6 dB; en este
+/// promedio, un pico es lo que se mantiene: una resonancia, no el azar.
+///
+/// No es segura entre hilos: la usa solo el hilo de la interfaz.
+class SpectrumAverage
+{
+public:
+    static constexpr double kSeconds = 1.0;
+
+    /// `points` niveles, sin datos (empty()).
+    explicit SpectrumAverage(std::size_t points);
+
+    /// Lleva el promedio hacia `levelsDb` (mismo tamaño; si no, no hace
+    /// nada) tras `dtSeconds`. Sin datos, toma `levelsDb` tal cual. Los
+    /// niveles no finitos cuentan como dsp::SpectrumAnalyzer::kFloorDb.
+    void update(const std::vector<float>& levelsDb, double dtSeconds) noexcept;
+
+    /// Olvida el promedio: el siguiente update() empieza de cero. Para
+    /// cuando cambia el espectro que se promedia (modo, resolución o inclinación).
+    void clear() noexcept;
+
+    bool empty() const noexcept { return empty_; }
+
+    /// Nivel promedio de cada punto, en dB (en el suelo si empty()).
+    const std::vector<float>& levels() const noexcept { return levels_; }
+
+private:
+    std::vector<double> power_;
+    std::vector<float> levels_;
+    bool empty_ = true;
+};
+
 /// Ajustes del analizador en la interfaz (PLAN.md 5.2, ADR 0018). Los cuatro
 /// primeros se guardan en las preferencias (core::UiSettings, mismos valores
 /// por defecto y mismos valores válidos); `frozen` no se guarda: un proyecto

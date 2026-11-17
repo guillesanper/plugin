@@ -13,7 +13,8 @@ add_library(esceq_ui_logic STATIC
     logic/src/meter_logic.cpp
     logic/src/notes.cpp
     logic/src/options_menu.cpp
-    logic/src/session_overlay.cpp)
+    logic/src/session_overlay.cpp
+    logic/src/spectrum_peaks.cpp)
 
 # Quien use la biblioteca necesita C++20 para sus cabeceras.
 target_compile_features(esceq_ui_logic PUBLIC cxx_std_20)

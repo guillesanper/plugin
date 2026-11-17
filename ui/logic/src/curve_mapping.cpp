@@ -230,7 +230,7 @@ std::vector<GridLine> gainGrid(double rangeDb)
 }
 
 std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
-                                            double gainDb)
+                                            double gainDb, std::optional<double> q)
 {
     const auto& specs = core::parameters();
     std::vector<ParameterChange> changes;
@@ -243,8 +243,12 @@ std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values,
 
     const auto frequency = core::bandParameter(band, core::BandParam::Frequency);
     const auto gain = core::bandParameter(band, core::BandParam::Gain);
-    for (const auto param : {core::BandParam::Type, core::BandParam::Q, core::BandParam::Slope})
-        setDefault(core::bandParameter(band, param));
+    setDefault(core::bandParameter(band, core::BandParam::Type));
+    if (q)
+        set(core::bandParameter(band, core::BandParam::Q), static_cast<float>(*q));
+    else
+        setDefault(core::bandParameter(band, core::BandParam::Q));
+    setDefault(core::bandParameter(band, core::BandParam::Slope));
     set(frequency, static_cast<float>(frequencyHz));
     set(gain, static_cast<float>(gainDb));
 

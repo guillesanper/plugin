@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/meter_logic.h"
 
+#include "esceq/dsp/spectrum_analyzer.h"
+
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
@@ -255,4 +257,57 @@ TEST_CASE("Analizador: mantener picos guarda el maximo de cada punto hasta borra
 
     // Un dato mas corto no se sale.
     CHECK_FALSE(peaks.update({-90.0f}));
+}
+
+TEST_CASE("Picos: el promedio del espectro empieza con el primer dato y sigue la potencia con su constante")
+{
+    SpectrumAverage average(3);
+    CHECK(average.empty());
+    CHECK(average.levels() == std::vector<float>(3, esceq::dsp::SpectrumAnalyzer::kFloorDb));
+
+    // Sin datos, toma el primero tal cual.
+    average.update({-60.0f, -20.0f, 0.0f}, 0.5);
+    CHECK_FALSE(average.empty());
+    CHECK_THAT(average.levels()[0], WithinAbs(-60.0, 1e-4));
+    CHECK_THAT(average.levels()[1], WithinAbs(-20.0, 1e-4));
+    CHECK_THAT(average.levels()[2], WithinAbs(0.0, 1e-4));
+
+    // Tras una constante de tiempo, el 63 % del camino en potencia (no en dB),
+    // igual al subir que al bajar.
+    average.update({-40.0f, -40.0f, -60.0f}, SpectrumAverage::kSeconds);
+    const double k = 1.0 - std::exp(-1.0);
+    auto expected = [k](double from, double to) {
+        const double power =
+            std::pow(10.0, from / 10.0) + k * (std::pow(10.0, to / 10.0) - std::pow(10.0, from / 10.0));
+        return 10.0 * std::log10(power);
+    };
+    CHECK_THAT(average.levels()[0], WithinAbs(expected(-60.0, -40.0), 1e-3));
+    CHECK_THAT(average.levels()[1], WithinAbs(expected(-20.0, -40.0), 1e-3));
+    CHECK_THAT(average.levels()[2], WithinAbs(expected(0.0, -60.0), 1e-3));
+
+    // Con un dato constante, llega a él.
+    for (int i = 0; i < 900; ++i)
+        average.update({-30.0f, -30.0f, -30.0f}, 1.0 / 30.0);
+    for (const float level : average.levels())
+        CHECK_THAT(level, WithinAbs(-30.0, 1e-3));
+}
+
+TEST_CASE("Picos: el promedio se olvida con clear e ignora datos de otro tamano y valores no finitos")
+{
+    SpectrumAverage average(2);
+    average.update({-10.0f, -10.0f}, 0.1);
+    average.update({-50.0f}, 0.1); // otro tamaño: nada
+    CHECK_THAT(average.levels()[0], WithinAbs(-10.0, 1e-4));
+
+    average.clear();
+    CHECK(average.empty());
+    CHECK(average.levels()[0] == esceq::dsp::SpectrumAnalyzer::kFloorDb);
+    average.update({-70.0f, std::numeric_limits<float>::quiet_NaN()}, 0.1);
+    CHECK_THAT(average.levels()[0], WithinAbs(-70.0, 1e-4)); // empieza de cero
+    CHECK(average.levels()[1] == esceq::dsp::SpectrumAnalyzer::kFloorDb);
+
+    // Un dt no finito o negativo no mueve nada.
+    average.update({0.0f, 0.0f}, std::numeric_limits<double>::quiet_NaN());
+    average.update({0.0f, 0.0f}, -1.0);
+    CHECK_THAT(average.levels()[0], WithinAbs(-70.0, 1e-4));
 }

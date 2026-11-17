@@ -148,9 +148,10 @@ struct ParameterChange
 /// dinámica, canal) en su valor por defecto, aunque la banda guardara otros
 /// ajustes de cuando estuvo activa. Solo incluye los parámetros que cambian
 /// respecto a `values`, y la activación va la última: la banda empieza a
-/// sonar ya con sus valores.
+/// sonar ya con sus valores. Con `q`, la campana lleva ese Q en lugar del
+/// de por defecto (ajustado a su rango).
 std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
-                                            double gainDb);
+                                            double gainDb, std::optional<double> q = std::nullopt);
 
 std::vector<double> logFrequencies(int count);
 
