@@ -71,6 +71,19 @@ $S docs/img/ui/comparar.png 1180 700 --compare --select 0
 
 Los menús y los diálogos son ventanas aparte y no salen en esas capturas. Para verlos, `--desktop presets|edit|save SEGUNDOS` deja el editor en pantalla con eso abierto mientras otra herramienta captura la pantalla (el ejemplo está en la cabecera de `tools/snapshot/main.cpp`).
 
+## Medir el coste del hilo de audio
+
+`tools/bench` mide cuánto tarda `dsp::PhaseEqualizer` con cuatro escenarios fijos (24 campanas, 24 cortes de 96 dB/oct, 24 campanas dinámicas comprimiendo y una mezcla de 8 bandas) en los cuatro modos de fase, en % de un núcleo para una instancia estéreo. Solo depende de `dsp/`, así que también se compila sin JUCE:
+
+```
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DESCEQ_BUILD_TOOLS=ON
+cmake --build build --config Release --target esceq_bench
+./build/tools/bench/esceq_bench --rate 44100,48000,96000,192000 --block 32,256,1024
+./build/tools/bench/esceq_bench --convolution
+```
+
+Opciones: `--scenario`, `--mode`, `--rate` y `--block` (listas separadas por comas), `--algorithm classic|matched`, `--seconds`, `--repeat`; `--convolution` mide en vez del ecualizador el pico de la fase lineal, la llamada que completa un bloque de la convolución. Las medidas solo valen en Release y comparadas en la misma máquina; antes de optimizar algo del hilo de audio, mídelo con esto antes y después y deja las cifras en la ADR. Las de la decisión sobre SIMD están en la [ADR 0020](docs/decisiones/0020-sin-simd.md).
+
 ## Reglas de la interfaz
 
 Ver [docs/ui.md](docs/ui.md). En corto:

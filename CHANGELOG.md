@@ -45,6 +45,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 - El selector del tamaño de la ventana (S, M, L) sale de la barra superior y pasa al menú de opciones (*Window size*), para dejar sitio al botón *Auto*. Los tamaños son los mismos, y la ventana se sigue pudiendo redimensionar desde la esquina.
 - El ancho mínimo de la ventana pasa de 960 a 1120 px, y el tamaño S, de 960 × 580 a 1120 × 580, para que quepan el selector del modo de fase y el botón de opciones. Una ventana guardada más estrecha abre con el ancho mínimo.
 
+### Rendimiento
+
+- **Medido el coste del procesado, sin cambios.** Una instancia estéreo con una mezcla típica (8 bandas, 2 de ellas dinámicas) ocupa del 0,55 al 0,95 % de un núcleo a 44,1 y 48 kHz y del 2,4 al 3,9 % a 192 kHz, en cualquier modo de fase y con cualquier tamaño de bloque del host. Los casos extremos: 24 bandas dinámicas comprimiendo sin parar, un 5 % a 48 kHz y del 15 al 22 % a 192 kHz; 24 cortes de 96 dB/oct en IIR, un 6 y un 22 %. Optimizar con instrucciones SIMD ahorraría unas décimas en el uso normal, y no se hace ([ADR 0020](docs/decisiones/0020-sin-simd.md)). En fase lineal, el trabajo de la convolución se concentra en una llamada de cada pocas: en Linear High a 96 o 192 kHz conviene usar bloques del host de 128 o 256 muestras o más ([docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md)).
+
+  **Compatibilidad:** no cambia el procesado, el estado ni los parámetros: **los proyectos anteriores se cargan y suenan exactamente igual.**
+
 ## [0.1.0] - 2026-11-12
 
 Primera versión pública.

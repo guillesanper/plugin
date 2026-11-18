@@ -140,7 +140,15 @@ Medido a 48 kHz con bloques de 256 muestras, compilado con optimización, en el 
 | Linear Medium | 0,30 % | 0,45 % | 2,9 ms | 1,3 ms |
 | Linear High | 0,72 % | 1,0 % | 13 ms | 5,9 ms |
 
-En fase lineal el coste apenas depende del número de bandas: es el de la convolución. El cálculo se concentra en las llamadas en que se completa un bloque de convolución (cada 256, 512 o 1024 muestras). Memoria en High a 48 kHz: el camino de audio ocupa de 1,3 MB (todas las bandas en Stereo) a 2,3 MB (con Mid, Side, Left o Right), y el diseñador de 2,5 a 3 MB más 0,26 MB por banda activa (unos 9 MB con las 24). Medium ocupa la cuarta parte, y Low la dieciseisava. En IIR no se reserva nada de esto.
+En fase lineal el coste apenas depende del número de bandas: es el de la convolución. El cálculo se concentra en las llamadas en que se completa un bloque de convolución (cada 256, 512 o 1024 muestras a 48 kHz, y el doble a cada duplicación de la frecuencia de muestreo). Esa llamada tarda (`esceq_bench --convolution`, medianas; entre paréntesis, al cambiar de FIR, que calcula dos salidas para el fundido):
+
+| Modo | 48 kHz | 96 kHz | 192 kHz | Cada |
+|---|---|---|---|---|
+| Linear Low | 0,01 ms (0,02) | 0,02 ms (0,04) | 0,05 ms (0,09) | 5,3 ms |
+| Linear Medium | 0,03 ms (0,05) | 0,06 ms (0,11) | 0,12 ms (0,24) | 10,7 ms |
+| Linear High | 0,08 ms (0,15–0,18) | 0,2 ms (0,4) | 0,44 ms (0,77) | 21,3 ms |
+
+El producto por las particiones ya lo vectoriza el compilador; la FFT directa y la inversa son algo menos de la mitad. La [ADR 0020](../decisiones/0020-sin-simd.md) tiene las medidas de los cuatro modos de 44,1 a 192 kHz y por qué no se optimiza con SIMD. Memoria en High a 48 kHz: el camino de audio ocupa de 1,3 MB (todas las bandas en Stereo) a 2,3 MB (con Mid, Side, Left o Right), y el diseñador de 2,5 a 3 MB más 0,26 MB por banda activa (unos 9 MB con las 24). Medium ocupa la cuarta parte, y Low la dieciseisava. En IIR no se reserva nada de esto.
 
 ## Verificación
 
@@ -159,3 +167,4 @@ Se comprobó que los tests detectan los fallos: quitando el fundido entre núcle
 - **Pasa todo.** En fase lineal un pasa todo no hace nada: solo cambia la fase, y la fase lineal la iguala en todas las frecuencias.
 - **El analizador "pre"** muestra la entrada sin retrasar, y el "post" la salida, que llega con la latencia: en High, el "post" va unos 360 ms por detrás.
 - **Un hilo de control por instancia**, aunque esté en IIR (mira cada 10 ms si hay algo que hacer).
+- **El trabajo de un bloque de la convolución se hace en una sola llamada** (tabla de [Coste](#coste)). Con bloques del host muy pequeños puede tardar más que el periodo de esa llamada: a 192 kHz con bloques de 32 muestras (0,17 ms), Linear High siempre y Medium al cambiar el FIR; a 96 kHz con bloques de 32 (0,33 ms), Linear High al cambiar el FIR. Con bloques de 128 muestras o más a 96 kHz, y de 256 o más a 192 kHz, cabe con margen. Lo que lo resolvería es repartir ese trabajo entre llamadas (particiones no uniformes); el SIMD solo lo bajaría en torno a un 20 % ([ADR 0020](../decisiones/0020-sin-simd.md)).

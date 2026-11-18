@@ -22,7 +22,7 @@ Las flechas indican "depende de". Nunca al revés.
 | `ui/assets/` | Fuentes embebidas (Inter) | — | SIL OFL 1.1 |
 | `tests/` | Tests de `dsp/`, `core/` y `ui/logic/` | Esos tres, Catch2 | La del código que prueban |
 | `tests/plugin/` | Tests de `plugin/` (`processBlock` con buses y sidechain, estado, deshacer, presets). Usan JUCE, sin la interfaz | `plugin/`, Catch2, JUCE | AGPLv3 |
-| `tools/` | Herramientas de desarrollo (captura del editor, con `-DESCEQ_BUILD_TOOLS=ON`; notas de la release) | `plugin/`, `ui/src/` | AGPLv3 |
+| `tools/` | Herramientas de desarrollo, con `-DESCEQ_BUILD_TOOLS=ON`: captura del editor (`snapshot`) y coste del hilo de audio (`bench`, [ADR 0020](decisiones/0020-sin-simd.md)); notas de la release | `snapshot`: `plugin/`, `ui/src/`; `bench`: solo `dsp/` | AGPLv3 |
 | `packaging/` | Instalador de Windows (Inno Setup) e instrucciones de los paquetes de macOS y Linux | — | AGPLv3 |
 
 `ui/src/` no es una biblioteca: sus fuentes se compilan dentro del objetivo del plugin, porque los módulos de JUCE solo pueden compilarse una vez por binario.
@@ -211,7 +211,7 @@ El búfer que entrega el host contiene los canales de todos los buses: el proces
 | CLAP | Windows, macOS, Linux | clap-juce-extensions | clap-validator |
 | Standalone | Todas | JUCE | — (para depurar; no se distribuye) |
 
-El workflow `CI` (`.github/workflows/ci.yml`) tiene cuatro jobs: `core` (los módulos sin JUCE, en las tres plataformas), `rtsan` (los tests con RealtimeSanitizer), `sanitizers` (todos los tests, también los del plugin, con AddressSanitizer y UndefinedBehaviorSanitizer) y `plugin` (compila todo, tests, validadores y paquetes; en macOS valida el AU con `auval`; en Windows comprueba que no depende del redistribuible de Visual C++ y prueba el instalador). El workflow `Release` (`release.yml`) lo reutiliza al subir una etiqueta `vX.Y.Z` y publica los paquetes. Ver [ADR 0010](decisiones/0010-distribucion.md).
+El workflow `CI` (`.github/workflows/ci.yml`) tiene cuatro jobs: `core` (los módulos sin JUCE y `esceq_bench`, en las tres plataformas), `rtsan` (los tests con RealtimeSanitizer), `sanitizers` (todos los tests, también los del plugin, con AddressSanitizer y UndefinedBehaviorSanitizer) y `plugin` (compila todo, tests, validadores y paquetes; en macOS valida el AU con `auval`; en Windows comprueba que no depende del redistribuible de Visual C++ y prueba el instalador). El workflow `Release` (`release.yml`) lo reutiliza al subir una etiqueta `vX.Y.Z` y publica los paquetes. Ver [ADR 0010](decisiones/0010-distribucion.md).
 
 ## Dependencias externas
 
@@ -219,7 +219,7 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 
 | Dependencia | Versión | Uso | Licencia |
 |---|---|---|---|
-| JUCE | 9.0.5 | `plugin/`, `ui/src/`, `tools/` | AGPLv3 |
+| JUCE | 9.0.5 | `plugin/`, `ui/src/`, `tools/snapshot` | AGPLv3 |
 | clap-juce-extensions | commit `6bde108` (incluye CLAP 1.2.7) | Formato CLAP del plugin | MIT |
 | Catch2 | 3.16.1 | `tests/` | BSL-1.0 |
 
