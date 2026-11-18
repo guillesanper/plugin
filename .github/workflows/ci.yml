@@ -15,7 +15,8 @@ concurrency:
 
 jobs:
   # dsp/ y core/ compilados y testeados SIN JUCE: garantiza que no dependen
-  # del framework (docs/arquitectura.md).
+  # del framework (docs/arquitectura.md). Incluye esceq_bench (tools/bench),
+  # que solo usa dsp/, con su prueba de humo.
   core:
     name: dsp + core (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
@@ -27,7 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Configurar
-        run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build -DESCEQ_BUILD_PLUGIN=OFF -DESCEQ_BUILD_TOOLS=ON -DCMAKE_BUILD_TYPE=Debug
       - name: Compilar
         run: cmake --build build --config Debug --parallel 4
       - name: Tests

@@ -108,3 +108,8 @@ if(ESCEQ_BUILD_TESTS)
         add_subdirectory(tests/plugin)
     endif()
 endif()
+
+# Después de los tests: registra su prueba de humo con ctest.
+if(ESCEQ_BUILD_TOOLS)
+    add_subdirectory(tools/bench)
+endif()
