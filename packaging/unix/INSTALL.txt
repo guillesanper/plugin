@@ -1,6 +1,15 @@
 esceQ - free parametric and dynamic equalizer
 https://github.com/guillesanper/plugin
 
+REQUIREMENTS
+
+  macOS 11 (Big Sur) or later, on Apple silicon or Intel.
+
+  Linux x86-64 with glibc 2.35 or later: Ubuntu 22.04, Debian 12, Fedora 36
+  or later. It needs FreeType and Fontconfig (libfreetype6 and libfontconfig1
+  on Debian and Ubuntu), which every desktop already has. The interface uses
+  X11; on Wayland it runs through XWayland.
+
 HOW TO INSTALL
 
 macOS
