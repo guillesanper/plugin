@@ -2,3 +2,5 @@
 tests/fixtures/** -text
 *.ttf binary
 *.png binary
+# Parche de JUCE: conserva sus finales de línea CRLF.
+tools/pluginval/*.patch -text

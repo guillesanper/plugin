@@ -200,6 +200,16 @@ ctest --preset plugin
 
 Copia `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3` a `~/.vst3`.
 
+Para validar con pluginval como el CI, compílalo con el arreglo de JUCE que necesita en Linux ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md); hace falta además `ladspa-sdk`) y ejecútalo con una pantalla virtual:
+
+```
+sudo apt-get install ladspa-sdk xvfb
+tools/pluginval/build.sh ~/pluginval
+xvfb-run -a ~/pluginval/pluginval --strictness-level 10 --validate build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3
+```
+
+El pluginval publicado (1.0.4) también sirve, pero de vez en cuando se cae al terminar una prueba, por un fallo suyo.
+
 ### RealtimeSanitizer
 
 Con Clang 20 o posterior se pueden ejecutar los tests con RealtimeSanitizer, que aborta si una función del hilo de audio (las marcadas `ESCEQ_NONBLOCKING`) asigna memoria o bloquea. El CI lo hace en cada push.

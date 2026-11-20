@@ -110,8 +110,9 @@ jobs:
       matrix:
         include:
           - os: ubuntu-24.04
-            pluginval: pluginval_Linux.zip
-            pluginval_bin: ./pluginval
+            # En Linux, pluginval se compila con un arreglo (paso siguiente).
+            pluginval: ""
+            pluginval_bin: ./pluginval-linux/pluginval
             clap_validator: clap-validator-0.3.2-ubuntu-18.04.tar.gz
             cmake_args: ""
           - os: windows-latest
@@ -142,7 +143,8 @@ jobs:
           $APT update
           $APT install -y --no-install-recommends \
             libasound2-dev libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb gdb
+            libxcursor-dev libxi-dev libfreetype-dev libfontconfig1-dev libgl1-mesa-dev xvfb gdb \
+            ladspa-sdk
 
       - name: Version
         id: version
@@ -163,14 +165,32 @@ jobs:
       - name: Tests
         run: ctest --test-dir build -C Release --output-on-failure
 
+      # pluginval 1.0.4 publicado lleva JUCE 8.0.3, cuyo host VST3 de Linux
+      # puede usar memoria liberada al destruir una instancia y caerse al
+      # terminar una prueba (ADR 0021). En Linux se compila con el arreglo de
+      # JUCE 9.0.2; se guarda en la cache hasta que cambie el script o el parche.
+      - name: Cache de pluginval (Linux)
+        if: runner.os == 'Linux'
+        id: pluginval-cache
+        uses: actions/cache@v4
+        with:
+          path: pluginval-linux
+          key: pluginval-1.0.4-${{ matrix.os }}-${{ hashFiles('tools/pluginval/**') }}
+
+      - name: Compilar pluginval (Linux)
+        if: runner.os == 'Linux' && steps.pluginval-cache.outputs.cache-hit != 'true'
+        run: tools/pluginval/build.sh pluginval-linux
+
       - name: Descargar validadores
         shell: bash
         run: |
           # pluginval, fijado por version: una version nueva no debe poder
           # tumbar una release el dia de la etiqueta.
-          curl -sSfL --retry 3 -o pluginval.zip \
-            "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/${{ matrix.pluginval }}"
-          unzip -q pluginval.zip
+          if [ -n "${{ matrix.pluginval }}" ]; then
+            curl -sSfL --retry 3 -o pluginval.zip \
+              "https://github.com/Tracktion/pluginval/releases/download/v1.0.4/${{ matrix.pluginval }}"
+            unzip -q pluginval.zip
+          fi
           # clap-validator, fijado por version.
           mkdir clap-validator-dir
           curl -sSfL --retry 3 -o "${{ matrix.clap_validator }}" \
@@ -186,10 +206,9 @@ jobs:
         run: |
           VST3="$ARTEFACTS/VST3/esceQ.vst3"
           if [ "$RUNNER_OS" = "Linux" ]; then
-            # Bajo gdb: si pluginval se cae (una vez lo hizo al salir, después
-            # de SUCCESS, y no se pudo reproducir), el registro trae la pila de
-            # todos los hilos. El código de salida es el de pluginval, o 139
-            # si una señal lo detiene.
+            # Bajo gdb: si pluginval se cae, el registro trae la pila de todos
+            # los hilos. El código de salida es el de pluginval, o 139 si una
+            # señal lo detiene.
             cat > crash.gdb <<'GDB'
           set pagination off
           run

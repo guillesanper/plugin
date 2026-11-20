@@ -27,3 +27,4 @@ Una nota corta por cada decisión de diseño importante: qué se decidió, por q
 | [0018](0018-analizador-ampliado.md) | Analizador ampliado: vista sin panel ni medidor con un botón junto al selector del analizador, ajustes en el menú de opciones y cuatro preferencias (`ui.analyzer_*`) que solo se escriben si no son las de por defecto | Aceptada |
 | [0019](0019-bandas-desde-el-espectro.md) | Bandas desde el espectro: picos buscados en un promedio de potencia de 1 s y sin la inclinación, Alt convierte la ganancia arrastrada en rango, y el gesto entero es una acción de deshacer | Aceptada |
 | [0020](0020-sin-simd.md) | Optimización SIMD: medido el hilo de audio, no compensa y no se optimiza; queda la herramienta de medida `esceq_bench` | Aceptada |
+| [0021](0021-aviso-de-latencia-sin-temporizador.md) | Aviso de latencia sin temporizador (lo da el hilo de control) y pluginval 1.0.4 compilado en Linux con el arreglo de JUCE 9.0.2 para su host VST3 | Aceptada |
