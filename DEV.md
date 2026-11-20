@@ -185,7 +185,7 @@ Antes de cada `git push`: los tests pasan y el plugin carga. Después del push, 
    cmake --build --preset plugin --parallel
    ```
 
-4. El VST3 y el AU quedan en `build/plugin/esceQ_artefacts/Release/`. Cópialos a `~/Library/Audio/Plug-Ins/VST3` y `~/Library/Audio/Plug-Ins/Components`.
+4. El VST3, el AU y el CLAP quedan en `build/plugin/esceQ_artefacts/Release/`. Cópialos a `~/Library/Audio/Plug-Ins/VST3`, `~/Library/Audio/Plug-Ins/Components` y `~/Library/Audio/Plug-Ins/CLAP`. Para el universal (Apple Silicon e Intel), como el CI, configura con `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`; para validar el AU, `auval -strict -v aufx EscQ Escq`.
 
 ## Linux
 
@@ -199,6 +199,8 @@ ctest --preset plugin
 ```
 
 Copia `build/plugin/esceQ_artefacts/Release/VST3/esceQ.vst3` a `~/.vst3`.
+
+Lo que compilas así solo carga en tu distribución y en las posteriores. Los paquetes que se publican los compila el CI en Ubuntu 22.04 ([ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)); para comprobar qué versiones de glibc y libstdc++ pide un binario, `packaging/unix/check-linux-binary.sh esceQ.so`.
 
 Para validar con pluginval como el CI, compílalo con el arreglo de JUCE que necesita en Linux ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md); hace falta además `ladspa-sdk`) y ejecútalo con una pantalla virtual:
 

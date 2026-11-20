@@ -225,6 +225,8 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 
 En el CI, además: pluginval 1.0.4 y clap-validator 0.3.2 para validar los formatos (los dos fijados por versión; en Linux, pluginval se compila con un arreglo de JUCE, `tools/pluginval/`, [ADR 0021](decisiones/0021-aviso-de-latencia-sin-temporizador.md)), `auval` del sistema para el AU, e Inno Setup 6 para el instalador de Windows.
 
+En Linux, el job `plugin` se ejecuta en un contenedor `ubuntu:22.04` con GCC 11, para que el VST3 y el CLAP pidan como mucho glibc 2.35 y la libstdc++ de GCC 11; lo comprueba `packaging/unix/check-linux-binary.sh`. En macOS, el CI firma ad hoc cada paquete y comprueba sus dos arquitecturas, macOS 11 como mínimo y la firma antes de validarlo ([ADR 0022](decisiones/0022-compatibilidad-en-macos-y-linux.md)).
+
 En Windows la biblioteca de ejecución de MSVC se enlaza de forma estática (`CMAKE_MSVC_RUNTIME_LIBRARY`, `/MT`): el plugin no depende del redistribuible de Visual C++, que el instalador no incluye. El CI lo comprueba con `dumpbin`.
 
 Además, la tipografía Inter 4.1 (SIL OFL 1.1) va copiada en `ui/assets/fonts/`, sin modificar y con su licencia, y se embebe en el binario.

@@ -40,6 +40,11 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Cambiado
 
+- **Linux: esceQ carga en Ubuntu 22.04, Debian 12, Fedora 36 o posteriores.** Hasta ahora el VST3 y el CLAP de Linux pedían una glibc 2.38 y la libstdc++ de GCC 13, y solo cargaban en distribuciones de 2024 en adelante. Ahora se compilan en Ubuntu 22.04 y piden glibc 2.35 o posterior; el CI lo comprueba en cada cambio. Las instrucciones del paquete dicen los requisitos de cada sistema. Ver la [ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md).
+- **macOS: el VST3, el AU y el CLAP van firmados ad hoc, enteros.** Antes solo el binario arm64 llevaba la firma ad hoc del enlazador. El CI comprueba además, en los tres formatos, las dos arquitecturas (Apple Silicon e Intel) y que piden macOS 11 como mínimo. Sigue sin haber firma con certificado ni notarización: hay que quitar la cuarentena a mano, como dicen las instrucciones.
+
+  **Compatibilidad:** no cambia el procesado, el estado ni los parámetros: **los proyectos anteriores se cargan y suenan exactamente igual** en los tres sistemas.
+
 - En la barra superior, el selector del rango de la curva pasa de 92 a 72 px y el botón *Bypass* de 76 a 64, para que quepa el botón de la vista ampliada sin cambiar la ventana mínima. Los textos caben enteros.
 - Ctrl/Cmd + izquierda/derecha en la curva avanza la frecuencia de la banda seleccionada un semitono, hasta la nota siguiente o la anterior (antes, un 1 % del recorrido, unos 1,2 semitonos). Con Mayús sigue el paso fino de siempre.
 - El selector del tamaño de la ventana (S, M, L) sale de la barra superior y pasa al menú de opciones (*Window size*), para dejar sitio al botón *Auto*. Los tamaños son los mismos, y la ventana se sigue pudiendo redimensionar desde la esquina.

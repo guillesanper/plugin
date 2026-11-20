@@ -14,7 +14,7 @@ El CI tenía dos fallos intermitentes, los dos en el job `plugin`:
 
    No es código de esceQ. `RunLoop` es la implementación del host de `Steinberg::Linux::IRunLoop`: el plugin le pide que vigile sus descriptores (la cola de mensajes de su copia de JUCE y la conexión con X11) y el host llama al plugin cuando hay algo que leer. pluginval 1.0.4 está compilado con JUCE 8.0.3 (`strings` lo dice), y en esa versión la función que registra captura `this` (el `Impl`) y busca el descriptor en el mapa sin comprobar nada: desensamblada en el binario de pluginval, es un `operator[]` directo sobre el mapa. El bucle de eventos de Linux copia la lista de funciones a llamar antes de llamarlas. Si en la misma vuelta hay que leer de un descriptor del host cuyo mensaje destruye la última instancia del plugin (y con ella el `Impl`) y también de un descriptor del plugin, la segunda llamada usa memoria liberada. JUCE lo arregló en la 9.0.2 con un `weak_ptr` al mapa, con un comentario que describe exactamente este caso (`juce_VST3PluginFormatImpl.h`, la versión que usa esceQ). pluginval no tiene una versión estable posterior: la siguiente es la 2.0.0, que en noviembre de 2026 sigue en beta (beta 3, con JUCE 9.0.3).
 
-   Reproducido en local con pluginval 1.0.4 bajo xvfb y gdb, con la misma pila, cuando la máquina está cargada (compilando a la vez): 1 de cada 15 o 20 ejecuciones, al final de una prueba, sobre todo de *Fuzz parameters*. Lo que pone el plugin es la otra mitad de la condición: mensajes pendientes en su cola justo al destruirlo. Al principio parecía que los ponía el temporizador de 20 Hz del procesador (punto 1), que mandaba un mensaje cada 50 ms aunque no pasara nada. Sin el temporizador sigue cayendo igual (6 de 95 ejecuciones, misma pila): cambiar parámetros deja siempre avisos de JUCE pendientes (el envoltorio VST3, el historial de deshacer), y eso le pasa a cualquier plugin hecho con JUCE. El arreglo tiene que estar en el host.
+   Reproducido en local con pluginval 1.0.4 bajo xvfb y gdb, con la misma pila, cuando la máquina está cargada (compilando a la vez): 1 de cada 15 o 20 ejecuciones, al final de una prueba, sobre todo de *Fuzz parameters*. Lo que pone el plugin es la otra mitad de la condición: mensajes pendientes en su cola justo al destruirlo. Al principio parecía que los ponía el temporizador de 20 Hz del procesador (punto 1), que mandaba un mensaje cada 50 ms aunque no pasara nada. Sin el temporizador sigue cayendo igual (6 de 106 ejecuciones, misma pila): cambiar parámetros deja siempre avisos de JUCE pendientes (el envoltorio VST3, el historial de deshacer), y eso le pasa a cualquier plugin hecho con JUCE. El arreglo tiene que estar en el host.
 
 ## Decisión
 
@@ -46,7 +46,7 @@ En el equipo de desarrollo (Linux x86-64, cuatro núcleos), con pluginval nivel 
 | Validador | Plugin | Ejecuciones | Cierres en `RunLoop` |
 |---|---|---|---|
 | pluginval 1.0.4 publicado | esceQ con el temporizador | 32 | 1 |
-| pluginval 1.0.4 publicado | esceQ sin el temporizador | 95 | 6 |
-| pluginval 1.0.4 con el parche | esceQ sin el temporizador | 49 | 0 |
+| pluginval 1.0.4 publicado | esceQ sin el temporizador | 106 | 6 |
+| pluginval 1.0.4 con el parche | esceQ sin el temporizador | 60 | 0 |
 
 Las ejecuciones del validador publicado y del parcheado se alternan, con el mismo plugin y la misma carga. El test del cambio de modo, fijado a una CPU ocupada (`taskset -c 0 nice -n 19`, con cuatro bucles de carga en esa CPU): la versión anterior falla 8 de 60 veces; la nueva, 0 de 30.
