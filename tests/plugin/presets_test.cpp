@@ -80,6 +80,32 @@ TEST_CASE("Presets: cargar uno de fabrica pone sus valores y se puede deshacer")
     CHECK_FALSE(p->presets().load({"No existe", false}));
 }
 
+TEST_CASE("Presets: cargar justo despues de un gesto no lo junta con la carga")
+{
+    // Sin dejar correr el hilo de mensajes: el gesto aún espera su registro
+    // (EditHistory::kCoalesceMs) cuando se carga. Deshacer la carga devuelve
+    // lo de justo antes, con el gesto; deshacer otra vez, lo de antes de él.
+    cleanUserPresets();
+    for (const bool factoryDefault : {false, true})
+    {
+        auto p = makeProcessor();
+        const auto initial = p->currentValues();
+        drag(*p, core::kOutputGain, {3.0f});
+        const auto afterGesture = p->currentValues();
+
+        if (factoryDefault)
+            p->presets().loadDefault();
+        else
+            REQUIRE(p->presets().load({"Vocal", true}));
+        REQUIRE(p->currentValues() != afterGesture);
+
+        p->history().undo();
+        CHECK(p->currentValues() == afterGesture);
+        p->history().undo();
+        CHECK(p->currentValues() == initial);
+    }
+}
+
 TEST_CASE("Presets: tocar un parametro lo marca como modificado; la salida y el bypass, no")
 {
     cleanUserPresets();

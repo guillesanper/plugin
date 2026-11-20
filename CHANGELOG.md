@@ -54,6 +54,12 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
   **Compatibilidad:** no cambia el procesado, el estado ni los parámetros: **los proyectos anteriores se cargan y suenan exactamente igual.**
 
+### Corregido
+
+- **Deshacer la carga de un preset ya no deshace también el último cambio.** Si se cargaba un preset (o *Default*) justo después de mover un control, antes de que el historial lo registrara (300 ms, o más con el ordenador cargado), los dos quedaban en una sola acción, y deshacer la carga devolvía también el control a su valor anterior. Ahora son dos acciones, como al cambiar el algoritmo de filtro.
+
+  **Compatibilidad:** no cambia el procesado, el estado ni los parámetros.
+
 ### Rendimiento
 
 - **Medido el coste del procesado, sin cambios.** Una instancia estéreo con una mezcla típica (8 bandas, 2 de ellas dinámicas) ocupa del 0,55 al 0,95 % de un núcleo a 44,1 y 48 kHz y del 2,4 al 3,9 % a 192 kHz, en cualquier modo de fase y con cualquier tamaño de bloque del host. Los casos extremos: 24 bandas dinámicas comprimiendo sin parar, un 5 % a 48 kHz y del 15 al 22 % a 192 kHz; 24 cortes de 96 dB/oct en IIR, un 6 y un 22 %. Optimizar con instrucciones SIMD ahorraría unas décimas en el uso normal, y no se hace ([ADR 0020](docs/decisiones/0020-sin-simd.md)). En fase lineal, el trabajo de la convolución se concentra en una llamada de cada pocas: en Linear High a 96 o 192 kHz conviene usar bloques del host de 128 o 256 muestras o más ([docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md)).

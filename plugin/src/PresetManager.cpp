@@ -86,6 +86,9 @@ bool PresetManager::load(const Entry& entry)
     if (!values)
         return false;
 
+    // Lo que el usuario acaba de hacer (un gesto que aún espera su registro)
+    // es una acción aparte: deshacer la carga no lo deshace.
+    processor_.history().flushPending();
     // El modo de fase y la compensación no son parte del preset
     // (core::kParametersOutsidePresets).
     processor_.applyValues(core::applyPreset(*values, processor_.currentValues()));
@@ -113,6 +116,7 @@ void PresetManager::step(int direction)
 
 void PresetManager::loadDefault()
 {
+    processor_.history().flushPending(); // Como en load().
     processor_.applyValues(core::applyPreset(core::defaultValues(), processor_.currentValues()));
     cachedName_.clear();
     cachedValues_.reset();
