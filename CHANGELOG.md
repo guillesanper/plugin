@@ -41,7 +41,8 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 ### Cambiado
 
 - **Linux: esceQ carga en Ubuntu 22.04, Debian 12, Fedora 36 o posteriores.** Hasta ahora el VST3 y el CLAP de Linux pedían una glibc 2.38 y la libstdc++ de GCC 13, y solo cargaban en distribuciones de 2024 en adelante. Ahora se compilan en Ubuntu 22.04 y piden glibc 2.35 o posterior; el CI lo comprueba en cada cambio. Las instrucciones del paquete dicen los requisitos de cada sistema. Ver la [ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md).
-- **macOS: el VST3, el AU y el CLAP van firmados ad hoc, enteros.** Antes solo el binario arm64 llevaba la firma ad hoc del enlazador. El CI comprueba además, en los tres formatos, las dos arquitecturas (Apple Silicon e Intel) y que piden macOS 11 como mínimo. Sigue sin haber firma con certificado ni notarización: hay que quitar la cuarentena a mano, como dicen las instrucciones.
+- **macOS: esceQ carga desde macOS 11 en Apple Silicon.** En los paquetes de la 0.1.0, el binario de Apple Silicon pedía la versión de macOS del equipo que lo compiló (macOS 26) y no habría cargado en versiones anteriores, aunque la intención era macOS 11. Ahora los dos binarios, Apple Silicon e Intel, piden macOS 11, y el CI lo comprueba en los tres formatos.
+- **macOS: el VST3, el AU y el CLAP van firmados ad hoc, enteros.** Antes solo el binario arm64 llevaba la firma ad hoc del enlazador. El CI comprueba además, en los tres formatos, las dos arquitecturas (Apple Silicon e Intel). Sigue sin haber firma con certificado ni notarización: hay que quitar la cuarentena a mano, como dicen las instrucciones.
 
   **Compatibilidad:** no cambia el procesado, el estado ni los parámetros: **los proyectos anteriores se cargan y suenan exactamente igual** en los tres sistemas.
 

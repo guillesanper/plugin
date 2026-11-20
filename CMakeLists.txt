@@ -1,6 +1,12 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 cmake_minimum_required(VERSION 3.24)
 
+# macOS 11 como mínimo, en las dos arquitecturas. Tiene que ir antes de
+# project(): en macOS, project() crea esta entrada de la caché (vacía) y un
+# set(... CACHE) posterior no la cambia; el compilador usaría la versión del
+# SDK. El CI comprueba la que pide cada binario (ADR 0022).
+set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Versión mínima de macOS")
+
 project(esceQ VERSION 0.1.0 LANGUAGES C CXX)
 
 # ESCEQ_BUILD_PLUGIN=OFF compila solo dsp/ y core/ (sin descargar JUCE).
@@ -35,7 +41,6 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
-set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "")
 
 if(MSVC)
     # Los fuentes están en UTF-8. /MP compila en paralelo dentro de cada proyecto.
