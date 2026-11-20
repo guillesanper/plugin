@@ -286,7 +286,11 @@ std::string formatValue(const ParameterSpec& spec, float value)
         const double rounded = std::round(v * 10.0) / 10.0;
         // El "+" solo tiene sentido si el parámetro también admite negativos.
         const bool signedRange = spec.min < 0.0f;
-        return (signedRange && rounded > 0.0 ? "+" : "") + fixed(rounded == 0.0 ? 0.0 : rounded, 1) + " dB";
+        // Sin `"+" + std::string`: GCC 12 da un falso aviso -Wrestrict (bug 105651).
+        std::string text = signedRange && rounded > 0.0 ? "+" : "";
+        text += fixed(rounded == 0.0 ? 0.0 : rounded, 1);
+        text += " dB";
+        return text;
     }
     return fixed(v, 2);
 }
