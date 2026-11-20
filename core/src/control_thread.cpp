@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/core/control_thread.h"
 
+#include <utility>
+
 namespace esceq::core
 {
 
-ControlThread::ControlThread(dsp::PhaseEqualizer& equalizer, dsp::AutoGain& autoGain, Threading threading)
-    : equalizer_(equalizer), autoGain_(autoGain)
+ControlThread::ControlThread(dsp::PhaseEqualizer& equalizer, dsp::AutoGain& autoGain, Threading threading,
+                             LatencyCallback onLatencyChange)
+    : equalizer_(equalizer), autoGain_(autoGain), onLatencyChange_(std::move(onLatencyChange)),
+      seenLatency_(equalizer.latencySamples())
 {
     if (threading == Threading::Background)
         thread_ = std::thread([this] { run(); });
@@ -37,6 +41,16 @@ void ControlThread::serviceAll()
     }
     // La compensación solo calcula la última petición.
     autoGain_.service();
+
+    // La latencia cambia en el hilo de audio, al adoptar el modo entregado
+    // (en esta vuelta o en una anterior).
+    const int latency = equalizer_.latencySamples();
+    if (latency != seenLatency_)
+    {
+        seenLatency_ = latency;
+        if (onLatencyChange_)
+            onLatencyChange_(latency);
+    }
 }
 
 void ControlThread::run()

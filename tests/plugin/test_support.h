@@ -22,6 +22,21 @@ inline void pump(int milliseconds)
     juce::MessageManager::getInstance()->runDispatchLoopUntil(milliseconds);
 }
 
+/// Deja correr el hilo de mensajes hasta que `done()` o pasen `limitMs`
+/// milisegundos. true si `done()`. El límite solo detecta un fallo: para algo
+/// que ya está en la cola de mensajes, `done()` se cumple en la primera vuelta.
+template <typename Done> bool pumpUntil(Done done, int limitMs = 10000)
+{
+    const auto limit = juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(limitMs);
+    while (!done())
+    {
+        if (juce::Time::getMillisecondCounter() > limit)
+            return false;
+        pump(1);
+    }
+    return true;
+}
+
 /// Tiempo suficiente para que el historial registre una acción.
 inline void settle()
 {

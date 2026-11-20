@@ -72,18 +72,7 @@ PluginProcessor::PluginProcessor(std::shared_ptr<core::SpectrumSession> session)
 // descargar el binario).
 PluginProcessor::~PluginProcessor() = default;
 
-PluginProcessor::LatencyReporter::LatencyReporter(PluginProcessor& owner)
-    : owner_(owner)
-{
-    startTimerHz(kLatencyPollHz);
-}
-
-PluginProcessor::LatencyReporter::~LatencyReporter()
-{
-    stopTimer();
-}
-
-void PluginProcessor::LatencyReporter::timerCallback()
+void PluginProcessor::LatencyReporter::handleAsyncUpdate()
 {
     // setLatencySamples() avisa al host, y eso no se hace desde el hilo de audio.
     const int latency = owner_.engineLatencySamples();

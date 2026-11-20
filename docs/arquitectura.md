@@ -182,7 +182,7 @@ Comunicación:
 - **Ganancia dinámica → interfaz:** 24 `std::atomic<float>` que el hilo de audio escribe al final de cada bloque y la interfaz lee a 30 Hz (sin orden entre bandas: basta para dibujar). Igual con un `std::atomic<bool>` que indica si el host tiene conectado el sidechain.
 - **Audio ↔ control, compensación de ganancia:** con `auto_gain` encendido, cuando cambian los parámetros el hilo de audio publica las bandas en el `dsp::TripleBuffer` de `dsp::AutoGain`; el de control calcula la compensación y la publica con el número de la petición en un atómico de 64 bits. El audio aplica la última que haya, y al encenderla espera a la de los ajustes de ese momento ([docs/dsp/compensacion-de-ganancia.md](dsp/compensacion-de-ganancia.md)).
 - **Audio ↔ control, fase lineal:** el hilo de audio publica lo que hay que diseñar en un `dsp::TripleBuffer`; el de control entrega los FIR y los caminos de cada modo por un `dsp::Handoff`, por el que también recoge lo que el audio ya no usa para destruirlo. El hilo de audio no asigna ni libera memoria ([docs/dsp/fase-lineal.md](dsp/fase-lineal.md)).
-- **Latencia → host:** el procesador la comunica en `prepareToPlay` y, si cambia de modo con el audio en marcha, desde un temporizador del hilo de mensajes (20 Hz).
+- **Latencia → host:** el procesador la comunica en `prepareToPlay`. Si cambia de modo con el audio en marcha, la latencia cambia en el hilo de audio; el hilo de control lo ve en su vuelta siguiente (`core::ControlThread`, cada 10 ms) y pide un `juce::AsyncUpdater` (`LatencyReporter`), que en el hilo de mensajes llama a `setLatencySamples`. Sin cambios no hay mensajes ([ADR 0021](decisiones/0021-aviso-de-latencia-sin-temporizador.md)).
 - **Audio → otras instancias:** una tercera `dsp::SpscFifo` por instancia, en `core::SpectrumSession`. El hilo de audio solo escribe si alguna interfaz del proceso está comparando (un atómico); la lee el hilo de la sesión, que publica el espectro bajo un cerrojo que el hilo de audio nunca toma. Las interfaces leen copias (`snapshot`).
 - **Nivel de salida → interfaz:** un `std::atomic<float>` por canal con el pico de salida. El hilo de audio solo lo sube; el medidor lo lee y lo pone a cero 30 veces por segundo. Si coinciden puede perderse el pico de un bloque: es un medidor, no una medida.
 
@@ -223,7 +223,7 @@ Se fijan por versión en CMake y se descargan con `FetchContent`.
 | clap-juce-extensions | commit `6bde108` (incluye CLAP 1.2.7) | Formato CLAP del plugin | MIT |
 | Catch2 | 3.16.1 | `tests/` | BSL-1.0 |
 
-En el CI, además: pluginval 1.0.4 y clap-validator 0.3.2 para validar los formatos (los dos fijados por versión), `auval` del sistema para el AU, e Inno Setup 6 para el instalador de Windows.
+En el CI, además: pluginval 1.0.4 y clap-validator 0.3.2 para validar los formatos (los dos fijados por versión; en Linux, pluginval se compila con un arreglo de JUCE, `tools/pluginval/`, [ADR 0021](decisiones/0021-aviso-de-latencia-sin-temporizador.md)), `auval` del sistema para el AU, e Inno Setup 6 para el instalador de Windows.
 
 En Windows la biblioteca de ejecución de MSVC se enlaza de forma estática (`CMAKE_MSVC_RUNTIME_LIBRARY`, `/MT`): el plugin no depende del redistribuible de Visual C++, que el instalador no incluye. El CI lo comprueba con `dumpbin`.
 

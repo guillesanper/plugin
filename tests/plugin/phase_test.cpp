@@ -12,6 +12,7 @@
 
 #include <cmath>
 #include <numbers>
+#include <utility>
 #include <vector>
 
 using Catch::Matchers::WithinAbs;
@@ -145,30 +146,50 @@ TEST_CASE("Fase: un impulso sale retrasado la latencia, con la magnitud de la cu
 
 TEST_CASE("Fase: cambiar de modo con el audio en marcha avisa al host desde el hilo de mensajes")
 {
+    // Determinista: el trabajo del hilo de control lo hace el test con
+    // flushControlThread(), sin esperar a que el hilo despierte.
     auto p = makeProcessor();
     bellAt1k(*p, 4.0f);
     prepare(*p);
     REQUIRE(p->getLatencySamples() == 0);
 
-    drag(*p, core::kPhaseMode, {1.0f});
-    // El hilo de diseño prepara el modo; el audio sigue en IIR mientras.
     const auto input = noise(kBlock * 4);
-    for (int i = 0; i < 400 && p->engineLatencySamples() == 0; ++i)
+    for (const auto& [choice, expected] : {std::pair{1.0f, 1280}, std::pair{0.0f, 0}})
     {
-        (void)render(*p, input);
-        pump(5);
+        const int latency = expected;
+        const int before = p->getLatencySamples();
+        drag(*p, core::kPhaseMode, {choice});
+        (void)render(*p, input); // El procesador pasa el modo pedido al ecualizador.
+        p->flushControlThread(); // Y el hilo de control lo prepara.
+        // El audio sigue en el modo anterior hasta el cambio, que se hace
+        // con un fundido de unos bloques.
+        for (int i = 0; i < 40 && p->engineLatencySamples() != latency; ++i)
+            (void)render(*p, input);
+        REQUIRE(p->engineLatencySamples() == latency);
+
+        // El hilo de audio no avisa al host: lo hace el de mensajes, cuando
+        // el hilo de control ve la latencia nueva.
+        CHECK(p->getLatencySamples() == before);
+        p->flushControlThread();
+        CHECK(pumpUntil([&] { return p->getLatencySamples() == latency; }));
     }
-    REQUIRE(p->engineLatencySamples() == 1280);
+}
 
-    // El host se entera desde el hilo de mensajes.
-    pump(1000 / PluginProcessor::kLatencyPollHz + 100);
-    CHECK(p->getLatencySamples() == 1280);
-
-    drag(*p, core::kPhaseMode, {0.0f});
-    for (int i = 0; i < 400 && p->engineLatencySamples() != 0; ++i)
-        (void)render(*p, input);
-    pump(1000 / PluginProcessor::kLatencyPollHz + 100);
-    CHECK(p->getLatencySamples() == 0);
+TEST_CASE("Fase: el hilo de control avisa solo del cambio de latencia")
+{
+    // Lo de arriba sin flushControlThread(): el hilo propio lo ve como mucho
+    // core::ControlThread::kPeriod después y avisa al hilo de mensajes.
+    auto p = makeProcessor();
+    prepare(*p);
+    drag(*p, core::kPhaseMode, {1.0f});
+    const auto input = noise(kBlock * 4);
+    CHECK(pumpUntil(
+        [&]
+        {
+            (void)render(*p, input);
+            return p->getLatencySamples() == 1280;
+        }));
+    CHECK(p->engineLatencySamples() == 1280);
 }
 
 TEST_CASE("Fase: sin tiempo real el render no depende del hilo de diseno")

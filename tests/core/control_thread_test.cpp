@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
@@ -176,4 +177,64 @@ TEST_CASE("Hilo de control: el hilo propio calcula la compensacion")
     while (autoGain.latestDb() != expected && Clock::now() < limit)
         std::this_thread::yield();
     CHECK(autoGain.latestDb() == expected);
+}
+
+TEST_CASE("Hilo de control: avisa una vez de cada cambio de latencia y nunca sin cambios")
+{
+    // El plugin avisa al host con este aviso, no mirando con un temporizador:
+    // sin cambios, el hilo de mensajes no recibe nada (ADR 0021).
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    eq.setBand(0, bell(1000.0, 6.0));
+    eq.prepare(kFs);
+    std::vector<int> notified;
+    core::ControlThread control(eq, autoGain, core::ControlThread::Threading::Manual,
+                                [&](int latency) { notified.push_back(latency); });
+
+    std::uint32_t seed = 1u;
+    for (int i = 0; i < 5; ++i)
+    {
+        processBlock(eq, seed);
+        control.flush();
+    }
+    CHECK(notified.empty());
+
+    // Mientras el modo nuevo se prepara y hasta que el audio lo adopta, la
+    // latencia es la de antes: no hay aviso.
+    eq.setPhaseMode(dsp::PhaseMode::LinearLow);
+    control.flush();
+    CHECK(notified.empty());
+    CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
+    control.flush();
+    const int low = dsp::latencySamples(dsp::PhaseMode::LinearLow, kFs);
+    CHECK(notified == std::vector<int>{low});
+    control.flush();
+    processBlock(eq, seed);
+    control.flush();
+    CHECK(notified == std::vector<int>{low});
+
+    eq.setPhaseMode(dsp::PhaseMode::Iir);
+    control.flush();
+    CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
+    control.flush();
+    CHECK(notified == std::vector<int>{low, 0});
+}
+
+TEST_CASE("Hilo de control: el hilo propio avisa del cambio de latencia")
+{
+    // Con ThreadSanitizer, comprueba también el aviso desde el hilo propio.
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    eq.prepare(kFs);
+    std::atomic<int> notified{-1};
+    core::ControlThread control(eq, autoGain, core::ControlThread::Threading::Background,
+                                [&](int latency) { notified.store(latency); });
+
+    eq.setPhaseMode(dsp::PhaseMode::LinearMedium);
+    CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
+    const int expected = dsp::latencySamples(dsp::PhaseMode::LinearMedium, kFs);
+    const auto limit = Clock::now() + std::chrono::seconds(10);
+    while (notified.load() != expected && Clock::now() < limit)
+        std::this_thread::sleep_for(core::ControlThread::kPeriod);
+    CHECK(notified.load() == expected);
 }

@@ -148,10 +148,15 @@ public:
     /// Latencia del modo de fase que suena, en muestras (cualquier hilo). El
     /// host la conoce por getLatencySamples(), que se pone al día en
     /// prepareToPlay() y, si cambia con el audio en marcha, desde el hilo de
-    /// mensajes, como mucho 1/kLatencyPollHz segundos después.
+    /// mensajes: el hilo de control ve el cambio (como mucho
+    /// core::ControlThread::kPeriod después) y le manda un aviso.
     int engineLatencySamples() const noexcept { return equalizer_.latencySamples(); }
 
-    static constexpr int kLatencyPollHz = 20;
+    /// Hace ya, en el hilo que llama, el trabajo pendiente del hilo de
+    /// control: diseños de fase lineal, compensación y aviso de latencia
+    /// (core::ControlThread::flush()). Bloquea: nunca desde el hilo de audio
+    /// en tiempo real.
+    void flushControlThread() { control_.flush(); }
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createLayout();
@@ -163,15 +168,15 @@ private:
     float autoGainDb() const noexcept;
 
     /// Avisa al host, desde el hilo de mensajes, cuando cambia la latencia del
-    /// motor (al cambiar de modo de fase con el audio en marcha).
-    class LatencyReporter final : private juce::Timer
+    /// motor (al cambiar de modo de fase con el audio en marcha). Lo pide el
+    /// hilo de control al ver el cambio; sin cambios no hay mensajes (ADR 0021).
+    class LatencyReporter final : public juce::AsyncUpdater
     {
     public:
-        explicit LatencyReporter(PluginProcessor& owner);
-        ~LatencyReporter() override;
+        explicit LatencyReporter(PluginProcessor& owner) : owner_(owner) {}
 
     private:
-        void timerCallback() override;
+        void handleAsyncUpdate() override;
         PluginProcessor& owner_;
     };
 
@@ -181,9 +186,13 @@ private:
 
     dsp::PhaseEqualizer equalizer_;
     dsp::AutoGain autoGain_;
-    /// Diseña los FIR de fase lineal y calcula la compensación fuera del hilo
-    /// de audio. Va después de equalizer_ y autoGain_ para destruirse antes.
-    core::ControlThread control_{equalizer_, autoGain_};
+    /// Antes que control_, que lo usa desde su hilo: se destruye después.
+    LatencyReporter latencyReporter_{*this};
+    /// Diseña los FIR de fase lineal, calcula la compensación y ve los cambios
+    /// de latencia fuera del hilo de audio. Va después de equalizer_,
+    /// autoGain_ y latencyReporter_ para destruirse antes.
+    core::ControlThread control_{equalizer_, autoGain_, core::ControlThread::Threading::Background,
+                                 [this](int) { latencyReporter_.triggerAsyncUpdate(); }};
     core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
     dsp::FilterAlgorithm pushedAlgorithm_ = core::kNewInstanceFilterAlgorithm; ///< Ídem.
     bool autoGainPushed_ = false; ///< Con la compensación encendida en lo último pasado. Ídem.
@@ -208,9 +217,6 @@ private:
     std::shared_ptr<core::SpectrumSession> session_;
     std::unique_ptr<core::SpectrumSession::Member> sessionMember_;
     core::CompareSelection compare_;
-
-    /// El último: su temporizador se para antes de destruir nada de lo que lee.
-    LatencyReporter latencyReporter_{*this};
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };
