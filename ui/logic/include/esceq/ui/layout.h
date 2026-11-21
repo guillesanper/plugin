@@ -117,6 +117,45 @@ struct PanelLayout
 
 PanelLayout panelLayout(Rect bounds) noexcept;
 
+/// Panel Match (igualar a una referencia, PLAN.md 5.6): una tarjeta sobre la
+/// esquina superior derecha de la curva, a la izquierda de su escala de dB.
+/// Filas de arriba abajo: título y cierre; referencia; Learn/Stop y los
+/// segundos útiles; Amount; Smoothing; Max bands; Range (mínimo y máximo);
+/// Apply y el estado.
+struct MatchPanelLayout
+{
+    Rect card;
+    Rect title;
+    Rect close;
+    Rect referenceLabel;
+    Rect reference;
+    Rect learn;
+    Rect progress; ///< "3.2 s / 10 s" y su barra.
+    Rect amountLabel;
+    Rect amount;
+    Rect smoothingLabel;
+    Rect smoothing;
+    Rect bandsLabel;
+    Rect bands;
+    Rect rangeLabel;
+    Rect rangeLow;
+    Rect rangeDash; ///< El guion entre el mínimo y el máximo.
+    Rect rangeHigh;
+    Rect apply;
+    Rect status; ///< "Fitting…", "Nothing to match", los avisos o las bandas propuestas.
+};
+
+inline constexpr float kMatchCardWidth = 280.0f;
+inline constexpr float kMatchCardHeight = 240.0f;
+/// Ancho de las etiquetas de la izquierda ("SMOOTHING") y de los botones Learn y Apply.
+inline constexpr float kMatchLabelWidth = 72.0f;
+
+/// `curve` es la zona de la curva (EditorLayout::curve), en la vista normal o
+/// en la ampliada. La tarjeta queda dentro de ella, separada 8 px de arriba y
+/// a la izquierda de la escala de dB (kGainScaleWidth); si la curva es más
+/// baja que la tarjeta, la tarjeta se recorta a su alto.
+MatchPanelLayout matchPanelLayout(Rect curve) noexcept;
+
 /// Reparto vertical de la celda de un potenciómetro.
 struct KnobCellLayout
 {

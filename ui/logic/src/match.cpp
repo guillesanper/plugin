@@ -6,7 +6,9 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
+#include <string>
 
 namespace esceq::ui
 {
@@ -150,6 +152,218 @@ core::ParameterValues withChanges(core::ParameterValues values, std::span<const 
         if (change.index < values.size())
             values[change.index] = change.value;
     return values;
+}
+
+std::vector<int> matchTargetBands(const core::ParameterValues& values, int count)
+{
+    std::vector<int> out;
+    for (int band = 0; band < core::kNumBands && static_cast<int>(out.size()) < count; ++band)
+        if (values[core::bandParameter(band, core::BandParam::Enabled)] < 0.5f)
+            out.push_back(band);
+    return out;
+}
+
+// --- Panel ---
+
+std::string matchLearnText(bool learning)
+{
+    return learning ? "Stop" : "Learn";
+}
+
+std::string matchLearnTooltip(const MatchStatus& status)
+{
+    if (status.learning)
+        return "Stop learning (what was learned is kept)";
+    if (!status.canLearn)
+        return matchBlockText(MatchBlock::NoReference);
+    return "Learn from scratch the average spectrum of this track and of the reference, while both play";
+}
+
+namespace
+{
+
+std::string bandsText(int count)
+{
+    return std::to_string(count) + (count == 1 ? " band" : " bands");
+}
+
+} // namespace
+
+std::string matchApplyTooltip(const MatchStatus& status, int proposedBands)
+{
+    if (!status.canApply)
+        return matchBlockText(status.applyBlock);
+    return "Create " + bandsText(proposedBands) + " in the free bands (one undo step)";
+}
+
+MatchStatusLine matchStatusLine(const MatchStatus& status, int proposedBands)
+{
+    if (status.notice != MatchNotice::None && !status.learning)
+        return {matchNoticeText(status.notice), true};
+    if (!status.showCurves)
+    {
+        if (status.learning)
+            return {"Learning\xE2\x80\xA6", false};
+        return {matchBlockText(status.applyBlock == MatchBlock::NoReference ? MatchBlock::NoReference
+                                                                             : MatchBlock::LearnFirst),
+                false};
+    }
+    if (status.applyBlock == MatchBlock::None)
+        return {bandsText(proposedBands) + " proposed", false};
+    return {matchBlockText(status.applyBlock), false};
+}
+
+double matchProgressFraction(double usefulSeconds) noexcept
+{
+    if (!std::isfinite(usefulSeconds))
+        return 0.0;
+    // Llena con los 10 s que cuentan para Apply (con la holgura de MatchLearner::ready).
+    if (usefulSeconds + core::MatchLearner::kSecondsTolerance >= core::kMatchRequiredSeconds)
+        return 1.0;
+    return std::clamp(usefulSeconds / core::kMatchRequiredSeconds, 0.0, 1.0);
+}
+
+std::string matchAmountText(double amount)
+{
+    const double fraction = std::isfinite(amount) ? std::clamp(amount, 0.0, 1.0) : 0.0;
+    char text[32];
+    std::snprintf(text, sizeof(text), "%.0f %%", fraction * 100.0);
+    return text;
+}
+
+std::optional<double> parseMatchAmount(std::string_view text)
+{
+    std::string clean(text);
+    auto blank = [](char c) { return c == ' ' || c == '\t'; };
+    while (!clean.empty() && blank(clean.back()))
+        clean.pop_back();
+    if (!clean.empty() && clean.back() == '%')
+        clean.pop_back();
+    const auto first = std::find_if_not(clean.begin(), clean.end(), blank);
+    clean.erase(clean.begin(), first);
+    while (!clean.empty() && blank(clean.back()))
+        clean.pop_back();
+    if (clean.empty())
+        return std::nullopt;
+    char* end = nullptr;
+    const double percent = std::strtod(clean.c_str(), &end);
+    if (end != clean.c_str() + clean.size() || !std::isfinite(percent))
+        return std::nullopt;
+    return std::clamp(percent, 0.0, 100.0) / 100.0;
+}
+
+int matchMaxBandsLimit(int freeBands) noexcept
+{
+    return std::clamp(freeBands, 1, core::kNumBands);
+}
+
+int matchMaxBandsShown(const core::MatchSettings& settings, int freeBands) noexcept
+{
+    return std::clamp(settings.maxBands, 1, matchMaxBandsLimit(freeBands));
+}
+
+namespace
+{
+
+constexpr core::ParameterSpec kRangeLowSpec{
+    "", "Range low", "Hz", core::ParameterKind::Continuous, static_cast<float>(core::MatchSettings::kMinHz),
+    static_cast<float>(core::MatchSettings::kMaxHz), 30.0f, core::ParameterScale::Logarithmic, {}};
+constexpr core::ParameterSpec kRangeHighSpec{
+    "", "Range high", "Hz", core::ParameterKind::Continuous, static_cast<float>(core::MatchSettings::kMinHz),
+    static_cast<float>(core::MatchSettings::kMaxHz), 16000.0f, core::ParameterScale::Logarithmic, {}};
+
+} // namespace
+
+const core::ParameterSpec& matchRangeSpec(bool high) noexcept
+{
+    return high ? kRangeHighSpec : kRangeLowSpec;
+}
+
+core::MatchSettings withMatchRange(core::MatchSettings settings, bool high, double hz) noexcept
+{
+    if (!std::isfinite(hz))
+        return core::sanitize(settings);
+    const double ratio = std::exp2(core::MatchSettings::kMinRangeOctaves);
+    if (high)
+    {
+        settings.highHz = hz;
+        settings.lowHz = std::min(settings.lowHz, hz / ratio);
+    }
+    else
+    {
+        settings.lowHz = hz;
+        settings.highHz = std::max(settings.highHz, hz * ratio);
+    }
+    return core::sanitize(settings);
+}
+
+// --- Dibujo ---
+
+MatchSpectraDisplay matchSpectraDisplay(std::span<const float> trackDb, std::span<const float> referenceDb)
+{
+    MatchSpectraDisplay out;
+    out.trackDb.assign(trackDb.begin(), trackDb.end());
+    out.referenceDb.assign(referenceDb.begin(), referenceDb.end());
+    const std::size_t n = std::min(trackDb.size(), referenceDb.size());
+    if (n == 0)
+        return out;
+
+    const dsp::CollisionSettings presence{};
+    const float trackPeak = *std::max_element(trackDb.begin(), trackDb.begin() + static_cast<std::ptrdiff_t>(n));
+    const float referencePeak =
+        *std::max_element(referenceDb.begin(), referenceDb.begin() + static_cast<std::ptrdiff_t>(n));
+    std::vector<double> present;
+    std::vector<double> all;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double difference = static_cast<double>(referenceDb[i]) - static_cast<double>(trackDb[i]);
+        if (!std::isfinite(difference))
+            continue;
+        all.push_back(difference);
+        if (dsp::presence(trackDb[i], trackPeak, presence) >= 0.5f &&
+            dsp::presence(referenceDb[i], referencePeak, presence) >= 0.5f)
+            present.push_back(difference);
+    }
+    auto& values = present.empty() ? all : present;
+    if (values.empty())
+        return out;
+    const auto middle = values.begin() + static_cast<std::ptrdiff_t>(values.size() / 2);
+    std::nth_element(values.begin(), middle, values.end());
+    double median = *middle;
+    if (values.size() % 2 == 0)
+        median = 0.5 * (median + *std::max_element(values.begin(), middle));
+    out.shiftDb = median;
+    for (auto& level : out.referenceDb)
+        level = static_cast<float>(static_cast<double>(level) - median);
+    return out;
+}
+
+std::vector<MatchRun> matchTargetRuns(const dsp::CurveMatchResult& result)
+{
+    std::vector<MatchRun> runs;
+    const std::size_t n = std::min(result.weights.size(), result.targetDb.size());
+    for (std::size_t i = 0; i < n;)
+    {
+        if (!(result.weights[i] > 0.0))
+        {
+            ++i;
+            continue;
+        }
+        MatchRun run{i, i};
+        while (run.end < n && result.weights[run.end] > 0.0)
+            ++run.end;
+        i = run.end;
+        runs.push_back(run);
+    }
+    return runs;
+}
+
+std::vector<double> matchTargetCurve(const dsp::CurveMatchResult& result)
+{
+    std::vector<double> curve(result.targetDb);
+    for (auto& db : curve)
+        db += result.offsetDb;
+    return curve;
 }
 
 // --- MatchController::Meter ---

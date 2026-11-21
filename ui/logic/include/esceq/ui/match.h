@@ -8,11 +8,13 @@
 #include "esceq/dsp/spectrum_collision.h"
 #include "esceq/ui/curve_mapping.h"
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /// Igualar a una referencia, sin ventana (PLAN.md 5.6, ADR 0023): qué
@@ -128,6 +130,109 @@ MatchApply matchApplyChanges(const core::ParameterValues& values, std::span<cons
 
 /// `values` con `changes` aplicados.
 core::ParameterValues withChanges(core::ParameterValues values, std::span<const ParameterChange> changes) noexcept;
+
+/// Las bandas libres en las que Apply crearía `count` bandas, de la de menor
+/// número en adelante (menos, si no hay tantas libres). Son las de
+/// matchApplyChanges: los nodos en fantasma de la propuesta llevan su color.
+std::vector<int> matchTargetBands(const core::ParameterValues& values, int count);
+
+// --- Panel (PLAN.md 5.6, Comportamiento) ---
+
+/// Título del panel.
+inline constexpr std::string_view kMatchTitle = "Match";
+
+/// Botón de aprender: "Learn", o "Stop" mientras se aprende.
+std::string matchLearnText(bool learning);
+/// Su ayuda: qué hace, o por qué está desactivado ("No reference").
+std::string matchLearnTooltip(const MatchStatus& status);
+
+/// Ayuda de Apply: cuántas bandas crea, o el motivo por el que está desactivado.
+std::string matchApplyTooltip(const MatchStatus& status, int proposedBands);
+
+/// La línea de estado junto a Apply. `warning`, con un aviso (el
+/// aprendizaje se ha parado solo).
+struct MatchStatusLine
+{
+    std::string text;
+    bool warning = false;
+
+    friend bool operator==(const MatchStatusLine&, const MatchStatusLine&) = default;
+};
+
+/// En este orden: el aviso, si lo hay ("Reference removed"); sin 10 s útiles,
+/// "Learning…" o el motivo (Learn 10 s first, No reference); y luego
+/// "Fitting…", "No free bands", "Nothing to match" o las bandas propuestas
+/// ("4 bands proposed").
+MatchStatusLine matchStatusLine(const MatchStatus& status, int proposedBands);
+
+/// Fracción de los segundos útiles necesarios, de 0 a 1 (la barra del indicador).
+double matchProgressFraction(double usefulSeconds) noexcept;
+
+/// Amount: "50 %" (de 0 a 1, en tantos por ciento enteros).
+std::string matchAmountText(double amount);
+/// Lo escrito en Amount ("50", "50 %", "37.5%"), como fracción de 0 a 1;
+/// nullopt si no se entiende.
+std::optional<double> parseMatchAmount(std::string_view text);
+
+/// Las opciones de Smoothing, en el orden de core::MatchSmoothing: lo que se
+/// ve y lo que lee el lector de pantalla.
+struct MatchSmoothingOption
+{
+    std::string_view text;
+    std::string_view accessibleName;
+};
+inline constexpr std::array<MatchSmoothingOption, 3> kMatchSmoothingOptions{{
+    {"1/6", "1/6 octave"},
+    {"1/3", "1/3 octave"},
+    {"1 oct", "1 octave"},
+}};
+
+/// Max bands: de 1 a las bandas libres (al menos 1, para que el desplegable
+/// no se quede vacío), y la que se muestra, que es la pedida, como mucho las libres.
+int matchMaxBandsLimit(int freeBands) noexcept;
+int matchMaxBandsShown(const core::MatchSettings& settings, int freeBands) noexcept;
+
+/// Range: la descripción de los campos de frecuencia mínima y máxima, para
+/// escribirlos como el campo de frecuencia (core::formatValue y commitText:
+/// "1.2k", "350 Hz" o una nota, "A3"). De 20 Hz a 20 kHz, en escala logarítmica.
+const core::ParameterSpec& matchRangeSpec(bool high) noexcept;
+
+/// `settings` con el mínimo (`high` false) o el máximo del rango en `hz`. Si
+/// el rango se queda más estrecho que MatchSettings::kMinRangeOctaves, se
+/// mueve el otro extremo (el que no se edita), y luego se sanea: junto a 20 Hz
+/// o 20 kHz, el editado cede lo que falte para el rango mínimo.
+core::MatchSettings withMatchRange(core::MatchSettings settings, bool high, double hz) noexcept;
+
+// --- Dibujo (PLAN.md 5.6, punto 4) ---
+
+/// Los espectros aprendidos tal como se dibujan: la pista, y la referencia
+/// desplazada `shiftDb` para que las dos coincidan en la mediana de su
+/// diferencia (no se iguala el nivel). La mediana es la de los puntos en los
+/// que las dos están presentes (dsp::presence, el umbral de las colisiones);
+/// si no hay ninguno, la de todos.
+struct MatchSpectraDisplay
+{
+    std::vector<float> trackDb;
+    std::vector<float> referenceDb;
+    double shiftDb = 0.0;
+};
+MatchSpectraDisplay matchSpectraDisplay(std::span<const float> trackDb, std::span<const float> referenceDb);
+
+/// Un tramo seguido de la curva objetivo: los puntos [begin, end) de la rejilla del ajuste.
+struct MatchRun
+{
+    std::size_t begin = 0;
+    std::size_t end = 0;
+    friend bool operator==(const MatchRun&, const MatchRun&) = default;
+};
+
+/// Los tramos en los que se dibuja la curva objetivo: donde cuenta en el
+/// ajuste (peso positivo). Donde no hay contenido en una de las dos, se corta.
+std::vector<MatchRun> matchTargetRuns(const dsp::CurveMatchResult& result);
+
+/// La curva objetivo tal como se dibuja: T más el nivel libre del ajuste
+/// (offsetDb), para que se compare con la propuesta.
+std::vector<double> matchTargetCurve(const dsp::CurveMatchResult& result);
 
 /// El aprendizaje y las peticiones de ajuste de una instancia, mientras la
 /// interfaz está abierta: mide la pista y el sidechain con las mismas piezas

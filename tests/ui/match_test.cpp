@@ -6,6 +6,7 @@
 // los cambios que crean las bandas. La sesión y el hilo del ajuste van en
 // manual: nada depende del tiempo.
 #include "esceq/ui/match.h"
+#include "esceq/ui/control_logic.h"
 
 #include "esceq/core/band_model.h"
 #include "esceq/dsp/band_filter.h"
@@ -548,4 +549,248 @@ TEST_CASE("Igualacion (ui): Apply crea las bandas en las libres, de la menor en 
     CHECK(freeBandCount(withChanges(almostFull, one.changes)) == 0);
     CHECK(core::bandSettings(withChanges(almostFull, one.changes), 23).filter.type == dsp::FilterType::LowShelf);
     CHECK_FALSE(matchApplyChanges(withChanges(almostFull, one.changes), bands).firstBand.has_value());
+}
+
+// --- Panel ---
+
+TEST_CASE("Igualacion (ui): los nodos en fantasma van en las bandas que creara Apply")
+{
+    auto values = core::defaultValues();
+    values[enabledOf(0)] = 1.0f;
+    values[enabledOf(2)] = 1.0f;
+    CHECK(matchTargetBands(values, 3) == std::vector<int>{1, 3, 4});
+    CHECK(matchTargetBands(values, 0).empty());
+
+    const std::vector<dsp::FilterParams> bands = {
+        {dsp::FilterType::Bell, 200.0, 2.0, 1.0},
+        {dsp::FilterType::Bell, 2000.0, -2.0, 1.0},
+        {dsp::FilterType::HighShelf, 8000.0, 1.0, 0.7},
+    };
+    const auto apply = matchApplyChanges(values, bands);
+    const auto after = withChanges(values, apply.changes);
+    for (const int band : matchTargetBands(values, 3))
+        CHECK(after[enabledOf(band)] == 1.0f);
+    CHECK(*apply.firstBand == matchTargetBands(values, 3).front());
+
+    // Si no caben todas, las que hay.
+    for (int band = 0; band < core::kNumBands; ++band)
+        values[enabledOf(band)] = band >= 22 ? 0.0f : 1.0f;
+    CHECK(matchTargetBands(values, 5) == std::vector<int>{22, 23});
+}
+
+TEST_CASE("Igualacion (ui): textos del panel")
+{
+    CHECK(kMatchTitle == "Match");
+    CHECK(matchLearnText(false) == "Learn");
+    CHECK(matchLearnText(true) == "Stop");
+
+    MatchStatus s;
+    s.canLearn = false;
+    s.applyBlock = MatchBlock::NoReference;
+    CHECK(matchLearnTooltip(s) == "No reference");
+    CHECK(matchApplyTooltip(s, 0) == "No reference");
+    CHECK(matchStatusLine(s, 0) == MatchStatusLine{"No reference", false});
+
+    s.canLearn = true;
+    s.applyBlock = MatchBlock::LearnFirst;
+    CHECK(matchLearnTooltip(s).find("Learn") == 0);
+    CHECK(matchApplyTooltip(s, 0) == "Learn 10 s first");
+    CHECK(matchStatusLine(s, 0) == MatchStatusLine{"Learn 10 s first", false});
+    s.learning = true;
+    CHECK(matchLearnTooltip(s).find("Stop") == 0);
+    CHECK(matchStatusLine(s, 0) == MatchStatusLine{"Learning\xE2\x80\xA6", false});
+
+    s.showCurves = true;
+    s.applyBlock = MatchBlock::Fitting;
+    CHECK(matchStatusLine(s, 0) == MatchStatusLine{"Fitting\xE2\x80\xA6", false});
+    CHECK(matchApplyTooltip(s, 0) == "Fitting\xE2\x80\xA6");
+    s.applyBlock = MatchBlock::NoFreeBands;
+    CHECK(matchStatusLine(s, 0).text == "No free bands");
+    s.applyBlock = MatchBlock::NothingToMatch;
+    CHECK(matchStatusLine(s, 0).text == "Nothing to match");
+    s.applyBlock = MatchBlock::None;
+    s.canApply = true;
+    CHECK(matchStatusLine(s, 4) == MatchStatusLine{"4 bands proposed", false});
+    CHECK(matchStatusLine(s, 1).text == "1 band proposed");
+    CHECK(matchApplyTooltip(s, 4) == "Create 4 bands in the free bands (one undo step)");
+    CHECK(matchApplyTooltip(s, 1) == "Create 1 band in the free bands (one undo step)");
+
+    // Un aviso se ve antes que lo demás, salvo mientras se vuelve a aprender.
+    s.learning = false;
+    s.notice = MatchNotice::ReferenceRemoved;
+    CHECK(matchStatusLine(s, 4) == MatchStatusLine{"Reference removed", true});
+    s.notice = MatchNotice::SidechainDisconnected;
+    CHECK(matchStatusLine(s, 4) == MatchStatusLine{"Sidechain disconnected", true});
+
+    CHECK(matchProgressFraction(0.0) == 0.0);
+    CHECK_THAT(matchProgressFraction(5.0), WithinAbs(0.5, 1e-6));
+    CHECK(matchProgressFraction(10.0) == 1.0);
+    CHECK(matchProgressFraction(30.0) == 1.0);
+    CHECK(matchProgressFraction(-1.0) == 0.0);
+    CHECK(matchProgressFraction(std::nan("")) == 0.0);
+
+    CHECK(kMatchSmoothingOptions.size() == 3);
+    CHECK(kMatchSmoothingOptions[static_cast<std::size_t>(core::MatchSmoothing::SixthOctave)].text == "1/6");
+    CHECK(kMatchSmoothingOptions[static_cast<std::size_t>(core::MatchSmoothing::ThirdOctave)].text == "1/3");
+    CHECK(kMatchSmoothingOptions[static_cast<std::size_t>(core::MatchSmoothing::Octave)].text == "1 oct");
+}
+
+TEST_CASE("Igualacion (ui): Amount se escribe en tantos por ciento")
+{
+    CHECK(matchAmountText(0.5) == "50 %");
+    CHECK(matchAmountText(0.0) == "0 %");
+    CHECK(matchAmountText(1.0) == "100 %");
+    CHECK(matchAmountText(1.7) == "100 %");
+    CHECK(matchAmountText(std::nan("")) == "0 %");
+    CHECK(parseMatchAmount("50") == 0.5);
+    CHECK(parseMatchAmount("75 %") == 0.75);
+    CHECK(parseMatchAmount(" 37.5% ") == 0.375);
+    CHECK(parseMatchAmount("150") == 1.0);
+    CHECK(parseMatchAmount("-3") == 0.0);
+    CHECK_FALSE(parseMatchAmount("").has_value());
+    CHECK_FALSE(parseMatchAmount("%").has_value());
+    CHECK_FALSE(parseMatchAmount("half").has_value());
+    CHECK_FALSE(parseMatchAmount("5 0").has_value());
+    CHECK_FALSE(parseMatchAmount("nan").has_value());
+}
+
+TEST_CASE("Igualacion (ui): Max bands va de 1 a las bandas libres")
+{
+    core::MatchSettings settings;
+    CHECK(matchMaxBandsLimit(24) == 24);
+    CHECK(matchMaxBandsLimit(5) == 5);
+    CHECK(matchMaxBandsLimit(0) == 1);
+    CHECK(matchMaxBandsShown(settings, 24) == 8);
+    CHECK(matchMaxBandsShown(settings, 5) == 5); // las libres, si son menos
+    CHECK(matchMaxBandsShown(settings, 0) == 1);
+    settings.maxBands = 20;
+    CHECK(matchMaxBandsShown(settings, 24) == 20);
+    // Lo que se muestra es lo que usa el ajuste.
+    for (const int free : {1, 5, 8, 20, 24})
+        CHECK(matchMaxBandsShown(settings, free) == core::effectiveMaxBands(settings, free));
+}
+
+TEST_CASE("Igualacion (ui): Range se escribe como el campo de frecuencia")
+{
+    for (const bool high : {false, true})
+    {
+        const auto& spec = matchRangeSpec(high);
+        CHECK(spec.unit == "Hz");
+        CHECK(spec.scale == core::ParameterScale::Logarithmic);
+        CHECK(spec.min == 20.0f);
+        CHECK(spec.max == 20000.0f);
+        const core::MatchSettings defaults;
+        CHECK(spec.defaultValue == static_cast<float>(high ? defaults.highHz : defaults.lowHz));
+    }
+    CHECK(core::formatValue(matchRangeSpec(false), 30.0f) == "30.0 Hz");
+    CHECK(core::formatValue(matchRangeSpec(true), 16000.0f) == "16.0 kHz");
+    // También una nota, como en el campo de frecuencia.
+    const auto a3 = commitText(matchRangeSpec(false), "A3");
+    REQUIRE(a3.has_value());
+    CHECK_THAT(*a3, WithinAbs(220.0, 1e-3));
+    CHECK_THAT(*commitText(matchRangeSpec(true), "12k"), WithinAbs(12000.0, 1e-3));
+
+    core::MatchSettings settings;
+    auto edited = withMatchRange(settings, false, 100.0);
+    CHECK(edited.lowHz == 100.0);
+    CHECK(edited.highHz == settings.highHz);
+    edited = withMatchRange(settings, true, 5000.0);
+    CHECK(edited.highHz == 5000.0);
+    CHECK(edited.lowHz == settings.lowHz);
+
+    // Un mínimo por encima del máximo empuja el máximo, y al revés: el
+    // extremo que se edita se queda donde se escribe, salvo junto a los
+    // topes, donde cede lo que falte para el rango mínimo.
+    const double ratio = std::exp2(core::MatchSettings::kMinRangeOctaves);
+    edited = withMatchRange(settings, false, 18000.0);
+    CHECK_THAT(edited.highHz, WithinAbs(20000.0, 1e-6));
+    CHECK_THAT(edited.lowHz, WithinAbs(20000.0 / ratio, 1e-6));
+    edited = withMatchRange(settings, true, 25.0);
+    CHECK_THAT(edited.lowHz, WithinAbs(20.0, 1e-6));
+    CHECK_THAT(edited.highHz, WithinAbs(20.0 * ratio, 1e-6));
+    edited = withMatchRange(settings, true, 1000.0);
+    edited = withMatchRange(edited, false, 900.0);
+    CHECK(edited.lowHz == 900.0);
+    CHECK_THAT(edited.highHz, WithinAbs(900.0 * ratio, 1e-6));
+    CHECK(withMatchRange(settings, true, std::nan("")) == core::sanitize(settings));
+}
+
+TEST_CASE("Igualacion (ui): la referencia se dibuja desplazada a la mediana de la diferencia")
+{
+    // La referencia: la pista 20 dB más alta, con 6 dB más en cinco puntos.
+    const std::size_t n = 21;
+    std::vector<float> track(n), reference(n);
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        track[i] = -40.0f - static_cast<float>(i) * 0.5f;
+        reference[i] = track[i] + 20.0f + (i >= 8 && i < 13 ? 6.0f : 0.0f);
+    }
+    auto display = matchSpectraDisplay(track, reference);
+    CHECK_THAT(display.shiftDb, WithinAbs(20.0, 1e-5));
+    CHECK(display.trackDb == track);
+    REQUIRE(display.referenceDb.size() == n);
+    for (std::size_t i = 0; i < n; ++i)
+        CHECK_THAT(display.referenceDb[i], WithinAbs(track[i] + (i >= 8 && i < 13 ? 6.0f : 0.0f), 1e-4));
+
+    // Lo que no está presente en una de las dos no cuenta en la mediana.
+    for (std::size_t i = 0; i < 12; ++i)
+        reference[i] = core::kSessionFloorDb;
+    display = matchSpectraDisplay(track, reference);
+    CHECK_THAT(display.shiftDb, WithinAbs(20.0, 1e-5));
+
+    // Sin nada presente, la de todos; sin puntos, nada.
+    const std::vector<float> floor(n, core::kSessionFloorDb);
+    CHECK_THAT(matchSpectraDisplay(floor, floor).shiftDb, WithinAbs(0.0, 1e-9));
+    CHECK(matchSpectraDisplay({}, {}).referenceDb.empty());
+}
+
+TEST_CASE("Igualacion (ui): la curva objetivo se corta donde no cuenta y lleva el nivel libre")
+{
+    dsp::CurveMatchResult result;
+    result.weights = {0.1, 0.1, 1.0, 1.0, 0.0, 0.0, 1.0, 0.5, 0.1, 0.0};
+    result.targetDb = {1.0, 1.0, 2.0, 3.0, 0.0, 0.0, -1.0, -2.0, -2.0, -2.0};
+    result.offsetDb = 0.25;
+    CHECK(matchTargetRuns(result) == std::vector<MatchRun>{{0, 4}, {6, 9}});
+    const auto curve = matchTargetCurve(result);
+    REQUIRE(curve.size() == result.targetDb.size());
+    for (std::size_t i = 0; i < curve.size(); ++i)
+        CHECK(curve[i] == result.targetDb[i] + 0.25);
+    CHECK(matchTargetRuns({}).empty());
+}
+
+TEST_CASE("Igualacion (ui): de extremo a extremo, lo que se dibuja")
+{
+    Rig rig;
+    REQUIRE(rig.controller->learn(rig.context()));
+    rig.play(10.5);
+    rig.controller->stop();
+    rig.idle(kTick);
+    rig.worker.runPending();
+    const auto proposal = rig.controller->proposal();
+    REQUIRE(proposal != nullptr);
+    const auto& result = proposal->result;
+
+    // Los espectros: la referencia es la pista con +5 dB a 1 kHz, así que
+    // desplazada a la mediana coincide con ella lejos de 1 kHz.
+    const auto display = matchSpectraDisplay(rig.state.learner.trackDb(), rig.state.learner.referenceDb());
+    const auto& frequencies = core::sessionFrequencies();
+    REQUIRE(display.referenceDb.size() == frequencies.size());
+    for (std::size_t i = 0; i < frequencies.size(); ++i)
+        if (frequencies[i] > 60.0 && frequencies[i] < 150.0)
+            CHECK_THAT(display.referenceDb[i], WithinAbs(display.trackDb[i], 1.5));
+
+    // El objetivo, donde cuenta, y la propuesta cerca de él.
+    const auto runs = matchTargetRuns(result);
+    REQUIRE_FALSE(runs.empty());
+    const auto target = matchTargetCurve(result);
+    std::size_t checked = 0;
+    for (const auto& run : runs)
+        for (std::size_t i = run.begin; i < run.end; ++i)
+            if (result.frequencies[i] > 200.0 && result.frequencies[i] < 12000.0 && result.weights[i] >= 1.0)
+            {
+                CHECK_THAT(result.proposedDb[i], WithinAbs(target[i], 1.0));
+                ++checked;
+            }
+    CHECK(checked > 100);
+    CHECK(matchTargetBands(rig.values, static_cast<int>(result.bands.size())).size() == result.bands.size());
 }

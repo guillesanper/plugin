@@ -8,6 +8,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 /// Comparación con otras instancias de la sesión, sin dependencias gráficas:
@@ -15,6 +16,10 @@
 /// etiquetas de las colisiones. ui/src solo lo pinta.
 namespace esceq::ui
 {
+
+/// Entrada del menú del botón de comparar, debajo de las instancias, que
+/// abre el panel Match (igualar a una referencia, PLAN.md 5.6).
+inline constexpr std::string_view kMatchMenuText = "Match to reference\xE2\x80\xA6";
 
 /// Una entrada del menú "Compare".
 struct CompareMenuItem

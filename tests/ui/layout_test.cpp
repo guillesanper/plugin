@@ -357,3 +357,76 @@ TEST_CASE("Disposicion: el boton de la vista ampliada va junto al analizador")
         topBarLayout(editorLayout(static_cast<float>(kMinWindow.width), static_cast<float>(kMinWindow.height)).topBar);
     CHECK(minimum.presets.width == 140.0f);
 }
+
+TEST_CASE("Disposicion: el panel Match cabe en la curva sin tapar la barra")
+{
+    std::vector<WindowSize> sizes{kMinWindow};
+    for (int i = 0; i < kNumSizePresets; ++i)
+        sizes.push_back(windowSize(static_cast<SizePreset>(i)));
+    for (const auto size : sizesToCheck())
+        sizes.push_back(size);
+
+    for (const auto size : sizes)
+        for (const bool keyboard : {false, true})
+            for (const bool expanded : {false, true})
+            {
+                INFO(size.width << " x " << size.height << (keyboard ? ", con teclado" : "")
+                                << (expanded ? ", ampliada" : ""));
+                const auto w = static_cast<float>(size.width);
+                const auto h = static_cast<float>(size.height);
+                const auto editor = editorLayout(w, h, keyboard, expanded);
+                const auto match = matchPanelLayout(editor.curve);
+
+                // La tarjeta entera, dentro de la curva y sin la escala de dB.
+                CHECK(match.card.width == kMatchCardWidth);
+                CHECK(match.card.height == kMatchCardHeight);
+                CHECK(inside(match.card, editor.curve));
+                CHECK_FALSE(overlap(match.card, editor.topBar));
+                CHECK(match.card.y >= editor.curve.y + 8.0f);
+                CHECK(match.card.x + match.card.width <= editor.curve.x + editor.curve.width - kGainScaleWidth + 0.01f);
+                if (keyboard)
+                    CHECK_FALSE(overlap(match.card, editor.keyboard));
+
+                // Sus controles, dentro y sin solaparse, con sitio para sus textos.
+                checkDisjointInside({{"titulo", match.title},
+                                     {"cerrar", match.close},
+                                     {"etiqueta de la referencia", match.referenceLabel},
+                                     {"referencia", match.reference},
+                                     {"learn", match.learn},
+                                     {"progreso", match.progress},
+                                     {"etiqueta de amount", match.amountLabel},
+                                     {"amount", match.amount},
+                                     {"etiqueta de smoothing", match.smoothingLabel},
+                                     {"smoothing", match.smoothing},
+                                     {"etiqueta de max bands", match.bandsLabel},
+                                     {"max bands", match.bands},
+                                     {"etiqueta del rango", match.rangeLabel},
+                                     {"minimo", match.rangeLow},
+                                     {"guion", match.rangeDash},
+                                     {"maximo", match.rangeHigh},
+                                     {"apply", match.apply},
+                                     {"estado", match.status}},
+                                    match.card);
+                CHECK(match.reference.width >= 168.0f); // "Sidechain (not connected)"
+                CHECK(match.smoothing.width >= 3.0f * 52.0f); // "1/6", "1/3", "1 oct"
+                CHECK(match.amount.width >= 160.0f);          // la barra y "100 %"
+                CHECK(match.rangeLow.width >= 76.0f);         // "16.0 kHz", o una nota
+                CHECK(match.rangeHigh.width == match.rangeLow.width);
+                CHECK(match.status.width >= 160.0f); // "Nothing to match", "Sidechain disconnected"
+                CHECK(match.close.width == match.close.height);
+            }
+}
+
+TEST_CASE("Disposicion: el panel Match no se sale de una curva diminuta")
+{
+    for (const Rect curve : {Rect{}, Rect{10.0f, 20.0f, 100.0f, 50.0f}, Rect{0.0f, 0.0f, 400.0f, 120.0f}})
+    {
+        const auto match = matchPanelLayout(curve);
+        CHECK(match.card.width >= 0.0f);
+        CHECK(match.card.height >= 0.0f);
+        CHECK(match.card.x >= curve.x);
+        CHECK(match.card.y + match.card.height <= curve.y + std::max(curve.height, 8.0f) + 0.01f);
+        CHECK(match.apply.width >= 0.0f);
+        CHECK(match.status.width >= 0.0f);
+    }
+}

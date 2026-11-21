@@ -227,3 +227,9 @@ TEST_CASE("Comparar: colocacion de las etiquetas")
         CHECK(placeLabels({}, {}, area, 0.0f, 20.0f, 4.0f).empty());
     }
 }
+
+TEST_CASE("Comparar: la entrada que abre el panel Match")
+{
+    // Con puntos suspensivos (U+2026): abre un panel en lugar de actuar.
+    CHECK(esceq::ui::kMatchMenuText == "Match to reference\xE2\x80\xA6");
+}

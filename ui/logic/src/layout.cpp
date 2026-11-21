@@ -259,6 +259,48 @@ PanelLayout panelLayout(Rect bounds) noexcept
     return layout;
 }
 
+MatchPanelLayout matchPanelLayout(Rect curve) noexcept
+{
+    MatchPanelLayout layout;
+    const float right = curve.x + std::max(0.0f, curve.width - kGainScaleWidth);
+    const float width = std::min(kMatchCardWidth, std::max(0.0f, right - curve.x - kS2));
+    const float height = std::min(kMatchCardHeight, std::max(0.0f, curve.height - 2.0f * kS2));
+    layout.card = {right - width, curve.y + kS2, width, height};
+
+    Rect inner = inset(layout.card, kS3, kS3);
+    Rect title = takeTop(inner, 20.0f);
+    layout.close = takeRight(title, 20.0f);
+    takeRight(title, kS2);
+    layout.title = title;
+    takeTop(inner, kS1);
+
+    // Una fila con la etiqueta (o el botón) a la izquierda y el control a la derecha.
+    bool first = true;
+    auto row = [&](Rect& left, Rect& control) {
+        if (!first)
+            takeTop(inner, kS1); // compacta: la tarjeta tapa lo menos posible de la curva
+        first = false;
+        Rect r = takeTop(inner, kControlHeight);
+        left = takeLeft(r, kMatchLabelWidth);
+        takeLeft(r, kS2);
+        control = r;
+    };
+    row(layout.referenceLabel, layout.reference);
+    row(layout.learn, layout.progress);
+    row(layout.amountLabel, layout.amount);
+    row(layout.smoothingLabel, layout.smoothing);
+    row(layout.bandsLabel, layout.bands);
+    layout.bands.width = std::min(layout.bands.width, kMatchLabelWidth); // "24" no pide más
+    Rect range;
+    row(layout.rangeLabel, range);
+    const float field = std::floor(std::max(0.0f, range.width - kS3) * 0.5f);
+    layout.rangeLow = takeLeft(range, field);
+    layout.rangeHigh = takeRight(range, field);
+    layout.rangeDash = range;
+    row(layout.apply, layout.status);
+    return layout;
+}
+
 KnobCellLayout knobCellLayout(Rect cell) noexcept
 {
     constexpr float kGap = kS1;
