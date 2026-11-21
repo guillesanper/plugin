@@ -14,6 +14,8 @@
 //   --repeat N       medidas por configuración (por defecto, 5)
 //   --convolution    en vez del ecualizador, el coste de la llamada que
 //                    completa un bloque de la convolución de fase lineal
+//   --match          en vez del ecualizador, lo que tarda el ajuste de la
+//                    igualación (dsp::matchCurve, docs/dsp/igualacion.md)
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
@@ -27,6 +29,14 @@
 //   dinamicas  24 campanas dinámicas comprimiendo todo el tiempo (umbral −50 dB, rango −12 dB).
 //   mezcla     8 bandas de una mezcla real: 2 cortes de 24 dB/oct, 4 campanas
 //              (2 de ellas dinámicas) y un shelf de agudos.
+//
+// Con --match, dos objetivos en la rejilla de la sesión (192 puntos), con la
+// referencia igual a la pista por unas bandas conocidas, al 100 %:
+//   24 campanas   24 campanas de Q 4 y ±5 a ±9 dB, separadas 0,36 octavas
+//                 desde 32 Hz, sin suavizar: pide las 24 bandas (el caso del
+//                 límite de evaluaciones de tests/dsp/curve_match_test.cpp).
+//   4 bandas      low shelf, dos campanas y high shelf, con 1/3 de octava.
+#include "esceq/dsp/curve_match.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/partitioned_convolver.h"
 #include "esceq/dsp/phase_equalizer.h"
@@ -60,6 +70,7 @@ struct Options
     double seconds = 2.0;
     int repeat = 5;
     bool convolution = false;
+    bool match = false;
 };
 
 std::vector<std::string> splitList(std::string_view text)
@@ -85,6 +96,11 @@ bool parse(std::span<char* const> args, Options& options)
         if (name == "--convolution")
         {
             options.convolution = true;
+            continue;
+        }
+        if (name == "--match")
+        {
+            options.match = true;
             continue;
         }
         if (i + 1 >= args.size())
@@ -362,6 +378,90 @@ void runConvolution(const Options& options)
     }
 }
 
+esceq::dsp::FilterParams matchBand(FilterType type, double frequencyHz, double gainDb, double q)
+{
+    esceq::dsp::FilterParams params;
+    params.type = type;
+    params.frequencyHz = frequencyHz;
+    params.gainDb = gainDb;
+    params.q = q;
+    return params;
+}
+
+void runMatch(const Options& options)
+{
+    struct Target
+    {
+        const char* name;
+        std::vector<esceq::dsp::FilterParams> bands;
+        double smoothingOctaves;
+        int maxBands;
+    };
+    std::vector<Target> targets;
+    {
+        Target bells{"24 campanas", {}, 0.0, 24};
+        for (int i = 0; i < 24; ++i)
+        {
+            const double gain = (i % 2 == 0 ? 1.0 : -1.0) * (5.0 + static_cast<double>(i * 7 % 5));
+            bells.bands.push_back(matchBand(FilterType::Bell, 32.0 * std::exp2(0.36 * i), gain, 4.0));
+        }
+        targets.push_back(bells);
+        targets.push_back({"4 bandas",
+                           {matchBand(FilterType::LowShelf, 120.0, 5.0, 0.7071),
+                            matchBand(FilterType::Bell, 900.0, -4.0, 1.5), matchBand(FilterType::Bell, 3500.0, 3.0, 2.0),
+                            matchBand(FilterType::HighShelf, 9000.0, 4.0, 0.7071)},
+                           1.0 / 3.0, 8});
+    }
+
+    // La rejilla de la sesión: 192 puntos logarítmicos de 20 Hz a 20 kHz.
+    std::vector<double> frequencies(192);
+    for (std::size_t i = 0; i < frequencies.size(); ++i)
+        frequencies[i] = 20.0 * std::pow(1000.0, static_cast<double>(i) / 191.0);
+
+    std::printf("%-12s %-8s %7s  %10s %8s %6s %11s %12s\n", "objetivo", "filtro", "Hz", "mediana", "máximo", "bandas",
+                "evaluaciones", "iteraciones");
+    for (const Target& target : targets)
+    {
+        std::vector<float> track(frequencies.size(), -20.0f), reference(frequencies.size());
+        for (std::size_t i = 0; i < frequencies.size(); ++i)
+        {
+            double db = -20.0;
+            for (const auto& band : target.bands)
+                db += esceq::dsp::magnitudeDb(esceq::dsp::designBand(band, 48000.0), frequencies[i], 48000.0);
+            reference[i] = static_cast<float>(db);
+        }
+        for (const FilterAlgorithm algorithm : {FilterAlgorithm::Classic, FilterAlgorithm::Matched})
+            for (const double rate : options.rates)
+            {
+                esceq::dsp::CurveMatchInput input;
+                input.frequencies = frequencies;
+                input.trackDb = track;
+                input.referenceDb = reference;
+                input.resolutionHz = 48000.0 / 8192.0;
+                input.sampleRate = rate;
+                input.algorithm = algorithm;
+                esceq::dsp::CurveMatchSettings settings;
+                settings.amount = 1.0;
+                settings.smoothingOctaves = target.smoothingOctaves;
+                settings.maxBands = target.maxBands;
+
+                std::vector<double> times;
+                esceq::dsp::CurveMatchResult result;
+                for (int r = 0; r < options.repeat; ++r)
+                {
+                    const auto start = Clock::now();
+                    result = esceq::dsp::matchCurve(input, settings);
+                    times.push_back(1.0e3 * std::chrono::duration<double>(Clock::now() - start).count());
+                }
+                std::printf("%-12s %-8s %7.0f  %7.1f ms %5.1f ms %6zu %11lld %12d\n", target.name,
+                            algorithm == FilterAlgorithm::Matched ? "matched" : "classic", rate, median(times),
+                            *std::ranges::max_element(times), result.bands.size(),
+                            static_cast<long long>(result.evaluations), result.iterations);
+                std::fflush(stdout);
+            }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -372,7 +472,9 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "Opciones no válidas. Ver la cabecera de tools/bench/main.cpp.\n");
         return 1;
     }
-    if (options.convolution)
+    if (options.match)
+        runMatch(options);
+    else if (options.convolution)
         runConvolution(options);
     else
         runEqualizer(options);

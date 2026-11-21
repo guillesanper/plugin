@@ -80,9 +80,10 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DESCEQ_BUILD_TOOLS=ON
 cmake --build build --config Release --target esceq_bench
 ./build/tools/bench/esceq_bench --rate 44100,48000,96000,192000 --block 32,256,1024
 ./build/tools/bench/esceq_bench --convolution
+./build/tools/bench/esceq_bench --match
 ```
 
-Opciones: `--scenario`, `--mode`, `--rate` y `--block` (listas separadas por comas), `--algorithm classic|matched`, `--seconds`, `--repeat`; `--convolution` mide en vez del ecualizador el pico de la fase lineal, la llamada que completa un bloque de la convolución. Las medidas solo valen en Release y comparadas en la misma máquina; antes de optimizar algo del hilo de audio, mídelo con esto antes y después y deja las cifras en la ADR. Las de la decisión sobre SIMD están en la [ADR 0020](docs/decisiones/0020-sin-simd.md).
+Opciones: `--scenario`, `--mode`, `--rate` y `--block` (listas separadas por comas), `--algorithm classic|matched`, `--seconds`, `--repeat`; `--convolution` mide en vez del ecualizador el pico de la fase lineal, la llamada que completa un bloque de la convolución, y `--match`, el ajuste de la igualación con 24 bandas y con 4 ([docs/dsp/igualacion.md](docs/dsp/igualacion.md)). Las medidas solo valen en Release y comparadas en la misma máquina; antes de optimizar algo del hilo de audio, mídelo con esto antes y después y deja las cifras en la ADR. Las de la decisión sobre SIMD están en la [ADR 0020](docs/decisiones/0020-sin-simd.md).
 
 ## Reglas de la interfaz
 
