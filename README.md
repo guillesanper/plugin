@@ -40,6 +40,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Igualar la sonoridad al comparar con el bypass | Botón *Auto* de la barra superior, junto a la salida: encendido, dice la compensación ("Auto -2.3 dB"; ver abajo) |
 | Leer y fijar frecuencias como notas | Botón de opciones → *Notes* → *Piano keyboard* muestra un teclado bajo la curva; la afinación, en *Tuning* (ver abajo) |
 | Llevar una banda a una nota | Alt (Option en macOS) al arrastrar el nodo; Ctrl/Cmd + izquierda/derecha con la banda seleccionada avanza un semitono; o escribir la nota en el campo de frecuencia ("A3", "C#2", "Eb4") |
+| Igualar la pista a otra | Botón de comparar → *Match to reference…*: elegir la referencia (otra instancia de esceQ o el sidechain), *Learn* mientras suenan las dos al menos 10 s, y *Apply* crea las bandas que faltan, en una sola acción de deshacer (ver abajo) |
 | Ampliar la curva y el analizador | Botón de las cuatro esquinas, junto al selector del analizador, o F con el foco en la curva; Esc o el mismo botón vuelven (ver abajo) |
 | Ajustar el analizador | Botón de opciones → *Analyzer*: resolución, caída, inclinación, mantener picos y congelar (ver abajo) |
 | Cambiar el tamaño de la ventana | Botón de opciones → *Window size*: *Small*, *Medium* o *Large*; o arrastrar la esquina |
@@ -108,6 +109,10 @@ La forma más rápida de atacar una resonancia que se ve. Con el analizador ence
 **Presets:** vienen cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) como punto de partida. Los tuyos se guardan con "Save as..." como archivos `.esceq` en `%APPDATA%\esceQ\Presets` (Windows), `~/Library/Application Support/esceQ/Presets` (macOS) o `~/.config/esceQ/Presets` (Linux); "Open presets folder" abre esa carpeta. Un punto junto al nombre indica que has modificado el preset. El analizador (modo y ajustes), el rango, el tamaño de la ventana y la escala de notas se guardan con el proyecto, no con el preset.
 
 **Sidechain en FL Studio** (pasos aún sin verificar en FL Studio): en el mezclador, haz clic derecho en la flecha de envío de la pista que debe controlar el EQ y elige "Sidechain to this track" en la pista donde está esceQ. Luego, en los ajustes del envoltorio del plugin (rueda dentada, pestaña *Processing*), asigna esa entrada al puerto de sidechain. Si eliges "External" sin nada conectado, el panel lo avisa con "No sidechain".
+
+### Igualar a una referencia
+
+Para que una pista tenga el balance de otra, o igualar dos tomas. En el menú del botón de comparar, *Match to reference…* abre el panel *Match* sobre la esquina de la curva. Se elige la referencia: otra instancia de esceQ del proyecto (se iguala a cómo suena, con su ecualizador) o la entrada de sidechain, para una pista sin esceQ o un bus. *Learn* escucha las dos mientras suenan, y con 10 s útiles la curva muestra los dos espectros, el objetivo (discontinuo) y la propuesta, con los nodos de las bandas nuevas en fantasma. *Amount* dice cuánto de la diferencia se iguala; *Smoothing*, el detalle (1/3 de octava por defecto); *Max bands*, cuántas bandas como mucho, y *Range*, entre qué frecuencias. *Apply* crea campanas y shelves normales en las bandas libres, de una vez (se deshace de una vez), y aplicar otra vez no crea más. Se mide la entrada de la pista, antes del ecualizador, y el nivel no se iguala. Lo aprendido se pierde al cerrar el proyecto. Detalles en [docs/dsp/igualacion.md](docs/dsp/igualacion.md).
 
 ## Compilar
 

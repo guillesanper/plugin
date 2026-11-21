@@ -163,6 +163,7 @@ Sin banda seleccionada, el panel muestra los gestos de la curva, en dos filas de
 - **Canal:** una insignia con la letra (L, R, M, S) en las bandas que no son estéreo.
 - **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba).
 - **Escala de notas:** con el teclado visible, la etiqueta flotante añade a la frecuencia la nota más cercana y su desviación ("220 Hz · A3 +0 ct"). Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana a donde estaría sin ajustar, así que el nodo no se queda pegado; vale con el teclado oculto también.
+- **Igualación:** con el panel Match abierto, los espectros aprendidos, el objetivo, la propuesta y sus nodos en fantasma (ver más abajo).
 - **Analizador:** el espectro post relleno y, en pre + post, el pre como línea. Con *Peak hold*, una línea fina más clara con el máximo de cada punto del espectro post (`SpectrumPeakHold`, en `meter_logic.h`); un clic en la escala de dB (la columna de 40 px de la derecha, `onGainScale`) la borra, y cambiar la resolución o la inclinación también. Con *Freeze*, el espectro se queda quieto y la curva dice "Analyzer frozen" arriba a la izquierda; el audio sigue entrando en el historial, así que al descongelar el espectro es el de ese momento.
 - **Bandas desde el espectro:** con el analizador encendido y el ratón en un hueco, se marca el pico del espectro más cercano a menos de 1/6 de octava: un círculo de color de acento en su nivel, una línea hasta abajo y una etiqueta con su frecuencia, su nota y su nivel sin la inclinación ("2.40 kHz · D7 +39 ct · -31.0 dB"), y el cursor pasa a ser la flecha vertical. Arrastrar desde ahí crea una campana en el pico, con el Q de su ancho a −3 dB, cuya ganancia sigue al arrastre vertical; al soltar queda seleccionada, y con Alt, dinámica (umbral 3 dB bajo el pico, la ganancia arrastrada como rango). Un clic sin arrastre solo deselecciona. Todo el gesto es una acción de deshacer. Si las 24 bandas están en uso no se marca nada y "No free bands" sale junto al ratón. Los picos se buscan en un promedio de 1 s del espectro post (el pre en pre + post), no en lo que se pinta, que en el ruido tiene picos de azar; congelado, también funciona. La lógica está en `esceq/ui/spectrum_peaks.h`; el algoritmo, en [dsp/picos.md](dsp/picos.md); las decisiones, en la [ADR 0019](decisiones/0019-bandas-desde-el-espectro.md).
 - **Fuera de rango:** si la ganancia de una banda no cabe en el rango visible, el nodo se queda junto al borde con una flecha que indica hacia dónde sigue.
@@ -188,6 +189,36 @@ El botón con dos curvas que se cruzan, a la izquierda del analizador, abre el m
 La selección no se guarda con el proyecto (sobrevive a cerrar y abrir la ventana). Solo se ven las instancias del mismo proceso y formato. La lógica está en `esceq/ui/session_overlay.h`; el algoritmo, en [dsp/colisiones.md](dsp/colisiones.md); las decisiones, en la [ADR 0011](decisiones/0011-espectros-compartidos.md).
 
 ![Comparando con un bajo y unos teclados](img/ui/comparar.png)
+
+### Igualar a una referencia: el panel Match
+
+En el menú **Compare with**, debajo de las instancias, *Match to reference…* abre el panel **Match** ([ADR 0023](decisiones/0023-igualar-a-una-referencia.md), PLAN.md 5.6): una tarjeta de 280 × 240 px sobre la esquina superior derecha de la curva, a la izquierda de su escala de dB, también en la vista ampliada (`matchPanelLayout`; `tests/ui/layout_test.cpp` comprueba que cabe en la curva en todos los tamaños, con y sin teclado de notas y en la vista ampliada, sin tapar la barra ni solapar sus controles). Las filas están a 4 px para tapar lo menos posible: aun así, en los tamaños S y M la tarjeta cubre la zona de agudos por encima de unos 0 dB, donde suelen caer los nodos de los shelves de agudos. Se cierra con su botón × o con Esc (con el foco en el panel; abrirlo le da el foco). Cerrarlo, o cerrar la ventana, para el aprendizaje (Stop); lo aprendido y los ajustes siguen en el procesador mientras el plugin está abierto, y no se guardan con el proyecto.
+
+| Fila | Control | Qué hace |
+|---|---|---|
+| *Reference* | Desplegable | Las otras instancias, con su nombre y " (silent)" si no les llega audio, y *Sidechain*, desactivado con " (not connected)" si el host no lo conecta. Sin nada elegido, la primera instancia con señal. Cambiarla borra lo aprendido |
+| *Learn* / *Stop* | Botón, encendido mientras aprende | Empieza desde cero, o para conservando lo aprendido. A su derecha, una barra y los segundos útiles ("3.2 s / 10 s"), que se llena con los 10 s que pide *Apply*. Sin referencia posible está desactivado ("No reference") |
+| *Amount* | Barra | De 0 a 100 % (50). Se escribe "75", "75 %" |
+| *Smoothing* | Selector | 1/6, 1/3 (por defecto) o 1 octava |
+| *Max bands* | Desplegable | De 1 a las bandas libres (8, o las libres si son menos) |
+| *Range* | Dos campos | Frecuencia mínima y máxima (30 Hz y 16 kHz), de 20 Hz a 20 kHz: se arrastran o se escriben como el campo de frecuencia, también una nota ("A1"). El que se edita se queda donde se escribe y empuja al otro si el rango baja de 1/3 de octava (junto a 20 Hz o 20 kHz, cede lo que falte) |
+| *Apply* | Botón | Crea las bandas propuestas en las libres, de la de menor número en adelante, en una acción de deshacer, y selecciona la primera. Desactivado, su ayuda dice por qué: "Learn 10 s first", "No free bands", "Fitting…" o "Nothing to match" |
+
+A la derecha de *Apply*, una línea de estado: "Learning…", "Fitting…" mientras se recalcula la propuesta (150 ms después del último cambio de un ajuste o de una banda), "3 bands proposed", o el motivo; y, en ámbar, los avisos de cuando el aprendizaje se para solo ("Reference removed", "Sidechain disconnected").
+
+Los campos del rango son un estilo nuevo de `ParamControl`, `Field` (solo el valor, en una caja; en la galería con sus seis estados), y los ajustes del panel no son parámetros del host: el control guarda su valor (`bindLocal`) y no hay gestos ni deshacer.
+
+**Dibujo.** Con 10 s útiles y el panel abierto, la curva dibuja:
+
+- el espectro medio aprendido de la pista (gris, el color del analizador pre) y el de la referencia (con el color de su pista; el sidechain, gris claro), este desplazado para que los dos coincidan en la mediana de su diferencia en los puntos en que los dos están presentes (`matchSpectraDisplay`): el nivel no se iguala;
+- la **curva objetivo**, discontinua, con el nivel libre del ajuste, solo donde cuenta (`matchTargetRuns`: se corta donde una de las dos no tiene contenido);
+- la **propuesta**, en el color de acento: la curva total estática que se ve (la de las bandas actuales, sin la dinámica) más las bandas nuevas, columna a columna y con el diseño que sonaría, así que coincide con la curva blanca donde no hay bandas nuevas;
+- los nodos de las bandas nuevas **en fantasma**: un anillo discontinuo del color de la banda libre que ocuparía cada una (`matchTargetBands`);
+- y una leyenda arriba a la izquierda (*Track*, *Reference*, *Target*, *Proposed*), bajo "Analyzer frozen" si está.
+
+Mientras se recalcula, la propuesta anterior se queda atenuada en lugar de desaparecer. Se aprende igual con el analizador apagado: la curva vacía la cola "pre" siempre y, con el panel abierto, le pasa ese audio al controlador (`MatchController::pushTrack`); la cola del sidechain la lee el editor. Las piezas sin ventana están en `esceq/ui/match.h`, con sus tests.
+
+![El panel Match con una propuesta](img/ui/igualar.png)
 
 ### Medidor de salida
 
@@ -217,7 +248,7 @@ Lo que queda es casi todo rasterizar los rellenos y los trazos (más del 60 % de
 ## Accesibilidad
 
 - Todos los controles tienen nombre y rol para los lectores de pantalla; los potenciómetros exponen su rango, su valor y su valor como texto ("1.20 kHz").
-- Tabulador recorre la barra superior, la curva y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
+- Tabulador recorre la barra superior, la curva, el panel Match (si está abierto) y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
 - En la curva: izquierda y derecha eligen banda; arriba y abajo cambian su ganancia; Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono (con Mayús, en pasos finos); Mayús, ajuste fino; Supr la elimina; F amplía o reduce la vista, y Esc vuelve.
 - El teclado de notas no recibe el foco: es una referencia visual, y la nota se lee en la etiqueta y se escribe en el campo de frecuencia.
 - Limitación: los nodos no son elementos accesibles individuales.
