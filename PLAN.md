@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 5 completadas; falta publicar la 0.5.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), el analizador ampliado (sección 5.2, [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)) y las bandas desde el espectro (sección 5.3, [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)). La optimización SIMD se ha medido y no compensa, así que no se ha hecho ([ADR 0020](docs/decisiones/0020-sin-simd.md)). macOS y Linux están completos ([ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)): Linux se compila en Ubuntu 22.04 y carga desde Ubuntu 22.04 y Debian 12, y los tres formatos de macOS se comprueban (universales, macOS 11, firma ad hoc) en el CI; el CI está estable en los tres sistemas ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Falta probarlos en un Mac y en un Linux con hosts reales, y publicar la 0.5 cuando se decida. Lo siguiente es la fase 6. Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 5 completadas; falta publicar la 0.5.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), el analizador ampliado (sección 5.2, [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)) y las bandas desde el espectro (sección 5.3, [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)). La optimización SIMD se ha medido y no compensa, así que no se ha hecho ([ADR 0020](docs/decisiones/0020-sin-simd.md)). macOS y Linux están completos ([ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)): Linux se compila en Ubuntu 22.04 y carga desde Ubuntu 22.04 y Debian 12, y los tres formatos de macOS se comprueban (universales, macOS 11, firma ad hoc) en el CI; el CI está estable en los tres sistemas ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Falta probarlos en un Mac y en un Linux con hosts reales, y publicar la 0.5 cuando se decida. Lo siguiente es la fase 6, que empieza por igualar a una referencia (sección 5.6, planificada en la [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), en tres bloques: 6.1 a 6.3). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -206,7 +206,7 @@ Reglas comunes a todas:
 | Bandas desde el espectro ✅ | 5.3 | 5 | Ninguno | No |
 | Tiempos automáticos en la dinámica ✅ | 5.4 | 5 | 24 (uno por banda) | No |
 | Compensación automática de ganancia ✅ | 5.5 | 5 | 1 global | No |
-| Igualar a una referencia | 5.6 | 6 | Ninguno (crea bandas normales) | No |
+| Igualar a una referencia (planificada) | 5.6 | 6 | Ninguno (crea bandas normales; nada nuevo en el estado) | No |
 | Dinámica espectral | 5.7 | 6 | 24 (uno por banda) | Sí, mientras se use |
 | Saturación | 5.8 | 6 | 3 globales | Solo con sobremuestreo en fase lineal |
 
@@ -356,46 +356,130 @@ w(f) = densidad de ruido rosa × |K(f)|²             (ponderación K de ITU-R B
 
 ### 5.6 Igualar a una referencia
 
-**Qué es.** Medir el espectro medio de la pista y el de una referencia, y crear las bandas que acercan una a otra.
+**Planificada** (noviembre de 2026): decisiones en la [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), en estado *Propuesta* hasta que el bloque 6.1 la cierre con sus medidas. Es el primer trabajo de la fase 6, en tres bloques (al final de esta sección). Decidido con el usuario: el panel se abre desde el menú del botón de comparar (la barra superior no tiene sitio), la pista se mide **antes** del ecualizador, entran las dos referencias (otra instancia y el sidechain) y los nombres son *Match*, *Learn* y *Apply*.
 
-**Referencias:**
+**Qué es.** Medir el espectro medio de la pista y el de una referencia, y crear las bandas que acercan una a otra: "que esta guitarra tenga el balance de aquella", o igualar el sonido de dos tomas. El resultado son bandas normales, editables, que se ven y se pueden deshacer.
 
-- otra instancia de esceQ, a través de la sesión de espectros que ya usan las colisiones ([ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), con las mismas limitaciones: mismo proceso y mismo formato;
-- la entrada de sidechain.
+**Referencias**
 
-Cargar un archivo de audio queda fuera por ahora: exige decodificar y elegir formatos.
+- **Otra instancia de esceQ**, a través de la sesión de espectros que ya usan las colisiones ([ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), con sus mismas limitaciones: mismo proceso y mismo formato (una VST3 no ve a una CLAP). Se usa lo que esa instancia publica, su **salida**: la referencia tal como suena en la mezcla, con su propio ecualizador.
+- **La entrada de sidechain**, si el host la tiene conectada. Sirve para igualar a una pista que no lleva esceQ, o a un bus.
 
-**Flujo**
+Cargar un archivo de audio queda fuera: exige decodificar, elegir formatos y leer en otro hilo. Se puede añadir después como otra fuente del mismo aprendizaje.
 
-1. Botón *Match* en la barra superior: abre un panel sobre la curva y elige la referencia.
-2. *Learn* acumula, mientras suena, el espectro medio en potencia de la pista y de la referencia desde que se pulsa (sin olvido), y solo los bloques con presencia (los mismos umbrales que las colisiones). Hacen falta 5 s de señal útil; antes, *Apply* está desactivado y un indicador muestra el progreso.
-3. Se dibujan los dos espectros y la curva objetivo. Ajustes:
+**Qué se mide de la pista: su entrada, antes del ecualizador.** El aprendizaje no depende de las bandas que haya, ni de que se muevan mientras se aprende, y lo que se ajusta es lo que falta: la curva objetivo menos la curva estática actual. Así, aplicar dos veces seguidas no crea bandas la segunda vez, y las bandas que ya había se conservan.
+
+#### Comportamiento
+
+1. **Abrir.** En el menú del botón de comparar, la entrada *Match to reference…* (debajo de las instancias) abre el panel *Match*, una tarjeta sobre la esquina superior derecha de la curva, también en la vista ampliada (5.2). Se cierra con su botón × o con Esc (si el foco está en el panel). Cerrarlo, o cerrar la ventana, no borra lo aprendido: vive en el procesador mientras el plugin está abierto, como la selección de instancias. No se guarda con el proyecto.
+2. **Elegir la referencia**, en un desplegable: las otras instancias de la sesión con su nombre (el de la pista o "esceQ N"), marcadas "silent" si no les llega audio; y *Sidechain*, desactivado con "(not connected)" si el host no lo conecta. La propia instancia no aparece. Por defecto, la primera instancia con señal. Cambiar de referencia borra lo aprendido.
+3. ***Learn*** empieza a aprender desde cero y el botón pasa a *Stop*. Mientras suena, se acumula el espectro medio en potencia de la pista y de la referencia, sin olvido, y solo en los instantes en que **las dos** tienen señal (el mismo umbral que la sesión usa para "silent"). Un indicador muestra los segundos útiles ("3.2 s / 5 s"). Con el transporte parado no avanza. Se sigue aprendiendo hasta *Stop*: más tiempo, medida más estable. Cerrar el panel o la ventana del plugin equivale a *Stop* (la pista se mide en la interfaz), y lo aprendido se conserva.
+   - Si la instancia de referencia desaparece (se borra su pista), el aprendizaje se para y se conserva lo aprendido, con el aviso "Reference removed".
+   - Si se desconecta el sidechain, igual: se para, con "Sidechain disconnected".
+4. **Con 5 s útiles** se dibujan sobre la curva, en el panel abierto: el espectro medio de la pista y el de la referencia (este, desplazado para que los dos tengan el mismo nivel medio, porque no se iguala el nivel), la **curva objetivo** (discontinua) y la **curva propuesta**: la de las bandas actuales más las que se crearían, con sus nodos en fantasma. La propuesta se recalcula sola al cambiar un ajuste o una banda (150 ms después del último cambio), mientras el panel dice "Fitting…".
+5. **Ajustes** del panel:
 
 | Ajuste | Valores | Por defecto |
 |---|---|---|
-| Cantidad | 0 a 100 % | 50 % |
-| Suavizado | 1/12, 1/6, 1/3 o 1 octava | 1/3 |
-| Bandas máximas | 1 a las que estén libres | 8 |
-| Margen | Frecuencias mínima y máxima | 30 Hz a 16 kHz |
+| *Amount* | 0 a 100 % | 50 % |
+| *Smoothing* | 1/12, 1/6, 1/3 o 1 octava | 1/3 |
+| *Max bands* | 1 a las bandas libres | 8 (o las libres, si son menos) |
+| *Range* | Frecuencia mínima y máxima, de 20 Hz a 20 kHz; se escriben como el campo de frecuencia (también una nota, 5.1) | 30 Hz a 16 kHz |
 
-4. *Apply* crea las bandas en una sola acción de deshacer.
+   Viven con lo aprendido (en el procesador, sin guardarse). Una banda libre es una banda apagada.
+6. ***Apply*** crea las bandas propuestas en las bandas libres, de la de menor número en adelante, en **una sola acción de deshacer**, y selecciona la primera. El panel sigue abierto, con una propuesta nueva (casi siempre vacía). Está desactivado, con el motivo en su ayuda, si: faltan segundos útiles ("Learn 5 s first"), no hay bandas libres ("No free bands"), se está calculando ("Fitting…") o la propuesta está vacía ("Nothing to match": ya se parecen).
+7. Lo que crea son **campanas y shelves** (low y high shelf), en el canal Stereo, sin dinámica ni tiempos automáticos, con la pendiente por defecto. Todo lo demás de la banda reutilizada vuelve a su valor por defecto, como al crear una banda desde el espectro.
 
-**El resultado son bandas normales** (campanas y shelves), no un filtro oculto. Así se pueden editar, automatizar y guardar en presets, y funcionan en todos los modos de fase y con la dinámica. No hacen falta parámetros nuevos, y el contrato de sonido no cambia.
+**Casos límite**
 
-**Ajuste** (`core`, en un hilo propio como el diseño de la fase lineal; se puede cancelar y nunca bloquea la interfaz):
+- Sin otras instancias ni sidechain conectado, el desplegable solo tiene *Sidechain (not connected)* y *Learn* está desactivado ("No reference").
+- Las frecuencias en las que la pista o la referencia no tienen contenido (lo que las colisiones llaman "no presente": por debajo de −66 dB o a más de 30 dB de su máximo) no cuentan en el ajuste, aunque estén dentro del rango: no se intenta realzar 30 dB unos agudos que la pista no tiene.
+- Modos de fase, algoritmo de filtro y bypass no afectan al aprendizaje (se mide la entrada). La propuesta se calcula con el algoritmo de filtro y la frecuencia de muestreo de la instancia, para que lo que se ve sea lo que suena.
+- Las bandas en L, R, M o S cuentan en la curva actual con la misma regla que la compensación de ganancia ([ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)): la media de la potencia de los dos canales. Solo cuenta su parte estática; las bandas dinámicas cuentan con su ganancia estática.
+- Los espectros son mono (la mezcla de los canales, como la sesión): no se iguala la imagen estéreo.
+- Con el analizador apagado se aprende igual: el panel tiene su propio cálculo.
 
-1. Objetivo: T(f) = cantidad · (referencia − pista), suavizado y sin su media (no se iguala el nivel, solo el balance), limitado a ±12 dB y a cero fuera del margen.
-2. Inicio voraz: una campana en el punto de mayor error, con el Q del ancho de ese lóbulo. Se repite hasta agotar las bandas, y se usa un shelf si el error de un extremo es monótono.
-3. Refino conjunto de frecuencia, ganancia y Q por mínimos cuadrados (Levenberg-Marquardt) en frecuencia logarítmica, con las curvas analíticas de `dsp`.
-4. Se para cuando el error RMS baja de 0,5 dB, o al agotar las bandas.
+#### Algoritmo
 
-**Aceptación**
+Referencias públicas: V. Välimäki y J. D. Reiss, *All About Audio Equalization: Solutions and Frontiers* (Applied Sciences, 2016), sobre el diseño de ecualizadores paramétricos por optimización a partir de una respuesta objetivo; K. Levenberg (1944) y D. Marquardt (1963) para el método de mínimos cuadrados no lineales, en la formulación de K. Madsen, H. B. Nielsen y O. Tingleff, *Methods for Non-Linear Least Squares Problems* (DTU, 2004). Detalle y medidas, en `docs/dsp/igualacion.md` (bloque 6.1).
 
-- Un objetivo generado con 3 campanas conocidas se recupera con un error RMS menor de 0,5 dB y como mucho 6 bandas.
-- Un objetivo plano no crea bandas.
-- Con la cantidad al 50 % las ganancias son la mitad que al 100 %, con un margen de ±0,2 dB.
-- El resultado es determinista: la misma entrada da las mismas bandas.
-- Con un objetivo de 24 bandas el ajuste termina en menos de 2 s.
+**1. Aprendizaje** (`ui/logic`, en el hilo de mensajes, a 30 Hz):
+
+- Los dos espectros se miden igual, para que sus sesgos se anulen al restarlos: `dsp::SpectrumAnalyzer` de 8192 puntos en la rejilla de la sesión (192 frecuencias logarítmicas de 20 Hz a 20 kHz) y su promedio exponencial de 0,4 s (`dsp::SpectrumAverager`). La referencia de otra instancia es el espectro que ya publica la sesión (`SpectrumSession::snapshot`, mientras el panel tiene un `Viewer`); la pista y el sidechain se calculan en el panel con esas mismas piezas, a partir de la cola "pre" que ya lee la curva y de una cola nueva de sidechain.
+- Cada vez que la referencia publica un espectro nuevo (20 Hz) y las dos tienen señal, se suma la potencia de los dos promedios, punto a punto, ponderada por el tiempo transcurrido. Como el promedio exponencial es lineal en potencia, la media a largo plazo de lo que publica es la media de la señal: no hace falta otro cálculo en la sesión ni tocarla.
+- La inclinación del analizador (4,5 dB/oct) está en los dos y se anula al restar. El nivel absoluto no importa (se quita la media).
+
+**2. Objetivo** (`dsp`, puro):
+
+```
+D(f) = suavizado(R)(f) − suavizado(P)(f)           R: referencia, P: pista; en dB, cada uno suavizado
+                                                    en potencia (dsp::smoothOctaves) al ancho elegido
+w(f) = 1 dentro del rango y si las dos están presentes (dsp::presence ≥ 0,5); 0 si no
+T(f) = clamp( cantidad · (D(f) − media_w(D)), ±12 dB )   media ponderada por w en frecuencia logarítmica
+N(f) = T(f) − C(f)                                  C: curva estática de las bandas actuales
+```
+
+- Fuera del rango, el objetivo es 0 con un peso de 0,1, para que un shelf no se escape fuera de él; el peso pasa de 0,1 a 1 en 1/6 de octava.
+- El ajuste se evalúa en una rejilla de 384 puntos (la de la sesión con un punto intermedio, interpolando en frecuencia logarítmica), para que una campana estrecha no caiga entre dos puntos.
+
+**3. Inicio voraz** (`dsp`): con el residuo r = N,
+
+- se toma el punto de mayor |r|·w; si es menor de 0,5 dB, se para;
+- su lóbulo es el tramo alrededor con el mismo signo y |r| por encima de la mitad del máximo. Si el lóbulo llega a un extremo del rango, es un **shelf** en el punto medio de su flanco, con la ganancia del extremo y Q 0,707; si no, una **campana** en el máximo, con la ganancia del máximo y el Q del ancho del lóbulo a media altura (la fórmula de `qForBandwidth`, ADR 0019, que se lleva a `dsp`);
+- se resta su curva y se repite hasta agotar las bandas.
+
+**4. Refino conjunto** (Levenberg-Marquardt): todas las bandas propuestas a la vez, en sus variables naturales (log2 de la frecuencia, ganancia en dB, log del Q), minimizando Σ w(f)·(N(f) − Σ Hk(f))², con las curvas analíticas de `dsp` (`designBand` y `magnitudeDbAtTangent`, con las tangentes de la rejilla calculadas una vez). El jacobiano es por diferencias centrales, y solo de la banda que se mueve (la curva es una suma), así que cada iteración cuesta unas 6·384 evaluaciones por banda. Límites: frecuencia dentro del rango, ganancia de ±18 dB, Q de 0,3 a 16 en campanas y de 0,5 a 1 en shelves (proyectados en cada paso). Se refina tras añadir cada banda (como mucho 20 iteraciones) y al final (100).
+
+**5. Parada y limpieza**: se para cuando el error RMS ponderado baja de 0,5 dB, al llegar a *Max bands* o cuando una banda nueva mejora el error menos de 0,05 dB. Tras el refino se quitan las bandas de menos de 0,3 dB y se vuelve a refinar. Las bandas se ordenan por frecuencia.
+
+**Determinista**: sin azar, sin hilos dentro del ajuste, orden fijo y `double`; la misma entrada da exactamente las mismas bandas con el mismo binario (entre sistemas, `libm` puede cambiar el último bit).
+
+#### Dónde vive cada parte y en qué hilo
+
+| Pieza | Módulo | Hilo |
+|---|---|---|
+| Objetivo, pesos, inicio voraz, Levenberg-Marquardt (`dsp/curve_match.h`) | `dsp` (MIT, puro) | El del ajuste |
+| Hilo del ajuste: recibe una petición (espectros, ajustes, bandas actuales, frecuencia de muestreo, algoritmo), calcula, se puede cancelar y publica la última propuesta (`core::MatchWorker`) | `core` | Uno propio por instancia, creado con la primera petición y parado con la instancia; no el hilo de control, que no puede retrasar segundos el diseño de un FIR ni la compensación de ganancia |
+| Aprendizaje: acumulación en potencia, puerta de señal y segundos útiles (`core::MatchLearner`), y los ajustes (`core::MatchSettings`) | `core`, junto al hilo del ajuste (`core/match.h`): el procesador los guarda mientras está abierto, y `plugin` no puede depender de `ui/logic` | Mensajes |
+| Estado del panel, motivos de *Apply* desactivado, textos y cambios de los parámetros que crean las bandas (`ui/logic/match.h`) | `ui/logic` | Mensajes |
+| Lo aprendido, los ajustes y el hilo del ajuste mientras el plugin está abierto; la cola del sidechain | `plugin` | Mensajes; la cola la escribe el de audio |
+| Entrada del menú, panel, dibujo de espectros, objetivo y propuesta | `ui/src` | Mensajes |
+
+**Tiempo real.** El hilo de audio solo hace algo nuevo con el sidechain como referencia y aprendiendo: escribe la mezcla mono del sidechain en una `dsp::SpscFifo` (como las colas del analizador), detrás de un atómico que se lee una vez por bloque. Sin eso, nada cambia en `processBlock`. El ajuste nunca toca el hilo de audio, ni la interfaz lo espera: comprueba la cancelación en cada iteración (unos milisegundos).
+
+#### Contratos (sección 2.1)
+
+- **Parámetros:** ninguno nuevo (siguen 364). Las bandas creadas usan los de siempre, así que se automatizan, se guardan y van en los presets.
+- **Estado:** no cambia (versión 3). Ni lo aprendido ni los ajustes del panel se guardan: los espectros no se pueden rehacer sin el audio, y los identificadores de instancia cambian en cada sesión ([ADR 0011](docs/decisiones/0011-espectros-compartidos.md)). No hay preferencias `ui.*` nuevas.
+- **Sonido:** no cambia nada para una configuración dada; *Apply* solo cambia parámetros.
+- **Presets y latencia:** no cambian.
+- **Deshacer:** *Apply* pone todos los parámetros de una vez (`applyValues`) y registra la acción en el momento, como al cargar un preset: una acción, que deshace todas las bandas creadas.
+
+#### Aceptación
+
+| Criterio | Test |
+|---|---|
+| Un objetivo generado con 3 campanas conocidas (+4 dB Q 1 a 200 Hz, −3 dB Q 2 a 2 kHz, +5 dB Q 0,7 a 8 kHz) se recupera con un error RMS menor de 0,5 dB y como mucho 6 bandas; un low shelf de +6 dB a 100 Hz, con una banda y menos de 0,3 dB | `tests/dsp/curve_match_test.cpp` |
+| Un objetivo plano, o con un rizado aleatorio de ±0,3 dB, no crea bandas | ídem |
+| Con la cantidad al 50 %, la curva propuesta es la mitad de la del 100 %, con ±0,2 dB en cada punto del rango | ídem |
+| Con las bandas actuales iguales a lo que hace falta, la propuesta está vacía; aplicar dos veces no crea bandas la segunda | ídem y `tests/ui/match_test.cpp` |
+| Las frecuencias sin contenido en una de las dos no cuentan: una referencia sin nada por encima de 10 kHz no crea bandas ahí | `tests/dsp/curve_match_test.cpp` |
+| Determinista: la misma entrada da bit a bit las mismas bandas | ídem |
+| 24 bandas: menos de 2 s en el portátil de referencia (medido con un caso nuevo de `esceq_bench`); en el CI, un límite de evaluaciones de la curva, que no depende de la máquina | ídem y `tools/bench` |
+| Una petición nueva cancela la anterior en la siguiente iteración, y parar el hilo durante un ajuste vuelve tras esa iteración | `tests/core/match_test.cpp` (sin esperas por tiempo: el test fuerza el trabajo, con un modo manual como el de `ControlThread`) |
+| Aprendizaje: el silencio de cualquiera de las dos no suma segundos; *Apply* no se activa antes de 5 s útiles | `tests/core/match_test.cpp` y `tests/ui/match_test.cpp` |
+| De extremo a extremo: ruido rosa en la pista y el mismo ruido por una curva conocida (tres campanas y un shelf) en la referencia, 10 s simulados, *Apply* al 100 % con 1/3 de octava: la curva resultante queda a ±1 dB de la conocida de 50 Hz a 12 kHz | `tests/plugin/match_test.cpp`, con dos procesadores en una sesión con hilo manual |
+| *Apply* y deshacer dejan todos los parámetros exactamente como estaban; rehacer vuelve al resultado; es una sola acción | `tests/plugin/history_test.cpp` |
+| Sin aprender con el sidechain, la salida de `processBlock` es bit a bit la de ahora, y el hilo de audio no asigna ni bloquea (RealtimeSanitizer) | `tests/plugin/` y el job `rtsan` |
+| La tarjeta del panel cabe en la curva en los tres tamaños, en el mínimo y en la vista ampliada, sin tapar la barra | `tests/ui/layout_test.cpp` |
+
+#### Bloques de implementación
+
+Cada uno cabe en un chat, con sus tests, su documentación y el CI en verde.
+
+1. **6.1 Ajuste** (`dsp/curve_match.h`, sin interfaz): objetivo, pesos, inicio voraz y Levenberg-Marquardt, `qForBandwidth` llevado a `dsp` (sin cambiar su resultado en `ui/logic`), los tests de `tests/dsp/curve_match_test.cpp`, el caso de `esceq_bench`, `docs/dsp/igualacion.md` con las medidas, y la ADR 0023 aceptada con lo que haya cambiado. Si las medidas piden otros límites (Q, iteraciones, umbrales), se cambian aquí y se dicen en la ADR.
+2. **6.2 Aprender y aplicar, sin ventana**: `core/match.h` (`MatchLearner`, `MatchSettings`, `MatchWorker`), `ui/logic/match.h` (aprendizaje, estado del panel, cambios de *Apply*), la cola del sidechain y lo aprendido en el procesador, *Apply* como una acción, y sus tests (`tests/core/match_test.cpp`, `tests/ui/match_test.cpp`, `tests/plugin/match_test.cpp`, `tests/plugin/history_test.cpp`); `docs/arquitectura.md` (módulos, hilos y comunicación).
+3. **6.3 Interfaz**: entrada del menú de comparar, el panel y su disposición en `ui/logic/layout`, el dibujo de los espectros, el objetivo y la propuesta, `docs/ui.md`, la tabla de uso del README y `CHANGELOG.md`.
 
 ### 5.7 Dinámica espectral
 
@@ -491,7 +575,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
 | **5. Calidad** ✅ | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (hechos, ver [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), escala de notas (hecha, ver [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), analizador ampliado (hecho, ver [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)), bandas desde el espectro (hechas, ver [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)), optimización SIMD (medida: no compensa y no se hace, ver [ADR 0020](docs/decisiones/0020-sin-simd.md)), macOS y Linux (hechos, ver [ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)) | Versión 0.5 (falta publicarla) | 8 a 12 semanas |
-| **6. Avanzado** | Dinámica espectral (5.7), igualar a una referencia (5.6), detección de colisiones entre instancias (hecha, ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)), saturación (5.8), surround | Versión 1.0 | Abierto |
+| **6. Avanzado** | En este orden: igualar a una referencia (5.6, [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), planificada: bloques 6.1 ajuste en `dsp`, 6.2 aprender y aplicar sin ventana, 6.3 interfaz), dinámica espectral (5.7), saturación (5.8) y surround. Hecha y adelantada: la detección de colisiones entre instancias (ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)) | Versión 1.0 | Abierto |
 
 ---
 
