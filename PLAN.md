@@ -2,7 +2,7 @@
 
 Plugin de ecualización paramétrica y dinámica, libre, pensado para funcionar bien en FL Studio y con un flujo de trabajo comparable al de los ecualizadores comerciales de referencia (FabFilter Pro-Q).
 
-Estado: **fases 0 a 5 completadas; falta publicar la 0.5.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), el analizador ampliado (sección 5.2, [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)) y las bandas desde el espectro (sección 5.3, [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)). La optimización SIMD se ha medido y no compensa, así que no se ha hecho ([ADR 0020](docs/decisiones/0020-sin-simd.md)). macOS y Linux están completos ([ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)): Linux se compila en Ubuntu 22.04 y carga desde Ubuntu 22.04 y Debian 12, y los tres formatos de macOS se comprueban (universales, macOS 11, firma ad hoc) en el CI; el CI está estable en los tres sistemas ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Falta probarlos en un Mac y en un Linux con hosts reales, y publicar la 0.5 cuando se decida. Lo siguiente es la fase 6, que empieza por igualar a una referencia (sección 5.6, planificada en la [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), en tres bloques: 6.1 a 6.3). Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
+Estado: **fases 0 a 5 completadas; falta publicar la 0.5.** La 0.1.0 está cerrada en `CHANGELOG.md` (2026-11-12) y el CI la compila, valida y empaqueta en Windows, macOS y Linux, pero aún falta subir la etiqueta `v0.1.0`, que publica la release en GitHub. De la fase 5 están hechas la fase lineal, la corrección en agudos (algoritmo Matched, con el estado en la versión 3: sección 4.1) y, adelantada de la fase 6, la detección de colisiones entre instancias. También están hechas la compensación automática de ganancia (sección 5.5, [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), los tiempos automáticos en la dinámica (sección 5.4, [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), la escala de notas (sección 5.1, [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), el analizador ampliado (sección 5.2, [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)) y las bandas desde el espectro (sección 5.3, [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)). La optimización SIMD se ha medido y no compensa, así que no se ha hecho ([ADR 0020](docs/decisiones/0020-sin-simd.md)). macOS y Linux están completos ([ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)): Linux se compila en Ubuntu 22.04 y carga desde Ubuntu 22.04 y Debian 12, y los tres formatos de macOS se comprueban (universales, macOS 11, firma ad hoc) en el CI; el CI está estable en los tres sistemas ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Falta probarlos en un Mac y en un Linux con hosts reales, y publicar la 0.5 cuando se decida. Lo siguiente es la fase 6, ya planificada (sección 7): igualar a una referencia (5.6, [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), bloques 6.1 a 6.3), dinámica espectral (5.7, [ADR 0024](docs/decisiones/0024-dinamica-espectral.md), 6.4 a 6.6) y saturación (5.8, 6.7 a 6.9). El primero es el 6.1. Sigue pendiente comprobar en FL Studio, con una mezcla real, el enrutado del sidechain.
 
 ---
 
@@ -183,7 +183,7 @@ FIR generado a partir de la respuesta en magnitud y aplicado por convolución pa
 
 Sin `new`/`malloc`, sin mutex, sin llamadas al sistema en el hilo de audio; denormales desactivados; suavizado en todos los parámetros audibles; SIMD solo después de medir.
 
-**Medido (fase 5).** Una mezcla típica de 8 bandas cuesta del 0,55 al 0,95 % de un núcleo a 44,1 y 48 kHz y del 2,4 al 3,9 % a 192 kHz, en los cuatro modos; el tamaño de bloque del host apenas influye. Lo caro son las cascadas IIR largas (24 cortes de 96 dB/oct: 6 % a 48 kHz, 22 % a 192 kHz), limitadas por la latencia de la recurrencia, y las 24 bandas dinámicas (5 % y de 15 a 22 %), que se van en `log10`, la curva de ganancia y el rediseño por muestra. SSE2 ahorra un 18–25 % en las cascadas estáticas y nada en la dinámica, y en arm64 no daría el mismo resultado que en x86-64: **no se usa SIMD** ([ADR 0020](docs/decisiones/0020-sin-simd.md)). Se revisará con la dinámica espectral y el sobremuestreo (secciones 5.7 y 5.8), que sí son bucles que el SIMD acelera. `esceq_bench` (`tools/bench`) repite las medidas.
+**Medido (fase 5).** Una mezcla típica de 8 bandas cuesta del 0,55 al 0,95 % de un núcleo a 44,1 y 48 kHz y del 2,4 al 3,9 % a 192 kHz, en los cuatro modos; el tamaño de bloque del host apenas influye. Lo caro son las cascadas IIR largas (24 cortes de 96 dB/oct: 6 % a 48 kHz, 22 % a 192 kHz), limitadas por la latencia de la recurrencia, y las 24 bandas dinámicas (5 % y de 15 a 22 %), que se van en `log10`, la curva de ganancia y el rediseño por muestra. SSE2 ahorra un 18–25 % en las cascadas estáticas y nada en la dinámica, y en arm64 no daría el mismo resultado que en x86-64: **no se usa SIMD** ([ADR 0020](docs/decisiones/0020-sin-simd.md)). Se revisará con la dinámica espectral y el sobremuestreo (secciones 5.7 y 5.8, bloques 6.5 y 6.8), que sí son bucles que el SIMD acelera, con `esceq_bench`. `esceq_bench` (`tools/bench`) repite las medidas.
 
 ---
 
@@ -207,8 +207,8 @@ Reglas comunes a todas:
 | Tiempos automáticos en la dinámica ✅ | 5.4 | 5 | 24 (uno por banda) | No |
 | Compensación automática de ganancia ✅ | 5.5 | 5 | 1 global | No |
 | Igualar a una referencia (planificada) | 5.6 | 6 | Ninguno (crea bandas normales; nada nuevo en el estado) | No |
-| Dinámica espectral | 5.7 | 6 | 24 (uno por banda) | Sí, mientras se use |
-| Saturación | 5.8 | 6 | 3 globales | Solo con sobremuestreo en fase lineal |
+| Dinámica espectral (planificada) | 5.7 | 6 | 24 (uno por banda, en los presets) | Sí, mientras haya una banda espectral: 2048 muestras a 48 kHz (42,7 ms) |
+| Saturación (planificada) | 5.8 | 6 | 3 globales (en los presets) | Solo en fase lineal y fuera de Off (los filtros de sobremuestreo) |
 
 ### 5.1 Escala de notas
 
@@ -483,63 +483,117 @@ Cada uno cabe en un chat, con sus tests, su documentación y el CI en verde.
 
 ### 5.7 Dinámica espectral
 
-**Qué es.** Una variante de la banda dinámica que, dentro de su zona, reduce o realza **solo las frecuencias que pasan del umbral**, y no toda la banda. Controla resonancias que se mueven sin apagar el resto de esa zona. Es uno de los diferenciadores citados en la sección 8.
+**Planificada** (noviembre de 2026): decisiones en la [ADR 0024](docs/decisiones/0024-dinamica-espectral.md), en estado *Propuesta* hasta que el bloque 6.4 la cierre con sus medidas. Va después de la 5.6, en tres bloques (al final de esta sección). Decidido con el usuario: la latencia existe solo mientras haya una banda espectral encendida (sin reservarla), y la STFT es de 2048 puntos a 48 kHz, sin selector.
 
-**Parámetro:** `bNN_spectral` ("Band N Spectral"), un interruptor por banda, apagado por defecto, al final de la tabla. Solo actúa si la banda es dinámica. Usa sus mismos umbral, rango, rodilla, ataque, relajación, sidechain y canal: no hay controles nuevos.
+**Qué es.** Una variante de la banda dinámica que, dentro de su zona, reduce o realza **solo las frecuencias que pasan del umbral**, y no toda la banda. Controla resonancias que se mueven (una voz con armónicos que cambian, una guitarra acústica con notas que retumban) sin apagar el resto de esa zona. Es uno de los diferenciadores citados en la sección 8.
 
-**Algoritmo** (ADR propia antes de empezar):
+**Parámetro:** `bNN_spectral` ("Band N Spectral"), un interruptor por banda, apagado por defecto, al final de la tabla (índices 364 a 387; quedarían 388 parámetros). Va en los presets, como `bNN_autotime`: es parte del sonido de la banda. Solo actúa si la banda es dinámica (`bNN_dyn`) y en los tipos en que actúa la dinámica ([docs/dsp/dinamica.md](docs/dsp/dinamica.md)): campana, shelves y tilt (en tilt, en todo el espectro); en los demás no hace nada. Usa sus mismos umbral, rango, rodilla, ataque, relajación, tiempos automáticos, sidechain y canal: no hay controles nuevos.
 
-- STFT en el canal de la banda (L, R, M o S):
-  - FFT de 2048 puntos a 48 kHz, escalada con la frecuencia de muestreo;
-  - solapamiento del 75 % y ventana raíz de Hann en análisis y síntesis, para una reconstrucción perfecta.
-- Por cada bin:
-  - nivel del detector (la entrada, o el sidechain con *External*);
-  - envolvente con el ataque y la relajación de la banda, expresados en tramas;
-  - la curva de ganancia de la sección 4.2.
-- La ganancia de cada bin se pondera con la forma de la banda (1 en su centro, 0 fuera) y se suaviza en frecuencia a 1/6 de octava, para evitar el "ruido musical".
-- **Máscaras:** las bandas espectrales de un mismo canal comparten una STFT y suman sus máscaras en dB. La parte estática de la banda sigue en el ecualizador normal (IIR o FIR). La máscara se aplica después.
+#### Comportamiento
 
-**Latencia:** una trama, 2048 muestras, 42,7 ms a 48 kHz. Solo existe mientras haya al menos una banda espectral encendida, y en fase lineal se suma a la del FIR. Activar o desactivar cambia la latencia: se gestiona como el cambio de modo de fase, silenciando un momento mientras el host recalcula la compensación. Queda abierto en la ADR si conviene reservar la latencia siempre que el usuario lo elija, para automatizar sin cortes.
+- En la tarjeta de dinámica del panel, un interruptor *Spectral* junto a *Auto* (tiempos automáticos); desactivado si la dinámica está apagada. Su ayuda dice la latencia que añade ("Spectral · adds 42.7 ms latency").
+- Con la banda espectral, la **parte dinámica de toda la banda deja de actuar**: la hace la máscara, frecuencia a frecuencia. La parte estática (la ganancia de la banda) sigue igual, en el ecualizador normal.
+- El medidor de dinámica del panel y la curva muestran la reducción **máxima** de la máscara dentro de la banda (la de la frecuencia que más baja), por los 24 atómicos que ya existen. La forma de la máscara se dibuja como un sombreado bajo la curva de la banda (192 puntos, a 30 Hz, por un `dsp::TripleBuffer`).
+- Encender la primera banda espectral, o apagar la última, cambia la latencia: se gestiona como el cambio de modo de fase (fundido a silencio en 10 ms, cambio, silencio mientras se llena la latencia nueva, fundido de entrada), y el host recibe el aviso por el hilo de control ([ADR 0021](docs/decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Encender o apagar otras bandas espectrales no cambia la latencia y solo hace el fundido de 10 ms de un cambio estructural. Automatizar el interruptor de la primera banda deja un hueco en cada cambio: lo dice su ayuda.
+- Cargar un preset que enciende o apaga la dinámica espectral también cambia la latencia, con el mismo hueco.
 
-**Aceptación**
+#### Algoritmo
 
-- Un tono dentro de la banda por encima del umbral baja lo que marca el rango, con un margen de ±0,5 dB. Otro tono en la misma banda, por debajo del umbral, no cambia más de 0,2 dB: es justo lo que la banda dinámica normal no consigue.
-- Con la señal por debajo del umbral, la salida es la entrada retrasada, con un error menor de −90 dB.
-- Con el interruptor apagado en todas las bandas, la salida es bit a bit la de ahora, con la latencia de ahora.
-- Con bloques de 1 a 4096 muestras la salida es idéntica bit a bit.
-- La latencia comunicada coincide con la medida.
-- Coste con cuatro canales con bandas espectrales a 48 kHz: menos del 10 % de un núcleo. Casi todo es FFT, así que el coste crece con los canales y no con las bandas.
+Referencias públicas: J. B. Allen, *Short Term Spectral Analysis, Synthesis, and Modification by Discrete Fourier Transform* (IEEE TASSP, 1977) y D. Griffin y J. Lim, *Signal Estimation from Modified Short-Time Fourier Transform* (IEEE TASSP, 1984), para la STFT con ventana raíz de Hann y su reconstrucción; O. Cappé, *Elimination of the Musical Noise Phenomenon with the Ephraim and Malah Noise Suppressor* (IEEE TSAP, 1994), sobre el ruido musical y el suavizado de las ganancias; y Giannoulis y otros (sección 9) para la envolvente y la curva de ganancia, que son las de la banda dinámica.
+
+- **STFT** de N = 2048 puntos a 44,1 y 48 kHz (×2 a 88,2 y 96 kHz, ×4 a 176,4 y 192 kHz, para que la resolución en hercios y la latencia en milisegundos no cambien), salto de N/4 (75 % de solapamiento) y ventana raíz de Hann en el análisis y en la síntesis: la suma de los cuadrados solapados es constante y, sin modificar, la salida es la entrada retrasada.
+- **Una STFT para todas las bandas**: 2 FFT directas de la señal (L y R), 2 del detector (la entrada, o el sidechain con *External*) y 2 inversas por salto, sean cuantas sean las bandas espectrales y sus canales. M y S se obtienen de L y R en frecuencia (la FFT es lineal), sin más FFT. En mono, la mitad.
+- **Detector por bin:** la magnitud del bin del detector en el canal de la banda (Stereo: el máximo de L y R, detección enlazada como en la [ADR 0007](docs/decisiones/0007-canal-por-banda.md)), calibrada para que un seno lea su nivel de pico, como el detector de la banda dinámica. Envolvente por bin con el ataque y la relajación de la banda en tramas (un salto son 10,7 ms: los tiempos menores se redondean a un salto); con tiempos automáticos, los de la frecuencia de cada bin (ADR 0016), con ese mismo mínimo. Curva de ganancia de la sección 4.2 (umbral, rango, rodilla).
+- **Máscara de la banda:** la ganancia de cada bin se pondera con la magnitud del filtro del detector de la banda (sección 4.2: paso banda en campanas, paso bajo o alto en shelves, 1 en tilt), normalizada a 1 en su máximo, y se suaviza en frecuencia a 1/6 de octava (en dB), contra el ruido musical.
+- **Varias bandas:** las máscaras del mismo dominio (L/R para Stereo, Left y Right; M/S para Mid y Side) se suman en dB y se aplican; si hay de los dos, primero L/R y luego M/S.
+- **Dónde se aplica:** después del ecualizador (IIR o FIR, con la parte estática y la dinámica de las bandas no espectrales) y antes de la ganancia de salida. En fase lineal el detector se retrasa lo mismo que el FIR, como ya se hace con los detectores de la dinámica.
+- **Latencia:** N muestras (42,7 ms a 48 kHz, 46,4 a 44,1), sumada a la del modo de fase.
+
+#### Dónde vive y en qué hilo
+
+| Pieza | Módulo | Hilo |
+|---|---|---|
+| STFT, detector, envolventes, máscaras y su aplicación (`dsp/spectral_dynamics.h`), con memoria reservada al preparar para la frecuencia de muestreo máxima | `dsp` | Audio |
+| Integración en `dsp::PhaseEqualizer`: latencia total y cambio con silencio | `dsp` | Audio, y el aviso en el de control |
+| `bNN_spectral` a `dsp::BandSettings` | `core/band_model` | Cualquiera |
+| Interruptor, medidor y sombreado de la máscara | `ui/logic` (textos, disposición) y `ui/src` | Mensajes |
+
+#### Contratos
+
+- **Parámetros:** 24 nuevos al final; apagados, el sonido es bit a bit el de ahora. Fixture con `ESCEQ_APPEND_PARAMETERS=1`.
+- **Estado:** sin cambios de versión (los parámetros nuevos se leen como los demás; ausentes, apagados).
+- **Presets:** el interruptor va en ellos; los de fábrica no cambian.
+- **Latencia:** cambia solo al pasar de 0 a 1 bandas espectrales encendidas, o al revés.
+- **Deshacer:** el interruptor es un parámetro más.
+
+#### Aceptación
+
+| Criterio | Test |
+|---|---|
+| Un tono dentro de la banda por encima del umbral baja lo que marca el rango, ±0,5 dB; otro tono en la misma banda, a 1/3 de octava y por debajo del umbral, no cambia más de 0,2 dB (y con la banda dinámica normal sí cambia: el test lo comprueba) | `tests/dsp/spectral_dynamics_test.cpp` |
+| Por debajo del umbral, la salida es la entrada retrasada, con un error menor de −90 dB | ídem |
+| Con el interruptor apagado en todas las bandas, la salida es bit a bit la de ahora, con la latencia de ahora, en los cuatro modos | ídem y `tests/plugin/phase_test.cpp` |
+| Con bloques de 1 a 4096 muestras, la salida es bit a bit la misma | ídem |
+| La latencia comunicada coincide con la medida, en los cuatro modos y a 44,1, 48, 96 y 192 kHz | `tests/plugin/` |
+| Al encender la primera banda espectral no hay chasquidos (el test de los fundidos del cambio de modo) | `tests/dsp/` |
+| Sin asignaciones ni bloqueos en el hilo de audio | job `rtsan` |
+| Coste a 48 kHz en estéreo, con 24 bandas espectrales en L/R y M/S: menos del 5 % de un núcleo; con una, casi lo mismo (manda la FFT) | caso nuevo de `esceq_bench` |
+
+#### Bloques de implementación
+
+4. **6.4 Motor** (`dsp/spectral_dynamics.h`, sin parámetro): STFT, detector, máscaras, reconstrucción, sus tests y `docs/dsp/dinamica-espectral.md`; la ADR 0024 aceptada con las medidas (ruido musical, tiempos mínimos, coste).
+5. **6.5 Integración**: el parámetro, `PhaseEqualizer` (latencia y cambio con silencio), `band_model`, tests del plugin, `esceq_bench`, `docs/arquitectura.md` y `docs/dsp/fase-lineal.md`.
+6. **6.6 Interfaz**: interruptor, medidor y sombreado de la máscara, `docs/ui.md`, README y `CHANGELOG.md`.
 
 ### 5.8 Saturación
 
+**Planificada** (noviembre de 2026), la última de la fase 6. Decidido con el usuario: sigue en el alcance de la 1.0, y sus parámetros van en los presets. La elección entre sobremuestreo y ADAA se mide en el bloque 6.7 y se cierra en su ADR.
+
 **Qué es.** Una etapa global de saturación suave tras el ecualizador, para dar color armónico. Va la última en prioridad: no es ecualización.
 
-**Parámetros**, al final de la tabla:
+**Parámetros**, al final de la tabla, detrás de los de la 5.7 (índices 388 a 390), en los presets (un preset antiguo, que no los lleva, los deja en su valor por defecto: Off):
 
 | Parámetro | Valores | Por defecto |
 |---|---|---|
-| `sat_mode` | Off, Soft (simétrica: armónicos impares) o Warm (asimétrica: añade pares) | Off |
-| `sat_drive` | 0 a 24 dB | 6 dB |
-| `sat_mix` | 0 a 100 % | 100 % |
+| `sat_mode` ("Saturation") | Off, Soft (simétrica: armónicos impares) o Warm (asimétrica: añade pares) | Off |
+| `sat_drive` ("Saturation Drive") | 0 a 24 dB | 6 dB |
+| `sat_mix` ("Saturation Mix") | 0 a 100 % | 100 % |
 
-Con Off la etapa no se ejecuta.
+Con Off la etapa no se ejecuta, y la salida y la latencia son bit a bit las de ahora.
 
-**Algoritmo**
+**Dónde va en la cadena:** después del ecualizador y de la dinámica espectral, antes de la ganancia de salida y de la compensación automática de ganancia (que no la tiene en cuenta: compensa la curva, y la saturación ya compensa su drive).
 
-- Soft: curva `tanh`. Warm: `tanh` con polarización, seguida de un bloqueador de continua.
-- Contra el aliasing, sobremuestreo ×4 con filtros de media banda:
-  - polifásicos IIR en modo IIR, sin latencia;
-  - FIR de fase lineal en los modos lineales, con su latencia sumada.
-- La ganancia se compensa para que el drive no cambie el nivel de un seno de −18 dBFS a 1 kHz, con un margen de ±0,5 dB.
-- La alternativa al sobremuestreo, antialiasing por antiderivada (ADAA) de primer orden, se mide antes de elegir.
+**Algoritmo** (referencias: J. Parker, V. Zavalishin y E. Le Bivic, *Reducing the Aliasing of Nonlinear Waveshaping Using Continuous-Time Convolution*, DAFx-16, y S. Bilbao, F. Esqueda, J. Parker y V. Välimäki, *Antiderivative Antialiasing for Memoryless Nonlinearities*, IEEE SPL, 2017, para el ADAA; P. P. Vaidyanathan, *Multirate Systems and Filter Banks*, 1993, y A. Valenzuela y A. Constantinides, *Digital Signal Processing Schemes for Efficient Interpolation and Decimation* (IEE Proc., 1983), para los filtros de media banda):
+
+- Soft: `tanh(d·x)`. Warm: `tanh(d·x + b) − tanh(b)`, con una polarización b fija, seguida de un bloqueador de continua de un polo a 5 Hz.
+- Contra el aliasing, sobremuestreo ×4 en dos etapas ×2 de media banda:
+  - polifásicos IIR (pasa todo) en modo IIR, sin latencia comunicada;
+  - FIR de fase lineal en los modos lineales, con su latencia (unas decenas de muestras) sumada mientras la saturación no esté en Off. Pasar de Off a otro modo en fase lineal cambia la latencia, con el hueco del cambio de modo.
+- La alternativa, ADAA de primer orden (sin sobremuestreo, o con ×2), se mide antes de elegir: el bloque 6.7 compara aliasing, coste y respuesta en agudos, y lo decide en su ADR.
+- **Compensación del drive:** la salida se divide por la ganancia que el drive da a un seno de −18 dBFS a 1 kHz, calculada numéricamente (un periodo) cuando cambia el drive, en el hilo de audio por bloque (no asigna; unos microsegundos) y aplicada con una rampa.
+- **Mezcla:** la señal seca pasa por los mismos filtros de sobremuestreo, sin la no linealidad, para que mezclar no haga filtro de peine en agudos.
+
+**Dónde vive:** `dsp/saturation.h` (curvas, sobremuestreo, bloqueador de continua), integrada en `dsp::PhaseEqualizer`; los parámetros en `core`; la interfaz en `ui/logic` y `ui/src`. **Dónde se muestra** (la barra superior está llena) es una pregunta para el usuario al empezar el bloque 6.9: una tarjeta en el panel cuando no hay banda seleccionada, el menú de opciones o un botón que abra un pequeño panel.
 
 **Aceptación**
 
-- Con Off, la salida es bit a bit la de ahora.
-- Con Soft, los armónicos pares quedan por debajo de −100 dB; con Warm, el segundo armónico es visible.
-- Con un seno de 10 kHz, drive de 12 dB y 48 kHz, el aliasing queda 80 dB por debajo de la fundamental.
-- La continua a la salida queda por debajo de −100 dB.
-- La latencia comunicada coincide con la medida en los cuatro modos de fase.
+| Criterio | Test |
+|---|---|
+| Con Off, la salida es bit a bit la de ahora, con la latencia de ahora | `tests/dsp/saturation_test.cpp` y `tests/plugin/` |
+| Con Soft, los armónicos pares quedan por debajo de −100 dB; con Warm, el segundo armónico queda por encima de −60 dB con 12 dB de drive | ídem |
+| Con un seno de 10 kHz, drive de 12 dB y 48 kHz, el aliasing queda 80 dB por debajo de la fundamental | ídem |
+| La continua a la salida queda por debajo de −100 dB tras 1 s | ídem |
+| Con cualquier drive, un seno de −18 dBFS a 1 kHz sale al mismo nivel, ±0,5 dB | ídem |
+| Con la mezcla al 0 %, la salida es la entrada por los filtros de sobremuestreo, a menos de −0,1 dB hasta 18 kHz | ídem |
+| La latencia comunicada coincide con la medida en los cuatro modos de fase | `tests/plugin/` |
+| Bloques de 1 a 4096 muestras, bit a bit iguales; sin asignaciones (`rtsan`) | ídem |
+| Coste a 48 kHz en estéreo: menos del 2 % de un núcleo | `esceq_bench` |
+
+**Bloques de implementación**
+
+7. **6.7 Motor y ADR**: `dsp/saturation.h`, la medida de sobremuestreo frente a ADAA, sus tests, `docs/dsp/saturacion.md` y la ADR.
+8. **6.8 Integración**: los tres parámetros, `PhaseEqualizer` y la latencia, tests del plugin y `esceq_bench`.
+9. **6.9 Interfaz**: tras preguntar al usuario dónde va; `docs/ui.md`, README y `CHANGELOG.md`.
 
 ---
 
@@ -575,7 +629,7 @@ Estimaciones para una persona a tiempo parcial. Son orientativas.
 | **3. Dinámica** ✅ | Detector, envolvente, curva de ganancia, indicación visual de la ganancia dinámica, sidechain externo (ver ADR 0006) | Sin chasquidos bajo modulación rápida; de-esser y control de resonancias usables | 3 a 4 semanas |
 | **4. Primera versión pública (0.1)** ✅ | M/S y L/R por banda, interfaz con controles propios, presets, deshacer, CLAP, instalador de Windows y releases desde el CI | Release en GitHub con binarios | 3 a 4 semanas |
 | **5. Calidad** ✅ | Corrección en agudos (hecha, ver [ADR 0013](docs/decisiones/0013-correccion-en-agudos.md)), fase lineal (hecha, ver [ADR 0012](docs/decisiones/0012-modos-de-fase.md)), compensación automática de ganancia (hecha, ver [ADR 0015](docs/decisiones/0015-compensacion-automatica-de-ganancia.md)), tiempos automáticos en la dinámica (hechos, ver [ADR 0016](docs/decisiones/0016-tiempos-automaticos-en-la-dinamica.md)), escala de notas (hecha, ver [ADR 0017](docs/decisiones/0017-escala-de-notas.md)), analizador ampliado (hecho, ver [ADR 0018](docs/decisiones/0018-analizador-ampliado.md)), bandas desde el espectro (hechas, ver [ADR 0019](docs/decisiones/0019-bandas-desde-el-espectro.md)), optimización SIMD (medida: no compensa y no se hace, ver [ADR 0020](docs/decisiones/0020-sin-simd.md)), macOS y Linux (hechos, ver [ADR 0022](docs/decisiones/0022-compatibilidad-en-macos-y-linux.md)) | Versión 0.5 (falta publicarla) | 8 a 12 semanas |
-| **6. Avanzado** | En este orden: igualar a una referencia (5.6, [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md), planificada: bloques 6.1 ajuste en `dsp`, 6.2 aprender y aplicar sin ventana, 6.3 interfaz), dinámica espectral (5.7), saturación (5.8) y surround. Hecha y adelantada: la detección de colisiones entre instancias (ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)) | Versión 1.0 | Abierto |
+| **6. Avanzado** | En este orden, cada bloque en un chat: igualar a una referencia (5.6, [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md): 6.1 ajuste en `dsp`, 6.2 aprender y aplicar sin ventana, 6.3 interfaz), dinámica espectral (5.7, [ADR 0024](docs/decisiones/0024-dinamica-espectral.md): 6.4 motor, 6.5 integración, 6.6 interfaz), saturación (5.8: 6.7 motor y ADR, 6.8 integración, 6.9 interfaz) y surround (sin planificar). Hecha y adelantada: la detección de colisiones entre instancias (ver [ADR 0011](docs/decisiones/0011-espectros-compartidos.md)) | Versión 1.0 | Abierto |
 
 ---
 
