@@ -46,6 +46,13 @@ struct LinearPhaseSize
     friend bool operator==(const LinearPhaseSize&, const LinearPhaseSize&) = default;
 };
 
+/// Por cuánto se multiplican los tamaños que dependen de la frecuencia de
+/// muestreo (la fase lineal y la STFT de la dinámica espectral) para que la
+/// resolución en hercios y la latencia en milisegundos no cambien: 1 hasta
+/// 50 kHz, 2 hasta 100 kHz, 4 hasta 200 kHz y 8 por encima (o 1 si no es
+/// positiva).
+int sampleRateFactor(double sampleRate) noexcept;
+
 /// Tamaños del modo a esa frecuencia de muestreo. IIR: {0, 0}.
 ///
 /// Hasta 50 kHz: Low 2048 coeficientes y bloques de 256, Medium 8192 y 512,

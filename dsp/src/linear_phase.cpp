@@ -43,7 +43,9 @@ double besselI0(double x) noexcept
     return sum;
 }
 
-int factorFor(double sampleRate) noexcept
+} // namespace
+
+int sampleRateFactor(double sampleRate) noexcept
 {
     if (!(sampleRate > 0.0) || sampleRate <= 50000.0)
         return 1;
@@ -54,11 +56,9 @@ int factorFor(double sampleRate) noexcept
     return 8;
 }
 
-} // namespace
-
 LinearPhaseSize linearPhaseSize(PhaseMode mode, double sampleRate) noexcept
 {
-    const int factor = factorFor(sampleRate);
+    const int factor = sampleRateFactor(sampleRate);
     switch (mode)
     {
     case PhaseMode::Iir:
