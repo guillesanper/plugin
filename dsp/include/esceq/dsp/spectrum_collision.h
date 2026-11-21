@@ -39,8 +39,16 @@ struct CollisionSettings
 ///
 /// Simula la resolución del oído, que no separa componentes dentro de una
 /// banda crítica (en torno a 1/3 de octava). Segura en tiempo real (no asigna).
+///
+/// Con `minWidthHz` > 0, la ventana (simétrica en escala logarítmica) nunca
+/// mide menos de eso en Hz: en graves se ensancha para que abarque bastantes
+/// bins de la FFT (la igualación, docs/dsp/igualacion.md). smoothWindowOctaves()
+/// da su ancho. Con 0, el resultado es el de siempre, bit a bit.
 void smoothOctaves(std::span<const double> frequencies, std::span<const float> levelsDb, double widthOctaves,
-                   std::span<float> out) noexcept;
+                   std::span<float> out, double minWidthHz = 0.0) noexcept;
+
+/// Ancho en octavas de la ventana de smoothOctaves() en `frequencyHz` (> 0).
+double smoothWindowOctaves(double frequencyHz, double widthOctaves, double minWidthHz = 0.0) noexcept;
 
 /// Cuánto está presente (0..1) una señal de nivel `levelDb` en una pista cuyo
 /// máximo es `peakDb`: 1 con margen por encima de los dos umbrales

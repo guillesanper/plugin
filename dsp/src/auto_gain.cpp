@@ -113,24 +113,9 @@ struct Curve
     }
 };
 
-} // namespace
-
-double kWeightingPower(double frequencyHz) noexcept ESCEQ_NONBLOCKING
+/// La curva de las bandas que cuentan, con la zona refinada de cada una.
+Curve buildCurve(std::span<const BandSettings> bands, double sampleRate, int numChannels) noexcept
 {
-    // ITU-R BS.1770-5, tablas 1 y 2: coeficientes a 48 kHz.
-    static constexpr double kShelfB[3] = {1.53512485958697, -2.69169618940638, 1.19839281085285};
-    static constexpr double kShelfA[3] = {1.0, -1.69065929318241, 0.73248077421585};
-    static constexpr double kHighPassB[3] = {1.0, -2.0, 1.0};
-    static constexpr double kHighPassA[3] = {1.0, -1.99004745483398, 0.99007225036621};
-    const auto z1 = std::polar(1.0, -2.0 * std::numbers::pi * frequencyHz / 48000.0);
-    return biquadPower(kShelfB, kShelfA, z1) * biquadPower(kHighPassB, kHighPassA, z1);
-}
-
-double autoGainDb(std::span<const BandSettings> bands, double sampleRate, int numChannels) noexcept
-{
-    if (!(sampleRate > 0.0))
-        return 0.0;
-
     Curve curve;
     curve.sampleRate = sampleRate;
     curve.mono = numChannels < 2;
@@ -155,6 +140,28 @@ double autoGainDb(std::span<const BandSettings> bands, double sampleRate, int nu
         curve.highOctave[index] = centre + reach;
         curve.spacing[index] = bandwidth / kRefinePerBandwidth;
     }
+    return curve;
+}
+
+} // namespace
+
+double kWeightingPower(double frequencyHz) noexcept ESCEQ_NONBLOCKING
+{
+    // ITU-R BS.1770-5, tablas 1 y 2: coeficientes a 48 kHz.
+    static constexpr double kShelfB[3] = {1.53512485958697, -2.69169618940638, 1.19839281085285};
+    static constexpr double kShelfA[3] = {1.0, -1.69065929318241, 0.73248077421585};
+    static constexpr double kHighPassB[3] = {1.0, -2.0, 1.0};
+    static constexpr double kHighPassA[3] = {1.0, -1.99004745483398, 0.99007225036621};
+    const auto z1 = std::polar(1.0, -2.0 * std::numbers::pi * frequencyHz / 48000.0);
+    return biquadPower(kShelfB, kShelfA, z1) * biquadPower(kHighPassB, kHighPassA, z1);
+}
+
+double autoGainDb(std::span<const BandSettings> bands, double sampleRate, int numChannels) noexcept
+{
+    if (!(sampleRate > 0.0))
+        return 0.0;
+
+    const Curve curve = buildCurve(bands, sampleRate, numChannels);
     if (curve.count == 0)
         return 0.0; // curva plana: exactamente 0, sin errores de redondeo
 
@@ -192,6 +199,20 @@ double autoGainDb(std::span<const BandSettings> bands, double sampleRate, int nu
         return kAutoGainLimitDb; // la curva lo quita todo
     const double gain = -10.0 * std::log10(weighted / total);
     return std::isfinite(gain) ? std::clamp(gain, -kAutoGainLimitDb, kAutoGainLimitDb) : kAutoGainLimitDb;
+}
+
+void staticCurveDb(std::span<const BandSettings> bands, double sampleRate, int numChannels,
+                   std::span<const double> frequenciesHz, std::span<double> outDb) noexcept
+{
+    const std::size_t n = std::min(frequenciesHz.size(), outDb.size());
+    if (!(sampleRate > 0.0))
+    {
+        std::fill_n(outDb.begin(), n, 0.0);
+        return;
+    }
+    const Curve curve = buildCurve(bands, sampleRate, numChannels);
+    for (std::size_t i = 0; i < n; ++i)
+        outDb[i] = curve.count == 0 ? 0.0 : 10.0 * std::log10(std::max(curve.power(frequenciesHz[i]), 1.0e-30));
 }
 
 void AutoGain::request(std::span<const BandSettings> bands, double sampleRate,

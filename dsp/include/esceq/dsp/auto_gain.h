@@ -51,6 +51,15 @@ double kWeightingPower(double frequencyHz) noexcept ESCEQ_NONBLOCKING;
 /// en tiempo real. Segura entre hilos (no tiene estado).
 double autoGainDb(std::span<const BandSettings> bands, double sampleRate, int numChannels) noexcept;
 
+/// La curva estática de `bands` que integra autoGainDb(), en dB, en cada
+/// frecuencia de `frequenciesHz`: 10·log10 P con la misma regla de canales y
+/// las mismas bandas que cuentan. Sin ninguna que cuente, exactamente 0 en
+/// todos los puntos. Escribe min(tamaños) puntos de `outDb`. La usa la
+/// igualación (curve_match.h) para ajustar lo que falta sobre las bandas
+/// actuales. No asigna memoria; segura entre hilos. No es de tiempo real.
+void staticCurveDb(std::span<const BandSettings> bands, double sampleRate, int numChannels,
+                   std::span<const double> frequenciesHz, std::span<double> outDb) noexcept;
+
 /// Entrega de la compensación entre el hilo de audio, que pide calcularla, y
 /// un hilo de control, que la calcula con autoGainDb() y la publica.
 ///

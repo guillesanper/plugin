@@ -121,6 +121,49 @@ TEST_CASE("Colisiones: suavizado por octavas")
     }
 }
 
+TEST_CASE("Colisiones: suavizado con un ancho minimo en Hz")
+{
+    // Ancho de la ventana: el de las octavas mientras mide más que el mínimo.
+    CHECK(smoothWindowOctaves(1000.0, 1.0 / 3.0) == 2.0 * std::log2(std::exp2(1.0 / 6.0)));
+    CHECK_THAT(smoothWindowOctaves(1000.0, 1.0 / 3.0, 40.0), WithinAbs(1.0 / 3.0, 1e-12));
+    // A 50 Hz, 47 Hz de ventana son mucho más de 1/3 de octava: f·r − f/r = 47.
+    const double width = smoothWindowOctaves(50.0, 1.0 / 3.0, 47.0);
+    const double ratio = std::exp2(0.5 * width);
+    CHECK_THAT(50.0 * ratio - 50.0 / ratio, WithinAbs(47.0, 1e-9));
+    CHECK(width > 1.0);
+
+    // El suavizado es la media en potencia de los puntos dentro de esa ventana.
+    std::vector<double> frequencies;
+    std::vector<float> levels;
+    for (int i = 0; i < 120; ++i)
+    {
+        frequencies.push_back(20.0 * std::pow(1000.0, i / 119.0));
+        levels.push_back(static_cast<float>(-20.0 + 6.0 * std::sin(0.7 * i)));
+    }
+    std::vector<float> out(levels.size()), plain(levels.size()), same(levels.size());
+    smoothOctaves(frequencies, levels, 1.0 / 3.0, out, 47.0);
+    for (std::size_t i = 0; i < frequencies.size(); ++i)
+    {
+        const double r = std::exp2(0.5 * smoothWindowOctaves(frequencies[i], 1.0 / 3.0, 47.0));
+        double sum = 0.0;
+        int count = 0;
+        for (std::size_t j = 0; j < frequencies.size(); ++j)
+            if (frequencies[j] >= frequencies[i] / r && frequencies[j] <= frequencies[i] * r)
+            {
+                sum += std::pow(10.0, 0.1 * levels[j]);
+                ++count;
+            }
+        CHECK_THAT(out[i], WithinAbs(10.0 * std::log10(sum / count), 1e-4));
+    }
+    // Con 0 Hz, el de siempre bit a bit; y con anchura 0, el mínimo sigue valiendo.
+    smoothOctaves(frequencies, levels, 1.0 / 3.0, plain);
+    smoothOctaves(frequencies, levels, 1.0 / 3.0, same, 0.0);
+    CHECK(plain == same);
+    smoothOctaves(frequencies, levels, 0.0, same, 47.0);
+    CHECK(same != levels);
+    CHECK(same.back() == levels.back());
+}
+
 TEST_CASE("Colisiones: presencia y enmascaramiento")
 {
     const CollisionSettings s{};

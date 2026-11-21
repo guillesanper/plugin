@@ -191,6 +191,46 @@ TEST_CASE("AutoGain: con canales, la media de la potencia de las dos salidas", "
                WithinAbs(both, 1.0e-9));
 }
 
+TEST_CASE("AutoGain: la curva estatica, punto a punto, con la misma regla de canales", "[auto_gain]")
+{
+    const std::vector<double> frequencies{20.0, 150.0, 1000.0, 2000.0, 7000.0, 19000.0};
+    std::vector<double> out(frequencies.size(), 1.0);
+
+    // Sin bandas que cuenten: exactamente 0.
+    auto off = band(FilterType::Bell, 2000.0, 9.0, 0.8);
+    off.enabled = false;
+    staticCurveDb(std::vector{off, band(FilterType::AllPass, 500.0, 0.0, 1.0)}, kRate, 2, frequencies, out);
+    for (const double db : out)
+        CHECK(db == 0.0);
+
+    const auto bell = band(FilterType::Bell, 2000.0, 9.0, 0.8);
+    const auto shelf = band(FilterType::LowShelf, 150.0, -4.0, 0.7);
+    const BandDesign bellDesign = designBand(bell.filter, kRate);
+    const BandDesign shelfDesign = designBand(shelf.filter, kRate);
+    staticCurveDb(std::vector{bell, shelf}, kRate, 2, frequencies, out);
+    for (std::size_t i = 0; i < frequencies.size(); ++i)
+        CHECK_THAT(out[i], WithinAbs(magnitudeDb(bellDesign, frequencies[i], kRate) +
+                                         magnitudeDb(shelfDesign, frequencies[i], kRate),
+                                     1.0e-9));
+
+    // En un solo canal (o en M o S), la media de la potencia de las dos salidas.
+    for (const auto mode : {ChannelMode::Left, ChannelMode::Right, ChannelMode::Mid, ChannelMode::Side})
+    {
+        INFO("canal " << static_cast<int>(mode));
+        staticCurveDb(std::vector{band(FilterType::Bell, 2000.0, 9.0, 0.8, mode)}, kRate, 2, frequencies, out);
+        for (std::size_t i = 0; i < frequencies.size(); ++i)
+        {
+            const double power = std::pow(10.0, magnitudeDb(bellDesign, frequencies[i], kRate) / 10.0);
+            CHECK_THAT(out[i], WithinAbs(10.0 * std::log10(0.5 * (1.0 + power)), 1.0e-9));
+        }
+    }
+    // En mono, Right no hace nada.
+    staticCurveDb(std::vector{band(FilterType::Bell, 2000.0, 9.0, 0.8, ChannelMode::Right)}, kRate, 1, frequencies,
+                  out);
+    for (const double db : out)
+        CHECK(db == 0.0);
+}
+
 TEST_CASE("AutoGain: casi no depende de la frecuencia de muestreo", "[auto_gain]")
 {
     const std::vector curve{band(FilterType::LowShelf, 120.0, 3.0, 0.7), band(FilterType::Bell, 2500.0, -4.0, 1.5),

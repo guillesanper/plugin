@@ -30,27 +30,48 @@ float smooth01(float t) noexcept
 
 } // namespace
 
+namespace
+{
+
+/// Mitad del ancho de la ventana, como cociente de frecuencias: f/r a f·r.
+double halfWindowRatio(double frequencyHz, double widthOctaves, double minWidthHz) noexcept
+{
+    const double octaves = std::exp2(0.5 * std::max(widthOctaves, 0.0));
+    if (!(minWidthHz > 0.0))
+        return octaves;
+    // f·r − f/r = W: r = W/(2f) + √((W/(2f))² + 1).
+    const double x = 0.5 * minWidthHz / frequencyHz;
+    return std::max(octaves, x + std::sqrt(x * x + 1.0));
+}
+
+} // namespace
+
+double smoothWindowOctaves(double frequencyHz, double widthOctaves, double minWidthHz) noexcept
+{
+    return 2.0 * std::log2(halfWindowRatio(frequencyHz, widthOctaves, minWidthHz));
+}
+
 void smoothOctaves(std::span<const double> frequencies, std::span<const float> levelsDb, double widthOctaves,
-                   std::span<float> out) noexcept
+                   std::span<float> out, double minWidthHz) noexcept
 {
     const std::size_t n = std::min({frequencies.size(), levelsDb.size(), out.size()});
     if (n == 0)
         return;
-    if (widthOctaves <= 0.0 || n == 1)
+    if ((widthOctaves <= 0.0 && !(minWidthHz > 0.0)) || n == 1)
     {
         std::copy_n(levelsDb.begin(), n, out.begin());
         return;
     }
 
-    // Ventana deslizante con dos punteros: las frecuencias son crecientes, así
-    // que los límites de la ventana solo avanzan. La suma se lleva en doble
-    // precisión y en potencia.
-    const double halfRatio = std::exp2(0.5 * widthOctaves);
+    // Ventana deslizante con dos punteros: las frecuencias son crecientes, y
+    // los dos límites de la ventana (f/r y f·r) crecen con f aunque r cambie,
+    // así que solo avanzan. La suma se lleva en doble precisión y en potencia.
     std::size_t lo = 0;
     std::size_t hi = 0; // primer punto fuera de la ventana por arriba
     double sum = 0.0;
     for (std::size_t i = 0; i < n; ++i)
     {
+        const double halfRatio = halfWindowRatio(frequencies[i], widthOctaves, minWidthHz);
         const double low = frequencies[i] / halfRatio;
         const double high = frequencies[i] * halfRatio;
         while (hi < n && frequencies[hi] <= high)

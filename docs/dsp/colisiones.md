@@ -60,7 +60,7 @@ La medida es **direccional**: dice cuánto tapa la otra pista a la propia. Si el
 
 ## Tests
 
-- `tests/dsp/spectrum_collision_test.cpp`: suavizado (conservación de potencia, extremos), presencia, enmascaramiento, severidad con espectros sintéticos y con el analizador real (dos senos a la misma frecuencia chocan; separados, no), tramos y promedio temporal (constante de tiempo exacta).
+- `tests/dsp/spectrum_collision_test.cpp`: suavizado (conservación de potencia, extremos), presencia, enmascaramiento, severidad con espectros sintéticos y con el analizador real (dos senos a la misma frecuencia chocan; separados, no), tramos y promedio temporal (constante de tiempo exacta). El suavizado admite un ancho mínimo en Hz (`minWidthHz`), que sin uso (0) no cambia nada bit a bit: lo usa la igualación para que en graves cada ventana abarque bastantes bins ([igualacion.md](igualacion.md)).
 - `tests/core/spectrum_session_test.cpp`: registro, numeración, ciclo de vida, nada se procesa sin mirar, calibración del espectro publicado, apagado sin audio, el hilo de fondo y un test de concurrencia para ThreadSanitizer.
 - `tests/ui/session_overlay_test.cpp`: menú, atribución de zonas con varias instancias, texto y colocación de etiquetas.
 - `tests/plugin/session_test.cpp`: el procesador publica su salida (con ecualizador, ganancia de salida y bypass), el nombre y el color de la pista, y que nada de esto entra en el estado guardado.
