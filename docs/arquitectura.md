@@ -59,8 +59,9 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 |---|---|---|
 | `decibels.h` | Conversión entre decibelios y ganancia lineal | Cualquiera |
 | `gain_ramp.h` | Ganancia suavizada sin chasquidos | Audio |
-| `auto_gain.h` | Compensación automática de ganancia: la ganancia que deja igual la sonoridad de ruido rosa (ponderación K) por la curva estática (`autoGainDb`), y su entrega del hilo de control al de audio (`AutoGain`). Ver [docs/dsp/compensacion-de-ganancia.md](dsp/compensacion-de-ganancia.md) | El cálculo, fuera del de audio; la entrega, uno de audio y uno de control |
-| `filter_design.h` | De parámetros de banda a coeficientes, y respuesta en frecuencia exacta para dibujar la curva | Cualquiera |
+| `auto_gain.h` | Compensación automática de ganancia: la ganancia que deja igual la sonoridad de ruido rosa (ponderación K) por la curva estática (`autoGainDb`), esa curva punto a punto con la misma regla de canales (`staticCurveDb`), y su entrega del hilo de control al de audio (`AutoGain`). Ver [docs/dsp/compensacion-de-ganancia.md](dsp/compensacion-de-ganancia.md) | El cálculo, fuera del de audio; la entrega, uno de audio y uno de control |
+| `curve_match.h` | Igualar a una referencia: de los espectros medios de la pista y de la referencia a las campanas y shelves que faltan sobre la curva actual (`matchCurve`: objetivo, pesos, inicio voraz y Levenberg-Marquardt), determinista y cancelable ([ADR 0023](decisiones/0023-igualar-a-una-referencia.md), [docs/dsp/igualacion.md](dsp/igualacion.md)) | Fuera del de audio (hasta 1 s con 24 bandas) |
+| `filter_design.h` | De parámetros de banda a coeficientes, respuesta en frecuencia exacta para dibujar la curva, y el Q de un ancho en octavas (`qForBandwidth`) | Cualquiera |
 | `band_filter.h` | Procesado de audio de una banda (cascada de secciones SVF) | Audio |
 | `dynamics.h` | Curva de ganancia, seguidor de envolvente y filtro del detector de la dinámica | Audio (la curva y el detector, cualquiera) |
 | `equalizer.h` | Las 24 bandas en serie (IIR), con suavizado de parámetros, fundidos al cambiar de tipo o activar, bypass con fundido, dinámica por banda con sidechain opcional, y canal por banda (Stereo, Left, Right, Mid, Side). En modo "solo dinámica", solo el cambio que añade la dinámica (para la fase lineal) | Audio |
@@ -71,9 +72,9 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | `spsc_fifo.h` | Cola sin bloqueo de un productor y un consumidor | Audio escribe, interfaz lee |
 | `fft.h` | FFT radix-2 en `float` y `double`, directa e inversa | Cualquiera |
 | `spectrum_analyzer.h` | Espectro calibrado para dibujar | Interfaz |
-| `spectrum_collision.h` | Colisiones (enmascaramiento) entre dos espectros: suavizado por octavas, presencia, severidad, tramos y promedio temporal. Ver [docs/dsp/colisiones.md](dsp/colisiones.md) | Cualquiera |
+| `spectrum_collision.h` | Colisiones (enmascaramiento) entre dos espectros: suavizado por octavas (con un ancho mínimo en Hz opcional, para la igualación), presencia, severidad, tramos y promedio temporal. Ver [docs/dsp/colisiones.md](dsp/colisiones.md) | Cualquiera |
 
-`dsp` no crea hilos: el de control vive en `core` (`ControlThread`) y solo llama a `PhaseEqualizer::serviceDesigns()` y a `AutoGain::service()`.
+`dsp` no crea hilos: el de control vive en `core` (`ControlThread`) y solo llama a `PhaseEqualizer::serviceDesigns()` y a `AutoGain::service()`. `matchCurve` lo llamará el hilo del ajuste de `core` (bloque 6.2).
 
 El diseño (`designBand`) y el procesado (`BandFilter`) están separados a propósito: la interfaz puede calcular la curva sin procesar audio, y el filtro no sabe nada de tipos ni de parámetros de usuario. Un tipo de filtro nuevo se añade en `designBand` sin tocar `BandFilter`. Detalles en [docs/dsp/filtros.md](dsp/filtros.md), [docs/dsp/ecualizador.md](dsp/ecualizador.md) y [docs/dsp/dinamica.md](dsp/dinamica.md).
 
