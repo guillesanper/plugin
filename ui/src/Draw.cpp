@@ -260,6 +260,16 @@ void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, con
             }
         break;
     }
+    case Icon::Close:
+    {
+        // Una cruz.
+        constexpr float kArm = 3.5f;
+        path.startNewSubPath(c.x - kArm, c.y - kArm);
+        path.lineTo(c.x + kArm, c.y + kArm);
+        path.startNewSubPath(c.x + kArm, c.y - kArm);
+        path.lineTo(c.x - kArm, c.y + kArm);
+        break;
+    }
     case Icon::Undo:
     case Icon::Redo:
     {
@@ -313,6 +323,31 @@ void dropdown(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlSta
 
     if (state.focused)
         focusRing(g, bounds, radius::control);
+}
+
+void field(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state)
+{
+    const float alpha = alphaFor(state);
+    g.setColour(body(state).withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(bounds, radius::control);
+    g.setColour(colour::lineStrong.withMultipliedAlpha(alpha));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), radius::control, stroke::hairline);
+    if (state.focused)
+        focusRing(g, bounds, radius::control);
+}
+
+void progress(juce::Graphics& g, juce::Rectangle<float> bounds, double fraction, juce::Colour accent,
+              const ControlState& state)
+{
+    const float alpha = alphaFor(state);
+    g.setColour(colour::track.withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(bounds, radius::small);
+    const auto filled = bounds.withWidth(bounds.getWidth() * static_cast<float>(std::clamp(fraction, 0.0, 1.0)));
+    if (filled.getWidth() > 0.0f)
+    {
+        g.setColour(accent.withMultipliedAlpha(alpha));
+        g.fillRoundedRectangle(filled, radius::small);
+    }
 }
 
 void focusRing(juce::Graphics& g, juce::Rectangle<float> bounds, float cornerRadius)

@@ -65,14 +65,16 @@ ParamControl::~ParamControl()
 {
     // Si la ventana se cierra en mitad de un arrastre, el host y el historial
     // de deshacer deben saber que el gesto ha terminado.
-    if (dragging_ && moved_ && attachment_ != nullptr)
-        attachment_->endGesture();
+    if (dragging_ && moved_ && bound())
+        endEdit();
 }
 
 void ParamControl::attach(juce::RangedAudioParameter& parameter, const core::ParameterSpec& spec)
 {
     hideEditor(false);
     attachment_.reset();
+    onLocalChange_ = nullptr;
+    format_ = {};
     spec_ = &spec;
     attachment_ = std::make_unique<juce::ParameterAttachment>(parameter, [this](float value) {
         value_ = value;
@@ -87,11 +89,80 @@ void ParamControl::attach(juce::RangedAudioParameter& parameter, const core::Par
 void ParamControl::detach()
 {
     hideEditor(false);
-    if (dragging_ && moved_ && attachment_ != nullptr)
-        attachment_->endGesture();
+    if (dragging_ && moved_ && bound())
+        endEdit();
     dragging_ = false;
     attachment_.reset();
+    onLocalChange_ = nullptr;
+    format_ = {};
     spec_ = nullptr;
+}
+
+void ParamControl::bindLocal(const core::ParameterSpec& spec, float value, std::function<void(float)> onChange,
+                             TextFormat format)
+{
+    detach();
+    spec_ = &spec;
+    onLocalChange_ = std::move(onChange);
+    format_ = std::move(format);
+    value_ = core::sanitize(spec, value);
+    setTitle(toJuce(spec.name));
+    repaint();
+}
+
+void ParamControl::setLocalValue(float value)
+{
+    if (spec_ == nullptr || attachment_ != nullptr || dragging_)
+        return; // mientras se arrastra, manda el ratón
+    const float v = core::sanitize(*spec_, value);
+    if (juce::exactlyEqual(v, value_))
+        return;
+    value_ = v;
+    repaint();
+    if (auto* handler = getAccessibilityHandler())
+        handler->notifyAccessibilityEvent(juce::AccessibilityEvent::valueChanged);
+}
+
+void ParamControl::beginEdit()
+{
+    if (attachment_ != nullptr)
+        attachment_->beginGesture();
+}
+
+void ParamControl::editValue(float value)
+{
+    if (attachment_ != nullptr)
+        attachment_->setValueAsPartOfGesture(value);
+    else
+        setLocal(value);
+}
+
+void ParamControl::endEdit()
+{
+    if (attachment_ != nullptr)
+        attachment_->endGesture();
+}
+
+void ParamControl::setValueComplete(float value)
+{
+    if (attachment_ != nullptr)
+        attachment_->setValueAsCompleteGesture(value);
+    else
+        setLocal(value);
+}
+
+void ParamControl::setLocal(float value)
+{
+    if (spec_ == nullptr || !onLocalChange_)
+        return;
+    const float v = core::sanitize(*spec_, value);
+    const bool changed = !juce::exactlyEqual(v, value_);
+    value_ = v;
+    repaint();
+    if (changed)
+        if (auto* handler = getAccessibilityHandler())
+            handler->notifyAccessibilityEvent(juce::AccessibilityEvent::valueChanged);
+    onLocalChange_(v);
 }
 
 void ParamControl::setAccent(juce::Colour accent)
@@ -130,20 +201,22 @@ juce::String ParamControl::valueText() const
 {
     if (valueOverride_.isNotEmpty())
         return valueOverride_;
-    return spec_ != nullptr ? toJuce(core::formatValue(*spec_, value_)) : juce::String();
+    if (spec_ == nullptr)
+        return {};
+    return format_.format ? format_.format(value_) : toJuce(core::formatValue(*spec_, value_));
 }
 
 void ParamControl::setValueFromUser(float value)
 {
-    if (attachment_ != nullptr && spec_ != nullptr && isEnabled())
-        attachment_->setValueAsCompleteGesture(core::sanitize(*spec_, value));
+    if (bound() && spec_ != nullptr && isEnabled())
+        setValueComplete(core::sanitize(*spec_, value));
 }
 
 bool ParamControl::setTextFromUser(const juce::String& text)
 {
     if (spec_ == nullptr)
         return false;
-    const auto value = commitText(*spec_, text.toStdString(), a4Hz_);
+    const auto value = format_.parse ? format_.parse(text) : commitText(*spec_, text.toStdString(), a4Hz_);
     if (!value)
         return false;
     setValueFromUser(*value);
@@ -155,6 +228,8 @@ juce::Rectangle<float> ParamControl::controlArea() const
     const auto bounds = getLocalBounds().toFloat();
     if (style_ == Style::Bar)
         return bounds.withTrimmedRight(kBarValueWidth);
+    if (style_ == Style::Field)
+        return bounds;
     return toJuce(knobCellLayout(toLogic(bounds)).knob);
 }
 
@@ -163,6 +238,8 @@ juce::Rectangle<float> ParamControl::valueArea() const
     const auto bounds = getLocalBounds().toFloat();
     if (style_ == Style::Bar)
         return bounds.withLeft(bounds.getRight() - kBarValueWidth);
+    if (style_ == Style::Field)
+        return bounds;
     return toJuce(knobCellLayout(toLogic(bounds)).value);
 }
 
@@ -191,6 +268,10 @@ void ParamControl::paint(juce::Graphics& g)
         if (spec_ != nullptr)
             draw::knob(g, toJuce(layout.knob), valueArc(*spec_, value_), isBipolar(*spec_), accent_, state);
     }
+    else if (style_ == Style::Field)
+    {
+        draw::field(g, controlArea(), state);
+    }
     else if (spec_ != nullptr)
     {
         draw::bar(g, controlArea(), valueSpan(*spec_, value_), isBipolar(*spec_), accent_, state);
@@ -201,7 +282,7 @@ void ParamControl::paint(juce::Graphics& g)
         g.setColour(colour::text.withMultipliedAlpha(textAlpha));
         g.setFont(font(type::body, Weight::Regular, true));
         g.drawText(valueText(), valueArea(),
-                   style_ == Style::Knob ? juce::Justification::centred : juce::Justification::centredRight, false);
+                   style_ == Style::Bar ? juce::Justification::centredRight : juce::Justification::centred, false);
     }
 }
 
@@ -219,7 +300,7 @@ void ParamControl::mouseExit(const juce::MouseEvent&)
 
 void ParamControl::mouseDown(const juce::MouseEvent& e)
 {
-    if (attachment_ == nullptr || spec_ == nullptr || e.mods.isPopupMenu())
+    if (!bound() || spec_ == nullptr || e.mods.isPopupMenu())
         return;
 
     if (e.mods.isCommandDown())
@@ -237,7 +318,7 @@ void ParamControl::mouseDown(const juce::MouseEvent& e)
 
 void ParamControl::mouseDrag(const juce::MouseEvent& e)
 {
-    if (!dragging_ || attachment_ == nullptr || spec_ == nullptr)
+    if (!dragging_ || !bound() || spec_ == nullptr)
         return;
 
     if (!moved_)
@@ -245,7 +326,7 @@ void ParamControl::mouseDrag(const juce::MouseEvent& e)
         if (e.getDistanceFromDragStart() < 2)
             return; // un clic con el pulso algo tembloroso no es un arrastre
         moved_ = true;
-        attachment_->beginGesture();
+        beginEdit();
     }
 
     const auto delta = e.position - dragLast_;
@@ -258,7 +339,7 @@ void ParamControl::mouseDrag(const juce::MouseEvent& e)
         pixels = delta.x * kDragPixelsForFullRange / std::max(1.0f, controlArea().getWidth() - 12.0f);
 
     dragPosition_ = dragNormalized(dragPosition_, pixels, e.mods.isShiftDown());
-    attachment_->setValueAsPartOfGesture(core::fromNormalized(*spec_, dragPosition_));
+    editValue(core::fromNormalized(*spec_, dragPosition_));
 }
 
 void ParamControl::mouseUp(const juce::MouseEvent& e)
@@ -267,8 +348,8 @@ void ParamControl::mouseUp(const juce::MouseEvent& e)
         return;
     dragging_ = false;
 
-    if (moved_ && attachment_ != nullptr)
-        attachment_->endGesture();
+    if (moved_ && bound())
+        endEdit();
     else if (!moved_ && valueArea().contains(e.position) && e.getNumberOfClicks() == 1)
         showEditor();
 
@@ -284,19 +365,19 @@ void ParamControl::mouseDoubleClick(const juce::MouseEvent& e)
 
 void ParamControl::mouseWheelMove(const juce::MouseEvent& e, const juce::MouseWheelDetails& wheel)
 {
-    if (attachment_ == nullptr || spec_ == nullptr || !isEnabled() || dragging_)
+    if (!bound() || spec_ == nullptr || !isEnabled() || dragging_)
     {
         Component::mouseWheelMove(e, wheel);
         return;
     }
     const float delta = (std::abs(wheel.deltaY) > std::abs(wheel.deltaX) ? wheel.deltaY : -wheel.deltaX) *
                         (wheel.isReversed ? -1.0f : 1.0f);
-    attachment_->setValueAsCompleteGesture(wheelValue(*spec_, value_, delta, e.mods.isShiftDown()));
+    setValueComplete(wheelValue(*spec_, value_, delta, e.mods.isShiftDown()));
 }
 
 bool ParamControl::keyPressed(const juce::KeyPress& key)
 {
-    if (attachment_ == nullptr || spec_ == nullptr || !isEnabled())
+    if (!bound() || spec_ == nullptr || !isEnabled())
         return false;
 
     int steps = 0;
@@ -312,7 +393,7 @@ bool ParamControl::keyPressed(const juce::KeyPress& key)
     if (steps != 0)
     {
         keyboardFocus_ = true;
-        attachment_->setValueAsCompleteGesture(keyStepValue(*spec_, value_, steps, key.getModifiers().isShiftDown()));
+        setValueComplete(keyStepValue(*spec_, value_, steps, key.getModifiers().isShiftDown()));
         return true;
     }
     if (key.isKeyCode(juce::KeyPress::returnKey))
@@ -342,8 +423,8 @@ void ParamControl::focusLost(FocusChangeType)
 
 void ParamControl::resetToDefault()
 {
-    if (attachment_ != nullptr && spec_ != nullptr && isEnabled())
-        attachment_->setValueAsCompleteGesture(spec_->defaultValue);
+    if (bound() && spec_ != nullptr && isEnabled())
+        setValueComplete(spec_->defaultValue);
 }
 
 void ParamControl::showEditor()
@@ -357,7 +438,7 @@ void ParamControl::showEditor()
     editor_->setJustification(juce::Justification::centred);
     editor_->setIndents(2, 0);
     editor_->setSelectAllWhenFocused(true);
-    editor_->setText(toJuce(editText(*spec_, value_)), false);
+    editor_->setText(format_.format ? format_.format(value_) : toJuce(editText(*spec_, value_)), false);
     editor_->onReturnKey = [this] { hideEditor(true); };
     editor_->onEscapeKey = [this] { hideEditor(false); };
     editor_->onFocusLost = [this] { hideEditor(true); };
@@ -576,6 +657,13 @@ void Segmented::choose(int index)
         attachment_->setValueAsCompleteGesture(static_cast<float>(index));
     if (onSelect)
         onSelect(index);
+}
+
+void Segmented::setTooltip(const juce::String& tooltip)
+{
+    SettableTooltipClient::setTooltip(tooltip);
+    for (auto& segment : segments_)
+        segment->setTooltip(tooltip);
 }
 
 void Segmented::resized()

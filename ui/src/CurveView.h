@@ -5,6 +5,7 @@
 #include "esceq/core/state.h"
 #include "esceq/dsp/spectrum_analyzer.h"
 #include "esceq/ui/curve_mapping.h"
+#include "esceq/ui/match.h"
 #include "esceq/ui/meter_logic.h"
 #include "esceq/ui/session_overlay.h"
 #include "esceq/ui/spectrum_peaks.h"
@@ -114,6 +115,17 @@ public:
     /// empieza o se deja de mirar la sesión, y se repinta.
     void compareChanged();
 
+    /// Igualación (PLAN.md 5.6): mientras el panel Match está abierto, el
+    /// audio de la cola "pre", que solo lee esta vista, va también a
+    /// `controller` (MatchController::pushTrack), con el analizador encendido
+    /// o no. nullptr al cerrarlo.
+    void setMatch(MatchController* controller);
+
+    /// Tras cada refresco del controlador: con 10 s útiles, se dibujan los
+    /// espectros aprendidos (la referencia con `referenceColour`), la curva
+    /// objetivo y la propuesta con sus nodos en fantasma. Repinta si cambia algo.
+    void refreshMatch(juce::Colour referenceColour);
+
     void paint(juce::Graphics& g) override;
     void resized() override;
 
@@ -173,6 +185,13 @@ private:
     /// true si hay que repintar.
     bool updateSession(bool force);
     void drawSession(juce::Graphics& g, const CurveMapping& m) const;
+    /// Igualación: los espectros aprendidos (bajo la rejilla), el objetivo y
+    /// la propuesta (sobre las curvas), los nodos en fantasma (bajo los
+    /// nodos) y la leyenda (arriba a la izquierda).
+    void drawMatchSpectra(juce::Graphics& g, const CurveMapping& m) const;
+    void drawMatchCurves(juce::Graphics& g, const CurveMapping& m) const;
+    void drawMatchNodes(juce::Graphics& g, const CurveMapping& m) const;
+    void drawMatchLegend(juce::Graphics& g, const CurveMapping& m) const;
     /// Velo y franja de las colisiones (debajo de la rejilla).
     void drawCollisions(juce::Graphics& g, const CurveMapping& m) const;
     /// Etiquetas de las zonas de colisión (encima de curvas y nodos).
@@ -272,6 +291,23 @@ private:
     std::vector<SessionOverlay> overlays_;
     CollisionOverlay collisions_;
     bool showCollisions_ = false;
+
+    /// Igualación: el controlador del panel abierto y lo que se dibuja.
+    MatchController* match_ = nullptr;
+    struct MatchDrawing
+    {
+        bool shown = false;            ///< Con 10 s útiles.
+        std::uint64_t revision = 0;    ///< La de lo aprendido en `spectra`.
+        MatchSpectraDisplay spectra;
+        juce::Colour referenceColour;
+        /// La última propuesta, y si es la de lo que hay ahora (si no, se
+        /// atenúa hasta que llegue la nueva: así no parpadea al recalcular).
+        std::shared_ptr<const core::MatchProposal> proposal;
+        bool current = false;
+        std::vector<double> target;
+        std::vector<MatchRun> runs;
+    };
+    MatchDrawing matchDrawing_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(CurveView)
 };

@@ -5,6 +5,7 @@
 #include "Controls.h"
 #include "CurveView.h"
 #include "EsceqLookAndFeel.h"
+#include "MatchPanel.h"
 #include "OutputMeter.h"
 #include "PianoKeyboard.h"
 #include "PresetBar.h"
@@ -13,11 +14,14 @@
 #include "esceq/core/state.h"
 #include "esceq/dsp/filter_design.h"
 #include "esceq/ui/layout.h"
+#include "esceq/ui/match.h"
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <memory>
 #include <optional>
+#include <vector>
 
 namespace esceq {
 class PluginProcessor;
@@ -42,6 +46,16 @@ public:
 
     CurveView& curve() noexcept { return curve_; }
     PianoKeyboard& keyboard() noexcept { return keyboard_; }
+
+    /// Panel Match (igualar a una referencia, PLAN.md 5.6), que se abre desde
+    /// el menú del botón de comparar ("Match to reference…"). Mientras está
+    /// abierto hay un MatchController, que se refresca con el editor;
+    /// cerrarlo es Stop, y lo aprendido se queda en el procesador.
+    void openMatch();
+    void closeMatch();
+    bool matchOpen() const noexcept { return match_ != nullptr; }
+    /// El controlador del panel abierto (nulo si está cerrado), para la herramienta de capturas.
+    MatchController* matchController() noexcept { return match_.get(); }
 
 private:
     void timerCallback() override;
@@ -74,6 +88,15 @@ private:
     void updatePhaseTooltip();
     /// Pone en el botón Auto la compensación de la curva actual.
     void updateAutoGain();
+    /// Lo que la instancia sabe ahora, para el controlador de la igualación.
+    MatchContext matchContext();
+    /// Pone al día el panel Match y la curva con el estado del controlador.
+    /// Con `tick` (el refresco de 30 Hz, y solo él), antes avanza el
+    /// aprendizaje: el audio del sidechain y MatchController::tick.
+    void updateMatch(bool tick);
+    void tickMatch(const MatchContext& context);
+    /// Apply: crea las bandas propuestas como una sola acción y selecciona la primera.
+    void applyMatch();
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
@@ -118,6 +141,12 @@ private:
     };
     std::optional<AutoGainInputs> autoGainInputs_;
     ToggleSwitch bypass_{ToggleSwitch::Style::Pill, "Bypass", "Bypass"};
+
+    MatchPanel matchPanel_;
+    std::unique_ptr<MatchController> match_;
+    std::vector<core::InstanceSpectrum> matchInstances_; ///< La sesión, en cada refresco.
+    core::ParameterValues matchValues_{};                ///< Los valores del refresco (MatchContext::values).
+    std::vector<float> sidechainBuffer_;
 
     int stateRevision_ = 0;
     bool restoring_ = true; ///< Mientras se aplican preferencias guardadas, no se vuelven a guardar.

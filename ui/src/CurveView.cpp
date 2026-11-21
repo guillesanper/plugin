@@ -239,17 +239,23 @@ bool CurveView::updateAnalyzer()
     const double sampleRate = processor_.currentSampleRate();
     const bool active = analyzerMode_ != AnalyzerMode::Off;
 
-    auto drain = [this, active](dsp::SpscFifo& fifo, dsp::SpectrumAnalyzer& analyzer) {
+    // La cola "pre" tiene un solo lector, esta vista: con el panel Match
+    // abierto, lo que se lee va también al aprendizaje (la pista antes del ecualizador).
+    auto drain = [this, active](dsp::SpscFifo& fifo, dsp::SpectrumAnalyzer& analyzer, bool track) {
         for (int n; (n = fifo.read(readBuffer_.data(), static_cast<int>(readBuffer_.size()))) > 0;)
+        {
             if (active)
                 analyzer.push(readBuffer_.data(), n);
+            if (track && match_ != nullptr)
+                match_->pushTrack(readBuffer_.data(), n);
+        }
     };
     // Siempre se vacían las colas, aunque el analizador esté apagado, para no
     // mostrar audio viejo al encenderlo. Congelado, el audio sigue entrando en
     // el historial (al descongelar, el espectro es el de ahora) pero no se
     // calcula ni se mueve nada.
-    drain(processor_.preAnalyzerFifo(), *preAnalyzer_);
-    drain(processor_.postAnalyzerFifo(), *postAnalyzer_);
+    drain(processor_.preAnalyzerFifo(), *preAnalyzer_, true);
+    drain(processor_.postAnalyzerFifo(), *postAnalyzer_, false);
 
     if (!active || analyzerView_.frozen)
         return false;
@@ -356,15 +362,19 @@ void CurveView::paint(juce::Graphics& g)
         drawAnalyzer(g, m);
         drawCollisions(g, m);
         drawSession(g, m);
+        drawMatchSpectra(g, m);
         drawGrid(g, m);
         updateCurveCache(m);
         drawCurves(g, m);
+        drawMatchCurves(g, m);
         drawMarkedNote(g, m);
+        drawMatchNodes(g, m);
         drawNodes(g, m);
         drawPeakMarker(g, m);
         drawCollisionLabels(g, m);
         drawReadout(g, m);
         drawFrozen(g, m);
+        drawMatchLegend(g, m);
     }
 
     const bool focused = keyboardFocus_ && hasKeyboardFocus(false);
@@ -496,6 +506,218 @@ void CurveView::drawSession(juce::Graphics& g, const CurveMapping& m) const
         // Una instancia sin señal se queda atenuada: su espectro se va apagando.
         g.setColour(overlay.colour.withAlpha(overlay.hasSignal ? 0.85f : 0.35f));
         g.strokePath(path, juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Igualación
+
+void CurveView::setMatch(MatchController* controller)
+{
+    if (controller == match_)
+        return;
+    match_ = controller;
+    if (controller == nullptr && matchDrawing_.shown)
+        repaint();
+    if (controller == nullptr)
+        matchDrawing_ = {};
+}
+
+void CurveView::refreshMatch(juce::Colour referenceColour)
+{
+    if (match_ == nullptr)
+        return;
+    const auto& learner = match_->state().learner;
+    auto& d = matchDrawing_;
+    bool changed = false;
+    if (!learner.ready())
+    {
+        changed = d.shown;
+        d = {};
+    }
+    else
+    {
+        if (!d.shown || d.revision != learner.revision())
+        {
+            d.spectra = matchSpectraDisplay(learner.trackDb(), learner.referenceDb());
+            d.revision = learner.revision();
+            changed = true;
+        }
+        d.shown = true;
+        if (d.referenceColour != referenceColour)
+        {
+            d.referenceColour = referenceColour;
+            changed = true;
+        }
+        const auto proposal = match_->proposal();
+        if (proposal != nullptr && proposal != d.proposal)
+        {
+            d.proposal = proposal;
+            d.target = matchTargetCurve(proposal->result);
+            d.runs = matchTargetRuns(proposal->result);
+            changed = true;
+        }
+        const bool current = proposal != nullptr;
+        changed = changed || current != d.current;
+        d.current = current;
+    }
+    if (changed)
+        repaint();
+}
+
+void CurveView::drawMatchSpectra(juce::Graphics& g, const CurveMapping& m) const
+{
+    const auto& d = matchDrawing_;
+    if (!d.shown)
+        return;
+    const auto area = m.area();
+    const float bottom = area.y + area.height;
+    const auto& frequencies = core::sessionFrequencies();
+    auto spectrum = [&](const std::vector<float>& levels, juce::Colour colour) {
+        juce::Path path;
+        for (std::size_t i = 0; i < levels.size() && i < frequencies.size(); ++i)
+        {
+            const float x = m.xForFrequency(frequencies[i]);
+            const float y = std::clamp(m.yForAnalyzerDb(levels[i]), area.y, bottom);
+            if (i == 0)
+                path.startNewSubPath(x, y);
+            else
+                path.lineTo(x, y);
+        }
+        g.setColour(colour);
+        g.strokePath(path, juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved));
+    };
+    spectrum(d.spectra.trackDb, colour::analyzerPre.withAlpha(0.9f));
+    spectrum(d.spectra.referenceDb, d.referenceColour.withAlpha(0.9f));
+}
+
+void CurveView::drawMatchCurves(juce::Graphics& g, const CurveMapping& m) const
+{
+    const auto& d = matchDrawing_;
+    if (!d.shown || d.proposal == nullptr)
+        return;
+    const auto& result = d.proposal->result;
+    const auto area = m.area();
+    auto y = [&](double db) { return std::clamp(m.yForGain(db), area.y, area.y + area.height); };
+    const float alpha = d.current ? 1.0f : 0.4f;
+
+    // Objetivo: discontinuo, solo donde cuenta, con el nivel libre del ajuste.
+    juce::Path target;
+    for (const auto& run : d.runs)
+        for (std::size_t i = run.begin; i < run.end && i < d.target.size() && i < result.frequencies.size(); ++i)
+        {
+            const float x = m.xForFrequency(result.frequencies[i]);
+            if (i == run.begin)
+                target.startNewSubPath(x, y(d.target[i]));
+            else
+                target.lineTo(x, y(d.target[i]));
+        }
+    juce::Path dashed;
+    const float dashes[] = {5.0f, 4.0f};
+    juce::PathStrokeType(stroke::thin).createDashedStroke(dashed, target, dashes, 2);
+    g.setColour(colour::text.withAlpha(0.75f * alpha));
+    g.fillPath(dashed);
+
+    // Propuesta: la curva total estática que se ve (la de las bandas de
+    // ahora, sin la dinámica) más las bandas que se crearían, columna a
+    // columna y con el diseño que sonaría. Así coincide con la curva blanca
+    // donde no hay bandas nuevas, también con un notch estrecho.
+    const auto& cache = curveCache_;
+    const std::size_t points = cache.xs.size();
+    std::vector<double> total(points, 0.0);
+    for (int band = 0; band < core::kNumBands; ++band)
+    {
+        const auto& curve = cache.bands[static_cast<std::size_t>(band)];
+        if (!curve.valid || curve.db.size() != points)
+            continue;
+        if (!curve.dynamic)
+        {
+            for (std::size_t i = 0; i < points; ++i)
+                total[i] += curve.db[i];
+            continue;
+        }
+        const auto design = dsp::designBand(curve.reference, cache.sampleRate);
+        for (std::size_t i = 0; i < points; ++i)
+            total[i] += dsp::magnitudeDbAtTangent(design, cache.tangents[i]);
+    }
+    for (const auto& band : result.bands)
+    {
+        const auto design = dsp::designBand(band, cache.sampleRate);
+        for (std::size_t i = 0; i < points; ++i)
+            total[i] += dsp::magnitudeDbAtTangent(design, cache.tangents[i]);
+    }
+    juce::Path proposed;
+    for (std::size_t i = 0; i < points; ++i)
+        i == 0 ? proposed.startNewSubPath(cache.xs[i], y(total[i])) : proposed.lineTo(cache.xs[i], y(total[i]));
+    g.setColour(colour::accent.withAlpha(alpha));
+    g.strokePath(proposed, juce::PathStrokeType(stroke::medium, juce::PathStrokeType::curved));
+}
+
+void CurveView::drawMatchNodes(juce::Graphics& g, const CurveMapping& m) const
+{
+    const auto& d = matchDrawing_;
+    if (!d.shown || d.proposal == nullptr)
+        return;
+    const auto& bands = d.proposal->result.bands;
+    // Cada nodo, con el color de la banda libre en la que lo crearía Apply.
+    const auto slots = matchTargetBands(values_, static_cast<int>(bands.size()));
+    const float alpha = d.current ? 1.0f : 0.4f;
+    for (std::size_t k = 0; k < bands.size() && k < slots.size(); ++k)
+    {
+        dsp::BandSettings settings;
+        settings.enabled = true;
+        settings.filter = bands[k];
+        const auto p = nodePosition(m, settings, kNodeEdgeMargin);
+        const auto circle = juce::Rectangle<float>(2.0f * kNodeRadius, 2.0f * kNodeRadius).withCentre({p.x, p.y});
+        const auto colour = theme::band(slots[k]);
+        g.setColour(colour.withAlpha(0.18f * alpha));
+        g.fillEllipse(circle);
+        juce::Path ring;
+        ring.addEllipse(circle.reduced(0.75f));
+        juce::Path dashedRing;
+        const float dashes[] = {3.0f, 2.5f};
+        juce::PathStrokeType(stroke::thin).createDashedStroke(dashedRing, ring, dashes, 2);
+        g.setColour(colour.withAlpha(0.9f * alpha));
+        g.fillPath(dashedRing);
+    }
+}
+
+void CurveView::drawMatchLegend(juce::Graphics& g, const CurveMapping& m) const
+{
+    const auto& d = matchDrawing_;
+    if (!d.shown)
+        return;
+    const auto area = m.area();
+    // Bajo el aviso de "Analyzer frozen", si está.
+    const bool frozen = analyzerView_.frozen && analyzerMode_ != AnalyzerMode::Off;
+    float x = area.x + 12.0f;
+    const float y = area.y + (frozen ? 24.0f : 8.0f);
+    const auto legendFont = captionFont();
+    auto entry = [&](const juce::String& text, juce::Colour colour, bool dashed) {
+        juce::Path line;
+        line.startNewSubPath(x, y + 6.0f);
+        line.lineTo(x + 14.0f, y + 6.0f);
+        g.setColour(colour);
+        if (dashed)
+        {
+            juce::Path pattern;
+            const float dashes[] = {4.0f, 3.0f};
+            juce::PathStrokeType(stroke::thin).createDashedStroke(pattern, line, dashes, 2);
+            g.fillPath(pattern);
+        }
+        else
+            g.strokePath(line, juce::PathStrokeType(stroke::medium));
+        x += 18.0f;
+        const float width = juce::GlyphArrangement::getStringWidth(legendFont, text.toUpperCase()) + 4.0f;
+        draw::caption(g, text, {x, y, width, 12.0f}, juce::Justification::centredLeft, colour::textMuted);
+        x += width + 10.0f;
+    };
+    entry("Track", colour::analyzerPre, false);
+    entry("Reference", d.referenceColour, false);
+    if (d.proposal != nullptr)
+    {
+        entry("Target", colour::text.withAlpha(0.75f), true);
+        entry("Proposed", colour::accent, false);
     }
 }
 

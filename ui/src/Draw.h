@@ -43,7 +43,7 @@ void pill(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& 
           const ControlState& state, Corners corners = Corners::All);
 
 /// Iconos de los botones de la barra superior.
-enum class Icon { Undo, Redo, Previous, Next, Compare, Options, Expand };
+enum class Icon { Undo, Redo, Previous, Next, Compare, Options, Expand, Close };
 
 /// Botón cuadrado con un icono. Encendido (`on`), el icono va en el color de
 /// acento; `badge` (por ejemplo, un número) se dibuja en una pastilla en la
@@ -51,6 +51,14 @@ enum class Icon { Undo, Redo, Previous, Next, Compare, Options, Expand };
 /// dentro (volver de la vista ampliada).
 void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state,
                 Corners corners = Corners::All, bool on = false, const juce::String& badge = {});
+
+/// Cuerpo de un campo de valor (el mínimo y el máximo del rango del panel
+/// Match): como un desplegable, sin flecha. El texto lo pinta quien lo usa.
+void field(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state);
+
+/// Barra fina de progreso (los segundos útiles del panel Match): `fraction` de 0 a 1.
+void progress(juce::Graphics& g, juce::Rectangle<float> bounds, double fraction, juce::Colour accent,
+              const ControlState& state);
 
 /// Cuerpo de un desplegable, con su flecha.
 void dropdown(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state);

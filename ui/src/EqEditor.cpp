@@ -105,11 +105,35 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(meter_);
     addAndMakeVisible(panel_);
 
+    // El panel Match va encima de la curva (es una tarjeta sobre ella).
+    matchPanel_.onClose = [this] { closeMatch(); };
+    matchPanel_.onReference = [this](const core::MatchReference& reference) {
+        if (match_ != nullptr)
+            match_->selectReference(reference);
+        updateMatch(false);
+    };
+    matchPanel_.onLearn = [this] {
+        if (match_ == nullptr)
+            return;
+        if (processor_.matchState().learning)
+            match_->stop();
+        else
+            match_->learn(matchContext());
+        updateMatch(false);
+    };
+    matchPanel_.onSettings = [this](const core::MatchSettings& settings) {
+        if (match_ != nullptr)
+            match_->setSettings(settings);
+    };
+    matchPanel_.onApply = [this] { applyMatch(); };
+    addChildComponent(matchPanel_);
+
     // Orden de tabulación: barra superior, curva y panel.
     int order = 1;
     for (juce::Component* c :
          std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &options_, &phase_, &analyzer_,
-                                                 &expand_, &range_, &output_, &autoGain_, &bypass_, &curve_, &panel_})
+                                                 &expand_, &range_, &output_, &autoGain_, &bypass_, &curve_,
+                                                 &matchPanel_, &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -191,6 +215,9 @@ bool EqEditor::keyPressed(const juce::KeyPress& key)
 EqEditor::~EqEditor()
 {
     stopTimer();
+    // Cerrar la ventana es Stop; lo aprendido se queda en el procesador.
+    curve_.setMatch(nullptr);
+    match_.reset();
     // Los controles cierran sus gestos al destruirse; esto es la red de
     // seguridad para que el historial nunca se quede esperando uno.
     processor_.history().abandonOpenGestures();
@@ -253,6 +280,7 @@ void EqEditor::resized()
     keyboard_.setBounds(toInt(layout_.keyboard));
     meter_.setBounds(toInt(layout_.meter));
     panel_.setBounds(toInt(layout_.panel));
+    matchPanel_.setPanelLayout(matchPanelLayout(layout_.curve));
 
     storeUiSettings();
 }
@@ -263,7 +291,8 @@ void EqEditor::timerCallback()
     if (processor_.stateRevision() != stateRevision_)
         applyUiSettings();
 
-    curve_.refresh();
+    curve_.refresh(); // vacía la cola "pre": con el panel Match abierto, también para aprender
+    updateMatch(true);
     meter_.refresh();
     panel_.refresh();
     presets_.refresh();
@@ -396,6 +425,7 @@ void EqEditor::setNoteScale(bool keyboard, double a4Hz)
         keyboard_.setHoveredNote(std::nullopt); // y la curva deja de marcarla
     keyboard_.setVisible(keyboard);
     keyboard_.setA4(a4Hz);
+    matchPanel_.setA4(a4Hz);
     curve_.setNoteScale(keyboard, a4Hz);
     panel_.setNoteScale(keyboard, a4Hz);
     if (resize)
@@ -439,6 +469,7 @@ void EqEditor::showCompareMenu()
     constexpr int kCollisionsId = 1;
     constexpr int kAllId = 2;
     constexpr int kNoneId = 3;
+    constexpr int kMatchId = 4;
     constexpr int kFirstInstanceId = 100;
 
     std::vector<core::InstanceSpectrum> instances;
@@ -464,6 +495,8 @@ void EqEditor::showCompareMenu()
         menu.addItem(std::move(entry));
     }
     menu.addSeparator();
+    menu.addItem(kMatchId, toJuce(std::string(kMatchMenuText)));
+    menu.addSeparator();
     menu.addItem(kAllId, "Show all", std::any_of(items.begin(), items.end(), [](const auto& i) { return !i.ticked; }));
     menu.addItem(kNoneId, "Hide all", !selection.shown.empty());
     menu.addSeparator();
@@ -473,6 +506,11 @@ void EqEditor::showCompareMenu()
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&compare_), [safe, items](int result) {
         if (safe == nullptr || result <= 0)
             return;
+        if (result == kMatchId)
+        {
+            safe->openMatch();
+            return;
+        }
         auto& chosen = safe->processor_.compareSelection();
         if (result == kCollisionsId)
             chosen.showCollisions = !chosen.showCollisions;
@@ -489,6 +527,109 @@ void EqEditor::showCompareMenu()
         safe->updateCompareButton();
         safe->curve_.compareChanged();
     });
+}
+
+// ---------------------------------------------------------------------------
+// Igualar a una referencia
+
+void EqEditor::openMatch()
+{
+    if (match_ == nullptr)
+    {
+        match_ = std::make_unique<MatchController>(processor_.matchState(), processor_.matchWorker(),
+                                                   processor_.spectrumSession(), processor_.matchSidechain());
+        curve_.setMatch(match_.get());
+        matchPanel_.setVisible(true);
+        updateMatch(false);
+    }
+    // Con el foco en el panel, Esc lo cierra.
+    matchPanel_.grabKeyboardFocus();
+}
+
+void EqEditor::closeMatch()
+{
+    if (match_ == nullptr)
+        return;
+    const bool hadFocus = matchPanel_.hasKeyboardFocus(true);
+    matchPanel_.setVisible(false);
+    curve_.setMatch(nullptr);
+    match_.reset(); // Stop: lo aprendido se queda en el procesador
+    if (hadFocus)
+        curve_.grabKeyboardFocus();
+}
+
+MatchContext EqEditor::matchContext()
+{
+    matchValues_ = processor_.currentValues();
+    MatchContext context;
+    context.instances = matchInstances_;
+    context.self = processor_.instanceId();
+    context.sidechainConnected = processor_.sidechainConnected();
+    context.sampleRate = processor_.currentSampleRate();
+    context.numChannels = processor_.outputChannelCount();
+    context.algorithm = processor_.filterAlgorithm();
+    context.values = &matchValues_;
+    return context;
+}
+
+void EqEditor::updateMatch(bool tick)
+{
+    if (match_ == nullptr)
+        return;
+
+    processor_.spectrumSession().snapshot(matchInstances_);
+    const auto context = matchContext();
+    if (tick)
+        tickMatch(context);
+
+    // Sin nada elegido ni aprendido, la referencia por defecto: la primera instancia con señal.
+    auto& state = processor_.matchState();
+    if (state.reference.kind == core::MatchReference::Kind::None && !state.learning && state.learner.empty())
+    {
+        const auto options = matchReferenceOptions(context.instances, context.self, context.sidechainConnected);
+        const auto fallback = defaultMatchReference(options);
+        if (canLearnFrom(fallback, options))
+            match_->selectReference(fallback);
+    }
+
+    const auto status = match_->status(context);
+    const auto proposal = match_->proposal();
+    const int proposed = proposal != nullptr ? static_cast<int>(proposal->result.bands.size()) : 0;
+    matchPanel_.update(status, state.settings, freeBandCount(matchValues_), proposed);
+
+    // La referencia se dibuja con el color de su pista; el sidechain, con el del texto secundario.
+    juce::Colour referenceColour = theme::colour::textMuted;
+    if (state.reference.kind == core::MatchReference::Kind::Instance)
+        for (const auto& instance : matchInstances_)
+            if (instance.id == state.reference.instance)
+                referenceColour = theme::instance(instance.number, instance.trackColour);
+    curve_.refreshMatch(referenceColour);
+}
+
+void EqEditor::tickMatch(const MatchContext& context)
+{
+    // La cola del sidechain solo tiene audio mientras se aprende de él; su único lector es esto.
+    sidechainBuffer_.resize(4096);
+    auto& tap = processor_.matchSidechain();
+    for (int n; (n = tap.read(sidechainBuffer_.data(), static_cast<int>(sidechainBuffer_.size()))) > 0;)
+        match_->pushSidechain(sidechainBuffer_.data(), n);
+    match_->tick(1.0 / kRefreshHz, context);
+}
+
+void EqEditor::applyMatch()
+{
+    if (match_ == nullptr)
+        return;
+    const auto context = matchContext();
+    const auto apply = match_->applyChanges(context);
+    if (!apply)
+        return;
+    // Una sola acción de deshacer para todas las bandas creadas.
+    processor_.applyAction(withChanges(matchValues_, apply->changes));
+    curve_.refresh();
+    if (apply->firstBand)
+        curve_.setSelectedBand(*apply->firstBand);
+    updateMatch(false);
 }
 
 } // namespace esceq::ui

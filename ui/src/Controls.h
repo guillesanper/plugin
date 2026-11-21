@@ -11,6 +11,7 @@
 
 #include <functional>
 #include <memory>
+#include <optional>
 #include <vector>
 
 /// Controles propios de esceQ. Cada uno:
@@ -28,13 +29,22 @@ namespace esceq::ui {
 /// doble clic o Ctrl/Cmd+clic para volver al valor por defecto, clic en el
 /// valor para escribirlo. Teclado: flechas (Mayús = fino), Intro para
 /// escribir el valor, Supr o Retroceso para el valor por defecto.
-class ParamControl final : public juce::Component
+class ParamControl final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     enum class Style
     {
         Knob,
         Bar,
+        Field, ///< Solo el valor, en una caja: se arrastra o se escribe (el rango del panel Match).
+    };
+
+    /// Texto propio del valor, en lugar del de core::formatValue y commitText
+    /// (por ejemplo, "50 %"). Lo que `parse` no entiende devuelve nullopt.
+    struct TextFormat
+    {
+        std::function<juce::String(float)> format;
+        std::function<std::optional<float>(const juce::String&)> parse;
     };
 
     ParamControl(Style style, const juce::String& label);
@@ -44,6 +54,15 @@ public:
     /// core::parameters() de ese parámetro (vive mientras viva el programa).
     void attach(juce::RangedAudioParameter& parameter, const core::ParameterSpec& spec);
     void detach();
+
+    /// Sin parámetro del host (los ajustes del panel Match): el control
+    /// guarda su valor y llama a `onChange` con cada cambio del usuario,
+    /// también durante un arrastre. No hay gestos ni deshacer. `spec` (rango,
+    /// escala, valor por defecto y unidad) debe vivir más que el control.
+    void bindLocal(const core::ParameterSpec& spec, float value, std::function<void(float)> onChange,
+                   TextFormat format = {});
+    /// Con bindLocal: pone el valor desde fuera, sin avisar (no durante un arrastre).
+    void setLocalValue(float value);
 
     void setAccent(juce::Colour accent);
 
@@ -95,6 +114,14 @@ private:
     void hideEditor(bool commit);
     void resetToDefault();
 
+    /// Con el parámetro del host, sus gestos; con bindLocal, el valor y su aviso.
+    bool bound() const noexcept { return attachment_ != nullptr || onLocalChange_ != nullptr; }
+    void beginEdit();
+    void editValue(float value);
+    void endEdit();
+    void setValueComplete(float value);
+    void setLocal(float value);
+
     Style style_;
     juce::String label_;
     juce::Colour accent_ = theme::colour::accent;
@@ -104,6 +131,8 @@ private:
 
     const core::ParameterSpec* spec_ = nullptr;
     std::unique_ptr<juce::ParameterAttachment> attachment_;
+    std::function<void(float)> onLocalChange_;
+    TextFormat format_;
     float value_ = 0.0f;
 
     bool hover_ = false;
@@ -151,7 +180,7 @@ private:
 
 /// Selector de una opción entre unas pocas, todas a la vista ("ST L R M S").
 /// Puede enlazarse a un parámetro Choice o usarse suelto con onSelect.
-class Segmented final : public juce::Component
+class Segmented final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
     struct Option
@@ -173,6 +202,9 @@ public:
 
     /// Se llama cuando el usuario elige una opción (no al cambiar por código).
     std::function<void(int)> onSelect;
+
+    /// La ayuda va en cada segmento: son ellos los que quedan bajo el ratón.
+    void setTooltip(const juce::String& tooltip) override;
 
     void resized() override;
     void enablementChanged() override;

@@ -17,6 +17,9 @@
 //   --gallery     en vez del editor, la galería de estados de los controles.
 //   --compare     con otras dos instancias en la sesión ("Bass" y "Keys"), superpuestas
 //                 y con las colisiones marcadas.
+//   --match       con el panel Match abierto, tras aprender 10 s útiles de otra
+//                 instancia ("Reference", más brillante y con menos graves) y
+//                 con la propuesta calculada: espectros, objetivo y nodos en fantasma.
 //   --bench N     mide el coste de pintar la curva en vez de guardar una captura:
 //                 pone las 24 bandas como campanas dinámicas y pinta N
 //                 fotogramas de arrastre de un nodo, sin audio y con audio
@@ -130,7 +133,7 @@ struct Resonance
 class Gallery final : public juce::Component
 {
 public:
-    Gallery() { setSize(980, 372); }
+    Gallery() { setSize(980, 410); }
 
     void paint(juce::Graphics& g) override
     {
@@ -265,6 +268,19 @@ public:
             g.setFont(font(type::body));
             g.drawText("Bell", box.withTrimmedLeft(8.0f), juce::Justification::centredLeft, false);
         }
+        y += 38.0f;
+
+        // Campo de valor: el rango del panel Match.
+        rowLabel("Field", y, 24.0f);
+        for (std::size_t i = 0; i < columns.size(); ++i)
+        {
+            const auto box = cell(i, 24.0f).withSizeKeepingCentre(82.0f, 24.0f);
+            draw::field(g, box, columns[i].state);
+            const float alpha = !columns[i].state.enabled ? 0.35f : (columns[i].state.dimmed ? 0.6f : 1.0f);
+            g.setColour(colour::text.withMultipliedAlpha(alpha));
+            g.setFont(font(type::body, Weight::Regular, true));
+            g.drawText("16.0 kHz", box, juce::Justification::centred, false);
+        }
     }
 };
 
@@ -290,7 +306,7 @@ int main(int argc, char** argv)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
                      "[--bypass] [--auto-gain] [--auto-timing] [--notes] [--key N] [--expanded] [--peaks] [--peak HZ] "
-                     "[--gallery] [--compare] [--bench N]\n";
+                     "[--gallery] [--compare] [--match] [--bench N]\n";
         return 2;
     }
 
@@ -299,7 +315,7 @@ int main(int argc, char** argv)
     std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
-         compare = false, expanded = false, peaks = false;
+         compare = false, expanded = false, peaks = false, match = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -336,6 +352,8 @@ int main(int argc, char** argv)
             gallery = true;
         else if (arg == "--compare")
             compare = true;
+        else if (arg == "--match")
+            match = true;
         else if (arg == "--bench")
             bench = std::max(1, std::atoi(next()));
         else if (arg == "--desktop")
@@ -375,7 +393,10 @@ int main(int argc, char** argv)
         auto& channel = processor->parameter(esceq::core::channelParameter(1)); // la campana de graves, solo en Mid
         channel.setValueNotifyingHost(channel.convertTo0to1(3.0f));
     }
-    addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);         // notch
+    // Con --match, sin el notch: hoy la igualación propondría una campana que
+    // lo rellena (pendiente, PLAN.md 5.6), y la captura no sería representativa.
+    if (!match)
+        addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);     // notch
     addBand(*processor, 5, 0.0f, 7000.0f, 0.0f, 1.5f);         // de-esser: campana dinámica
     setDynamic(*processor, 5, DynParam::Threshold, -48.0f);
     setDynamic(*processor, 5, DynParam::Range, -9.0f);
@@ -415,18 +436,26 @@ int main(int argc, char** argv)
     // rosa con un corte de agudos) y unos teclados (ruido con cortes por los
     // dos lados), con el nombre y el color de su pista como los daría el host.
     std::vector<std::unique_ptr<esceq::PluginProcessor>> others;
+    auto makeTrack = [&](const char* name, std::uint32_t colour) {
+        auto& p = others.emplace_back(static_cast<esceq::PluginProcessor*>(createPluginFilter()));
+        juce::AudioProcessor::TrackProperties track;
+        track.name = juce::String(name);
+        track.colourARGB = colour;
+        p->updateTrackProperties(track);
+        p->setPlayConfigDetails(2, 2, sampleRate, blockSize);
+        p->prepareToPlay(sampleRate, blockSize);
+        return p.get();
+    };
+    if (match)
+    {
+        // La referencia: el mismo ruido rosa, con menos graves y más brillo.
+        auto* reference = makeTrack("Reference", 0xff6fb6f0u);
+        addBand(*reference, 0, 1.0f, 120.0f, -4.0f, 0.7071f); // shelf de graves
+        addBand(*reference, 1, 0.0f, 2500.0f, 3.0f, 1.2f);
+        addBand(*reference, 2, 2.0f, 7000.0f, 5.0f, 0.7071f); // shelf de agudos
+    }
     if (compare)
     {
-        auto makeTrack = [&](const char* name, std::uint32_t colour) {
-            auto& p = others.emplace_back(static_cast<esceq::PluginProcessor*>(createPluginFilter()));
-            juce::AudioProcessor::TrackProperties track;
-            track.name = juce::String(name);
-            track.colourARGB = colour;
-            p->updateTrackProperties(track);
-            p->setPlayConfigDetails(2, 2, sampleRate, blockSize);
-            p->prepareToPlay(sampleRate, blockSize);
-            return p.get();
-        };
         auto* bass = makeTrack("Bass", 0xffe0a040u);
         addBand(*bass, 0, 4.0f, 260.0f, 0.0f, 0.7071f, 3.0f);  // corte de agudos, 24 dB/oct
         addBand(*bass, 1, 0.0f, 80.0f, 9.0f, 1.0f);            // cuerpo
@@ -479,9 +508,55 @@ int main(int argc, char** argv)
     if (expanded)
         curve.keyPressed(juce::KeyPress('f'));
     curve.setSelectedBand(select - 1);
-    for (const auto& other : others)
-        processor->compareSelection().toggle(other->instanceId());
+    if (compare)
+        for (const auto& other : others)
+            processor->compareSelection().toggle(other->instanceId());
     curve.compareChanged();
+
+    // Busca un componente por su nombre accesible.
+    std::function<juce::Component*(juce::Component&, const juce::String&)> find =
+        [&find](juce::Component& parent, const juce::String& title) -> juce::Component* {
+        for (auto* child : parent.getChildren())
+        {
+            if (child->getTitle() == title)
+                return child;
+            if (auto* found = find(*child, title))
+                return found;
+        }
+        return nullptr;
+    };
+
+    if (match)
+    {
+        // Learn, 10 s útiles de audio (más deprisa que en tiempo real) y Stop;
+        // luego, hasta que el hilo del ajuste publica la propuesta.
+        auto& eq = static_cast<esceq::ui::EqEditor&>(*editor);
+        eq.openMatch();
+        auto* learn = dynamic_cast<juce::Button*>(find(*editor, "Learn"));
+        if (learn == nullptr)
+        {
+            std::cerr << "no se encuentra el botón Learn\n";
+            return 1;
+        }
+        learn->triggerClick();
+        for (int frame = 0; frame < 900 && !processor->matchState().learner.ready(); ++frame)
+        {
+            feed(16);
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
+        }
+        learn->triggerClick();
+        for (int frame = 0; frame < 300; ++frame)
+        {
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(33);
+            if (eq.matchController() != nullptr && eq.matchController()->proposal() != nullptr && frame > 10)
+                break;
+        }
+        std::cout << "aprendido: " << processor->matchState().learner.usefulSeconds() << " s\n";
+        if (auto* controller = eq.matchController(); controller != nullptr && controller->proposal() != nullptr)
+            for (const auto& band : controller->proposal()->result.bands)
+                std::cout << "propuesta: tipo " << static_cast<int>(band.type) << ", " << band.frequencyHz << " Hz, "
+                          << band.gainDb << " dB, Q " << band.q << "\n";
+    }
 
     // Audio en tiempo "real" mientras corre el temporizador del editor, para
     // que el analizador se asiente como lo haría en un host.
@@ -562,19 +637,6 @@ int main(int argc, char** argv)
         editor->setTopLeftPosition(20, 20);
         editor->setVisible(true);
         juce::MessageManager::getInstance()->runDispatchLoopUntil(300);
-
-        // Busca un componente por su nombre accesible.
-        std::function<juce::Component*(juce::Component&, const juce::String&)> find =
-            [&find](juce::Component& parent, const juce::String& title) -> juce::Component* {
-            for (auto* child : parent.getChildren())
-            {
-                if (child->getTitle() == title)
-                    return child;
-                if (auto* found = find(*child, title))
-                    return found;
-            }
-            return nullptr;
-        };
 
         if (desktop == "presets" || desktop == "save")
         {
