@@ -15,6 +15,7 @@ target_sources(esceq_plugin_tests PRIVATE
     auto_timing_test.cpp
     filter_algorithm_test.cpp
     history_test.cpp
+    match_test.cpp
     presets_test.cpp
     phase_test.cpp
     process_test.cpp

@@ -3,6 +3,7 @@
 
 #include "esceq/core/band_model.h"
 #include "esceq/core/parameters.h"
+#include "esceq/ui/match.h"
 #include "esceq/ui/spectrum_peaks.h"
 
 #include <catch2/catch_test_macros.hpp>
@@ -315,4 +316,51 @@ TEST_CASE("Deshacer: crear una banda desde un pico y deshacerla deja el estado e
         p->history().redo();
         CHECK(p->currentValues() == after);
     }
+}
+
+TEST_CASE("Deshacer: Apply de la igualacion es una sola accion, y deshacer y rehacer lo dejan exacto")
+{
+    auto p = makeProcessor();
+    // Un estado cualquiera: la banda 1 en uso y la 2 apagada con ajustes de
+    // cuando sonaba, que las bandas nuevas no heredan.
+    drag(*p, core::bandParameter(0, core::BandParam::Enabled), {1.0f});
+    drag(*p, kFreq, {300.0f});
+    drag(*p, core::dynamicParameter(1, core::DynParam::Enabled), {1.0f});
+    drag(*p, core::channelParameter(1), {4.0f});
+    settle();
+    // Y un gesto que aún espera su registro: es una acción aparte.
+    drag(*p, kGain, {-1.5f, -2.5f});
+    const auto beforeApply = p->currentValues();
+
+    // Lo que hace Apply con una propuesta: cuatro bandas, de una vez.
+    const std::vector<dsp::FilterParams> proposal = {
+        {dsp::FilterType::LowShelf, 80.0, 3.0, 0.7},
+        {dsp::FilterType::Bell, 450.0, -2.0, 1.5},
+        {dsp::FilterType::Bell, 3000.0, 2.5, 0.9},
+        {dsp::FilterType::HighShelf, 10000.0, -1.5, 0.6},
+    };
+    const auto apply = ui::matchApplyChanges(p->currentValues(), proposal);
+    REQUIRE(apply.firstBand == 1);
+    p->applyAction(ui::withChanges(p->currentValues(), apply.changes));
+    const auto afterApply = p->currentValues();
+    CHECK(afterApply == ui::withChanges(beforeApply, apply.changes));
+    for (const int band : {1, 2, 3, 4})
+        CHECK(core::bandSettings(afterApply, band).enabled);
+    settle(); // los gestos de applyValues no crean otra acción
+
+    p->history().undo();
+    CHECK(p->currentValues() == beforeApply);
+    p->history().redo();
+    CHECK(p->currentValues() == afterApply);
+    CHECK_FALSE(p->history().canRedo());
+
+    // Deshacer dos veces: el gesto de antes de Apply es su propia acción.
+    p->history().undo();
+    p->history().undo();
+    CHECK(p->currentValues()[kGain] == 0.0f);
+    CHECK(p->currentValues()[kFreq] == 300.0f);
+    p->history().redo();
+    CHECK(p->currentValues() == beforeApply);
+    p->history().redo();
+    CHECK(p->currentValues() == afterApply);
 }

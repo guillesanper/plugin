@@ -44,14 +44,16 @@ PluginProcessor::PluginProcessor()
 {
 }
 
-PluginProcessor::PluginProcessor(std::shared_ptr<core::SpectrumSession> session)
+PluginProcessor::PluginProcessor(std::shared_ptr<core::SpectrumSession> session,
+                                 core::MatchWorker::Threading matchThreading)
     : AudioProcessor(BusesProperties()
                          .withInput("Input", juce::AudioChannelSet::stereo(), true)
                          .withOutput("Output", juce::AudioChannelSet::stereo(), true)
                          // Bus auxiliar opcional para la detección externa de las
                          // bandas dinámicas. En FL Studio se enruta desde el mezclador.
                          .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)),
-      apvts_(*this, nullptr, "esceQ", createLayout())
+      apvts_(*this, nullptr, "esceQ", createLayout()),
+      matchWorker_(matchThreading)
 {
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
     {
@@ -188,6 +190,15 @@ void PluginProcessor::applyValues(const core::ParameterValues& values)
     }
 }
 
+void PluginProcessor::applyAction(const core::ParameterValues& values)
+{
+    // Lo que el usuario acaba de hacer es una acción aparte: deshacer esta
+    // no lo deshace (como en PresetManager::load).
+    history_->flushPending();
+    applyValues(values);
+    history_->commitNow();
+}
+
 void PluginProcessor::setFilterAlgorithm(dsp::FilterAlgorithm algorithm)
 {
     if (filterAlgorithm_.exchange(algorithm, std::memory_order_relaxed) == algorithm)
@@ -320,6 +331,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const float* const* sidechain = side.getNumChannels() > 0 ? side.getArrayOfReadPointers() : nullptr;
     const int sidechainChannels = side.getNumChannels();
     sidechainConnected_.store(sidechainChannels > 0, std::memory_order_relaxed);
+    // Para aprender del sidechain (igualación). Apagada, solo lee un atómico.
+    matchSidechain_.write(sidechain, sidechainChannels, numSamples);
 
     preFifo_.writeMix(channels, numChannels, numSamples);
 

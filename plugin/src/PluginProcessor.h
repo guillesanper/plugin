@@ -7,6 +7,7 @@
 #include "esceq/core/history.h"
 #include "esceq/core/parameters.h"
 #include "esceq/core/control_thread.h"
+#include "esceq/core/match.h"
 #include "esceq/core/spectrum_session.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/auto_gain.h"
@@ -29,8 +30,10 @@ class PluginProcessor final : public juce::AudioProcessor
 {
 public:
     PluginProcessor();
-    /// Con una sesión de espectros concreta en lugar de la del proceso (tests).
-    explicit PluginProcessor(std::shared_ptr<core::SpectrumSession> session);
+    /// Con una sesión de espectros concreta en lugar de la del proceso, y el
+    /// hilo del ajuste de la igualación en manual si se pide (tests).
+    explicit PluginProcessor(std::shared_ptr<core::SpectrumSession> session,
+                             core::MatchWorker::Threading matchThreading = core::MatchWorker::Threading::Background);
     ~PluginProcessor() override;
 
     void prepareToPlay(double sampleRate, int samplesPerBlock) override;
@@ -74,6 +77,12 @@ public:
     /// Pone todos los parámetros a `values`, avisando al host. Cada parámetro
     /// que cambia va en su propio gesto, para que el host lo registre.
     void applyValues(const core::ParameterValues& values);
+
+    /// Pone todos los parámetros a `values` (applyValues) como una sola
+    /// acción de deshacer, registrada en el momento, como al cargar un preset:
+    /// lo que esperara su registro se registra antes, por separado. Es el
+    /// Apply de la igualación. Hilo de mensajes.
+    void applyAction(const core::ParameterValues& values);
 
     /// Algoritmo de filtro de todas las bandas (ADR 0013 y 0014). No es un
     /// parámetro: se guarda en el estado y los presets no lo cambian. Una
@@ -141,6 +150,16 @@ public:
     /// aquí y no en el editor para que sobreviva a cerrar y abrir la ventana;
     /// no se guarda con el proyecto. Solo desde el hilo de mensajes.
     core::CompareSelection& compareSelection() noexcept { return compare_; }
+
+    /// Igualar a una referencia (core/match.h, ADR 0023): la referencia, los
+    /// ajustes y lo aprendido, que viven aquí mientras el plugin está abierto
+    /// y no se guardan; el hilo del ajuste, que se crea con la primera
+    /// petición; y la cola del sidechain, que el hilo de audio solo escribe
+    /// mientras se aprende de él. Lo usa ui::MatchController, en el hilo de
+    /// mensajes (la cola, su único lector).
+    core::MatchState& matchState() noexcept { return match_; }
+    core::MatchWorker& matchWorker() noexcept { return matchWorker_; }
+    core::MatchSidechainTap& matchSidechain() noexcept { return matchSidechain_; }
 
     /// true si el host tiene conectado el bus de sidechain.
     bool sidechainConnected() const noexcept { return sidechainConnected_.load(std::memory_order_relaxed); }
@@ -217,6 +236,10 @@ private:
     std::shared_ptr<core::SpectrumSession> session_;
     std::unique_ptr<core::SpectrumSession::Member> sessionMember_;
     core::CompareSelection compare_;
+
+    core::MatchState match_;
+    core::MatchSidechainTap matchSidechain_;
+    core::MatchWorker matchWorker_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(PluginProcessor)
 };
