@@ -5,6 +5,7 @@
 add_library(esceq_dsp STATIC
     src/auto_gain.cpp
     src/band_filter.cpp
+    src/curve_match.cpp
     src/dynamics.cpp
     src/equalizer.cpp
     src/fft.cpp

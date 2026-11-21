@@ -11,6 +11,7 @@ add_executable(esceq_tests
     dsp/analysis_test.cpp
     dsp/auto_gain_test.cpp
     dsp/band_filter_test.cpp
+    dsp/curve_match_test.cpp
     dsp/decibels_test.cpp
     dsp/dynamics_test.cpp
     dsp/equalizer_channel_test.cpp
