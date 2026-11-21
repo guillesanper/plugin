@@ -12,6 +12,7 @@ add_library(esceq_dsp STATIC
     src/linear_phase.cpp
     src/partitioned_convolver.cpp
     src/phase_equalizer.cpp
+    src/spectral_dynamics.cpp
     src/spectrum_analyzer.cpp
     src/spectrum_collision.cpp
     src/spsc_fifo.cpp
