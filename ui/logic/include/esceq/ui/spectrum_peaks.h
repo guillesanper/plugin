@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/dsp/filter_design.h"
 #include "esceq/ui/curve_mapping.h"
 
 #include <optional>
@@ -70,10 +71,9 @@ std::optional<SpectrumPeak> nearestPeak(std::span<const SpectrumPeak> peaks, dou
 /// `a4Hz` y su nivel: "1.20 kHz · D6 +37 ct · -18.4 dB".
 std::string peakMarkerText(const SpectrumPeak& peak, double a4Hz);
 
-/// Q de una campana con un ancho de `octaves` entre sus puntos a -3 dB
-/// (simétricos en escala logarítmica): f0 / (f2 - f1). Sin ajustar al rango;
-/// infinito si el ancho no es positivo.
-double qForBandwidth(double octaves) noexcept;
+/// Q de una campana con un ancho de `octaves` entre sus puntos a -3 dB:
+/// la de dsp (dsp::qForBandwidth), que también usa la igualación (5.6).
+using dsp::qForBandwidth;
 
 /// Cambios que crean la banda `band` en un pico: una campana en su
 /// frecuencia, con su Q y `gainDb`, y lo demás por defecto (newBandChanges).

@@ -181,13 +181,6 @@ std::string peakMarkerText(const SpectrumPeak& peak, double a4Hz)
            noteText(peak.frequencyHz, a4Hz) + " \xC2\xB7 " + text;
 }
 
-double qForBandwidth(double octaves) noexcept
-{
-    if (!(octaves > 0.0))
-        return std::numeric_limits<double>::infinity();
-    return 1.0 / (std::exp2(0.5 * octaves) - std::exp2(-0.5 * octaves));
-}
-
 std::vector<ParameterChange> peakBandChanges(const core::ParameterValues& values, int band, const SpectrumPeak& peak,
                                              double gainDb)
 {

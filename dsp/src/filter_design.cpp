@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numbers>
 
 namespace esceq::dsp {
@@ -503,6 +504,13 @@ BandDesign designMatched(FilterParams params, double omega) noexcept
 BandDesign designBand(const FilterParams& params, double sampleRate) noexcept ESCEQ_NONBLOCKING
 {
     return designBandPrepared(params, prepareFrequency(params.frequencyHz, sampleRate));
+}
+
+double qForBandwidth(double octaves) noexcept
+{
+    if (!(octaves > 0.0))
+        return std::numeric_limits<double>::infinity();
+    return 1.0 / (std::exp2(0.5 * octaves) - std::exp2(-0.5 * octaves));
 }
 
 PreparedFrequency prepareFrequency(double frequencyHz, double sampleRate) noexcept ESCEQ_NONBLOCKING

@@ -71,6 +71,12 @@ constexpr bool filterUsesGain(FilterType type) noexcept
            type == FilterType::Tilt;
 }
 
+/// Q de una campana con un ancho de `octaves` entre sus puntos a −3 dB
+/// (simétricos en escala logarítmica): f0 / (f2 − f1) = 1 / (2^(N/2) − 2^(−N/2)).
+/// Exacto para una resonancia de segundo orden. Sin ajustar al rango;
+/// infinito si el ancho no es positivo. Segura en tiempo real.
+double qForBandwidth(double octaves) noexcept;
+
 /// Parámetros de una banda tal y como los entiende el usuario.
 /// Los valores fuera de rango se ajustan al diseñar; nunca producen
 /// coeficientes inestables.
