@@ -16,6 +16,9 @@
 //                    completa un bloque de la convolución de fase lineal
 //   --match          en vez del ecualizador, lo que tarda el ajuste de la
 //                    igualación (dsp::matchCurve, docs/dsp/igualacion.md)
+//   --spectral       en vez del ecualizador, el motor de la dinámica espectral
+//                    solo (dsp::SpectralDynamics, docs/dsp/dinamica-espectral.md),
+//                    con --rate, --block, --seconds y --repeat
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
@@ -36,10 +39,21 @@
 //                 desde 32 Hz, sin suavizar: pide las 24 bandas (el caso del
 //                 límite de evaluaciones de tests/dsp/curve_match_test.cpp).
 //   4 bandas      low shelf, dos campanas y high shelf, con 1/3 de octava.
+//
+// Con --spectral (la misma señal; además del % de un núcleo, lo que tarda
+// cada trama, que se calcula entera en la llamada que completa un salto):
+//   1 banda       una campana Stereo a 3 kHz comprimiendo (umbral −40 dB,
+//                 rodilla de 12 dB, rango −30 dB: casi todos los bins en la
+//                 zona en que la curva cambia, el caso más caro).
+//   24 bandas     24 campanas así, de 30 Hz a 16 kHz, repartidas entre
+//                 Stereo, Left, Right, Mid y Side, la mitad con tiempos
+//                 automáticos y 4 escuchando el sidechain: L/R y M/S a la vez.
+//   24 en reposo  las mismas, con el umbral por encima de la señal.
 #include "esceq/dsp/curve_match.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/partitioned_convolver.h"
 #include "esceq/dsp/phase_equalizer.h"
+#include "esceq/dsp/spectral_dynamics.h"
 
 #include <algorithm>
 #include <chrono>
@@ -71,6 +85,7 @@ struct Options
     int repeat = 5;
     bool convolution = false;
     bool match = false;
+    bool spectral = false;
 };
 
 std::vector<std::string> splitList(std::string_view text)
@@ -101,6 +116,11 @@ bool parse(std::span<char* const> args, Options& options)
         if (name == "--match")
         {
             options.match = true;
+            continue;
+        }
+        if (name == "--spectral")
+        {
+            options.spectral = true;
             continue;
         }
         if (i + 1 >= args.size())
@@ -169,7 +189,7 @@ BandSettings dynamic(BandSettings band)
 {
     band.dynamics.enabled = true;
     band.dynamics.thresholdDb = -50.0;
-    band.dynamics.rangeDb = -12.0;
+    band.dynamics.rangeDb = -30.0;
     band.dynamics.attackMs = 5.0;
     band.dynamics.releaseMs = 50.0;
     return band;
@@ -462,6 +482,83 @@ void runMatch(const Options& options)
     }
 }
 
+std::vector<BandSettings> spectralBands(int count, bool resting)
+{
+    using esceq::dsp::ChannelMode;
+    constexpr ChannelMode kModes[] = {ChannelMode::Stereo, ChannelMode::Left, ChannelMode::Right, ChannelMode::Mid,
+                                      ChannelMode::Side};
+    std::vector<BandSettings> bands;
+    for (int i = 0; i < count; ++i)
+    {
+        BandSettings band = bell(count == 1 ? 3000.0 : 30.0 * std::pow(16000.0 / 30.0, i / 23.0), 0.0, 1.0,
+                                 FilterAlgorithm::Classic);
+        band.dynamics.enabled = true;
+        band.dynamics.thresholdDb = resting ? 6.0 : -40.0;
+        band.dynamics.rangeDb = -30.0;
+        band.dynamics.kneeDb = 12.0;
+        band.dynamics.autoTiming = i % 2 == 1;
+        band.dynamics.external = count > 1 && i % 6 == 5;
+        band.channel = kModes[static_cast<std::size_t>(i % 5)];
+        bands.push_back(band);
+    }
+    return bands;
+}
+
+void runSpectral(const Options& options)
+{
+    struct Scenario
+    {
+        const char* name;
+        std::vector<BandSettings> bands;
+    };
+    const Scenario scenarios[] = {
+        {"1 banda", spectralBands(1, false)},
+        {"24 bandas", spectralBands(24, false)},
+        {"24 en reposo", spectralBands(24, true)},
+    };
+    std::printf("%-13s %7s %6s  %% de un núcleo: mediana (mín.–máx.)   ms por trama (salto)\n", "escenario", "Hz",
+                "bloque");
+    for (const Scenario& scenario : scenarios)
+        for (const double rate : options.rates)
+            for (const int block : options.blocks)
+            {
+                const int length = static_cast<int>(options.seconds * rate);
+                if (block > length)
+                    continue;
+                const std::vector<float> left = noise(length, 0x9E3779B97F4A7C15ull);
+                const std::vector<float> right = noise(length, 0xD1B54A32D192ED03ull);
+                const std::vector<float> key = noise(length, 0x94D049BB133111EBull);
+                std::vector<float> ioLeft(left.size()), ioRight(right.size());
+                std::vector<double> loads;
+                double frameMs = 0.0;
+                for (int r = 0; r < options.repeat; ++r)
+                {
+                    esceq::dsp::SpectralDynamics engine;
+                    engine.prepare(rate);
+                    for (std::size_t b = 0; b < scenario.bands.size(); ++b)
+                        engine.setBand(static_cast<int>(b), scenario.bands[b]);
+                    std::ranges::copy(left, ioLeft.begin());
+                    std::ranges::copy(right, ioRight.begin());
+                    const auto start = Clock::now();
+                    for (int position = 0; position + block <= length; position += block)
+                    {
+                        float* io[] = {ioLeft.data() + position, ioRight.data() + position};
+                        const float* sidechain[] = {key.data() + position, key.data() + position};
+                        engine.process(io, 2, block, sidechain, 2);
+                    }
+                    const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
+                    loads.push_back(100.0 * elapsed * rate / static_cast<double>(length - length % block));
+                    frameMs = std::max(frameMs, 1.0e3 * elapsed / static_cast<double>(engine.framesProcessed()));
+                }
+                std::ranges::sort(loads);
+                const double hopMs = 1.0e3 * esceq::dsp::SpectralDynamics::fftSize(rate) /
+                                     esceq::dsp::SpectralDynamics::kHopDivisor / rate;
+                std::printf("%-13s %7.0f %6d  %6.2f (%.2f–%.2f)   %.3f (%.1f)\n", scenario.name, rate, block,
+                            median(loads), loads.front(), loads.back(), frameMs, hopMs);
+                std::fflush(stdout);
+            }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -474,6 +571,8 @@ int main(int argc, char** argv)
     }
     if (options.match)
         runMatch(options);
+    else if (options.spectral)
+        runSpectral(options);
     else if (options.convolution)
         runConvolution(options);
     else
