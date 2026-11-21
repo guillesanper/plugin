@@ -36,6 +36,7 @@ add_executable(esceq_tests
     ui/control_logic_test.cpp
     ui/curve_mapping_test.cpp
     ui/layout_test.cpp
+    ui/match_test.cpp
     ui/meter_logic_test.cpp
     ui/notes_test.cpp
     ui/options_menu_test.cpp

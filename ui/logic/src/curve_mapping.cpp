@@ -230,7 +230,7 @@ std::vector<GridLine> gainGrid(double rangeDb)
 }
 
 std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
-                                            double gainDb, std::optional<double> q)
+                                            double gainDb, std::optional<double> q, dsp::FilterType type)
 {
     const auto& specs = core::parameters();
     std::vector<ParameterChange> changes;
@@ -243,7 +243,8 @@ std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values,
 
     const auto frequency = core::bandParameter(band, core::BandParam::Frequency);
     const auto gain = core::bandParameter(band, core::BandParam::Gain);
-    setDefault(core::bandParameter(band, core::BandParam::Type));
+    // El índice del tipo es el de dsp::FilterType (static_assert en core/src/band_model.cpp).
+    set(core::bandParameter(band, core::BandParam::Type), static_cast<float>(static_cast<int>(type)));
     if (q)
         set(core::bandParameter(band, core::BandParam::Q), static_cast<float>(*q));
     else

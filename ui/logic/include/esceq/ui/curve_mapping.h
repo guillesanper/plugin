@@ -149,9 +149,11 @@ struct ParameterChange
 /// ajustes de cuando estuvo activa. Solo incluye los parámetros que cambian
 /// respecto a `values`, y la activación va la última: la banda empieza a
 /// sonar ya con sus valores. Con `q`, la campana lleva ese Q en lugar del
-/// de por defecto (ajustado a su rango).
+/// de por defecto (ajustado a su rango). Con `type`, la banda es de ese tipo
+/// en lugar de una campana (la igualación crea también shelves).
 std::vector<ParameterChange> newBandChanges(const core::ParameterValues& values, int band, double frequencyHz,
-                                            double gainDb, std::optional<double> q = std::nullopt);
+                                            double gainDb, std::optional<double> q = std::nullopt,
+                                            dsp::FilterType type = dsp::FilterType::Bell);
 
 std::vector<double> logFrequencies(int count);
 
