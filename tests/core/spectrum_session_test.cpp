@@ -453,3 +453,44 @@ TEST_CASE("Sesion: seleccion de instancias a comparar")
     CHECK(selection.retainExisting({}));
     CHECK(selection.shown.empty());
 }
+
+TEST_CASE("Sesion: el reloj de audio avanza solo con audio y vuelve a cero al empezar a mirar")
+{
+    auto session = SpectrumSession::create(Threading::Manual);
+    auto member = session->join();
+    member->setSampleRate(44100.0);
+    SineSource source;
+    std::vector<InstanceSpectrum> all;
+
+    auto viewer = session->watch();
+    session->update(0.05); // empieza a mirar: lo de antes no cuenta
+    for (int i = 0; i < 4; ++i)
+    {
+        source.feed(*member, 4);
+        session->update(0.05);
+    }
+    session->snapshot(all);
+    REQUIRE(find(all, member->id()) != nullptr);
+    CHECK_THAT(find(all, member->id())->audioSeconds, WithinAbs(0.2, 1e-12));
+    CHECK(find(all, member->id())->sampleRate == 44100.0);
+
+    // Sin audio (transporte parado), no avanza, aunque el espectro se apague.
+    const auto before = session->revision();
+    for (int i = 0; i < 20; ++i)
+        session->update(0.05);
+    session->snapshot(all);
+    CHECK_THAT(find(all, member->id())->audioSeconds, WithinAbs(0.2, 1e-12));
+    CHECK(session->revision() != before);
+
+    // Dejar de mirar y volver a empezar lo pone a cero.
+    viewer.release();
+    viewer = session->watch();
+    source.feed(*member, 4);
+    session->update(0.05);
+    session->snapshot(all);
+    CHECK(find(all, member->id())->audioSeconds == 0.0);
+    source.feed(*member, 4);
+    session->update(0.05);
+    session->snapshot(all);
+    CHECK_THAT(find(all, member->id())->audioSeconds, WithinAbs(0.05, 1e-12));
+}

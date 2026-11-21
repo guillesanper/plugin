@@ -43,6 +43,9 @@ const std::vector<double>& sessionFrequencies();
 
 /// Nivel de un punto sin señal.
 inline constexpr float kSessionFloorDb = -120.0f;
+/// Un espectro con algún punto por encima de esto tiene señal (es el fondo de
+/// la escala del analizador de la interfaz). La igualación usa el mismo umbral.
+inline constexpr float kSessionSignalDb = -90.0f;
 
 /// Lo que se sabe de una instancia en un momento dado.
 struct InstanceSpectrum
@@ -60,6 +63,14 @@ struct InstanceSpectrum
     /// Nivel en dB en cada punto de sessionFrequencies(), con la inclinación
     /// del analizador y promediado en el tiempo.
     std::vector<float> levelsDb;
+    /// Frecuencia de muestreo del audio que se analiza (0 si aún no se sabe).
+    double sampleRate = 0.0;
+    /// Segundos de audio analizados desde que alguien empezó a mirar: avanza
+    /// en cada paso del trabajador en que llega audio de la instancia, lo que
+    /// dura ese paso, y se para con el transporte. Cuánto ha cambiado entre
+    /// dos copias dice cuánto tiempo representa el espectro nuevo (la
+    /// igualación pondera por él, core/match.h).
+    double audioSeconds = 0.0;
 
     /// Nombre para mostrar: el de la pista o "esceQ <número>".
     std::string displayName() const;

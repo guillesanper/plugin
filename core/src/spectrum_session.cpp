@@ -20,9 +20,6 @@ namespace
 /// para los 50 ms entre dos pasos del trabajador.
 constexpr int kFifoCapacity = 1 << 15;
 constexpr int kReadChunk = 4096;
-/// Un espectro con algún punto por encima de esto tiene señal (es el fondo de
-/// la escala del analizador de la interfaz).
-constexpr float kSignalThresholdDb = -90.0f;
 
 } // namespace
 
@@ -72,6 +69,8 @@ struct SpectrumSession::Slot
     std::optional<std::uint32_t> trackColour;
     bool hasSignal = false;
     std::vector<float> published;
+    double publishedSampleRate = 0.0;
+    double audioSeconds = 0.0;
 };
 
 std::shared_ptr<SpectrumSession> SpectrumSession::shared()
@@ -177,6 +176,8 @@ void SpectrumSession::snapshot(std::vector<InstanceSpectrum>& out) const
         entry.trackColour = slot.trackColour;
         entry.hasSignal = slot.hasSignal;
         entry.levelsDb.assign(slot.published.begin(), slot.published.end());
+        entry.sampleRate = slot.publishedSampleRate;
+        entry.audioSeconds = slot.audioSeconds;
     }
 }
 
@@ -220,17 +221,19 @@ void SpectrumSession::update(double dtSeconds)
             received = 0;
         }
 
+        double analyzedRate = 0.0;
         if (received > 0)
         {
             const double sampleRate = slot->sampleRate.load(std::memory_order_relaxed);
-            slot->analyzer.setSampleRate(sampleRate > 0.0 ? sampleRate : 48000.0);
+            analyzedRate = sampleRate > 0.0 ? sampleRate : 48000.0;
+            slot->analyzer.setSampleRate(analyzedRate);
             slot->analyzer.compute(frequencies, levels);
             slot->averager.update(levels, dtSeconds);
             slot->silentSeconds = 0.0;
             // La señal se juzga por el espectro de ahora, no por el promedio,
             // que tarda segundos en apagarse.
             const bool audible =
-                std::any_of(levels.begin(), levels.end(), [](float db) { return db > kSignalThresholdDb; });
+                std::any_of(levels.begin(), levels.end(), [](float db) { return db > kSessionSignalDb; });
             slot->inaudibleSeconds = audible ? 0.0 : slot->inaudibleSeconds + dtSeconds;
         }
         else
@@ -247,6 +250,15 @@ void SpectrumSession::update(double dtSeconds)
         const bool hasSignal = slot->inaudibleSeconds <= kSignalHoldSeconds;
         {
             const std::scoped_lock lock(mutex_);
+            if (restart)
+                slot->audioSeconds = 0.0;
+            // El reloj de audio no cambia la revisión: solo importa junto a
+            // un espectro nuevo, que ya la cambia.
+            if (received > 0)
+            {
+                slot->audioSeconds += dtSeconds;
+                slot->publishedSampleRate = analyzedRate;
+            }
             if (slot->published != averaged || slot->hasSignal != hasSignal)
             {
                 slot->published.assign(averaged.begin(), averaged.end());
