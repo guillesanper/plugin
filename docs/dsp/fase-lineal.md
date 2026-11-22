@@ -111,6 +111,14 @@ Mientras alguna banda tenga `dynamics.spectral` (el parámetro `bNN_spectral`), 
 - **Latencia**: la del modo más la de la STFT, `N + N/4` (2560 muestras a 44,1 y 48 kHz, 5120 a 96 y 10240 a 192: 53,3 ms a 48 kHz y 58 ms a 44,1). En IIR, de 0 a 53,3 ms; en Low, de 26,7 a 80 ms; en Medium, de 96 a 149,3 ms; en High, de 362,7 a 416 ms.
 - **Sin ninguna banda espectral**, `PhaseEqualizer` hace exactamente lo de antes: el mismo camino, el mismo sonido bit a bit y la misma latencia en los cuatro modos (comparado con el código anterior: ver [dinamica-espectral.md](dinamica-espectral.md)).
 
+## Saturación
+
+Con `sat_mode` fuera de Off, al final (tras el IIR o el FIR y la dinámica espectral, antes de la ganancia de salida) suena `dsp::Saturation` ([saturacion.md](saturacion.md), [ADR 0026](../decisiones/0026-saturacion.md)), con los filtros del sobremuestreo según el modo que suena:
+
+- **IIR:** polifásicos IIR pasa todo, sin latencia (con unas 6 muestras de retardo de grupo en graves a 48 kHz).
+- **Low, Medium y High:** FIR de media banda de fase lineal, con su latencia sumada a la del modo: 47 muestras a 44,1 y 48 kHz (0,98 ms a 48 kHz), 43 a 96 kHz y 35 a 192 kHz. En Low, 1327 muestras a 48 kHz; en Medium, 4655; en High, 17455; con alguna banda espectral, 2560 más.
+- **Con Off**, la etapa no se ejecuta: `PhaseEqualizer` hace exactamente lo de antes, con la misma latencia en los cuatro modos (comparado con el código anterior: ver [saturacion.md](saturacion.md)).
+
 ## Cambios con el audio en marcha
 
 | Cambio | Qué pasa |
@@ -118,9 +126,11 @@ Mientras alguna banda tenga `dynamics.spectral` (el parámetro `bNN_spectral`), 
 | Ajustes de las bandas en fase lineal | El hilo de diseño calcula el FIR nuevo (de 0,2 a 13 ms) y lo entrega; en el bloque de convolución siguiente se hace un **fundido de un bloque** (de 5 a 21 ms) entre la salida con el FIR anterior y con el nuevo. Mientras se diseña, suena el anterior. |
 | Modo de fase | Mientras se prepara el modo nuevo, suena el anterior. Después: **fundido a silencio** en 10 ms, cambio, silencio mientras el modo nuevo llena su latencia, y **fundido de entrada** en 10 ms. La latencia que se comunica al host cambia en el momento del cambio. |
 | Primera banda espectral encendida, o última apagada | Como el cambio de modo: fundido a silencio en 10 ms, cambio, silencio mientras se llena la latencia nueva y fundido de entrada. Encender o apagar las demás no cambia la latencia ni deja hueco. |
-| Bypass en fase lineal o con dinámica espectral | Fundido de 10 ms con la señal seca **retrasada**: la latencia no cambia con el bypass, y con el bypass completo la salida es la entrada retrasada, bit a bit. |
+| Saturación encendida o apagada (desde Off o hacia Off) | En fase lineal, como el cambio de modo: fundido a silencio en 10 ms, cambio, silencio mientras se llena la latencia nueva (la del modo más 47 muestras a 48 kHz, o sin ellas) y fundido de entrada. En IIR no cambia la latencia: el fundido de 20 ms de la saturación, sin silencio. Entre Soft y Warm, y el drive y la mezcla, con las rampas de 20 ms de la saturación, en todos los modos. |
+| Modo de fase con la saturación encendida | Los filtros del sobremuestreo cambian (IIR o de fase lineal) en el silencio del cambio de modo, con la latencia nueva. |
+| Bypass en fase lineal, con dinámica espectral o con saturación | Fundido de 10 ms con la señal seca **retrasada**: la latencia no cambia con el bypass, y con el bypass completo la salida es la entrada retrasada, bit a bit. |
 
-Cambiar de modo, o encender la primera banda espectral, deja un hueco: no se puede pasar sin él de una latencia a otra. El host recalcula su compensación de retardo; mientras tanto la pista puede quedar desalineada un momento respecto a las demás. Por eso el modo de fase es un ajuste "de sesión": no se automatiza con normalidad y los presets no lo cambian.
+Cambiar de modo, encender la primera banda espectral o, en fase lineal, encender o apagar la saturación (también al cargar un preset que lo haga: la saturación va en los presets), deja un hueco: no se puede pasar sin él de una latencia a otra. El host recalcula su compensación de retardo; mientras tanto la pista puede quedar desalineada un momento respecto a las demás. Por eso el modo de fase es un ajuste "de sesión": no se automatiza con normalidad y los presets no lo cambian.
 
 ## Hilos
 
@@ -168,6 +178,8 @@ El producto por las particiones ya lo vectoriza el compilador; la FFT directa y 
 - `tests/dsp/handoff_test.cpp` y `tests/core/phase_design_thread_test.cpp`: el intercambio entre hilos, también con dos hilos a la vez (para ejecutarlos con ThreadSanitizer, ver [DEV.md](../../DEV.md)).
 - `tests/dsp/phase_equalizer_test.cpp`, la dinámica espectral: sin bandas espectrales, la latencia y el sonido de siempre en los cuatro modos; su latencia sumada a la del modo y medida con un impulso a 44,1, 48, 96 y 192 kHz, en estéreo y en mono; la máscara en lugar de la dinámica de la banda; sin chasquidos ni huecos al encender y apagar la primera y las demás; independencia del tamaño de bloque; bypass; el detector retrasado en fase lineal.
 - `tests/plugin/phase_test.cpp`: latencia comunicada al host, cola, render sin tiempo real, bypass y estado guardado; y, sin dinámica espectral, la latencia y el sonido de antes en los cuatro modos.
+- `tests/dsp/phase_equalizer_test.cpp`, la saturación: con Off, la latencia y el sonido de siempre en los cuatro modos; su latencia sumada a la del modo y medida con un impulso a 44,1, 48, 96 y 192 kHz, sola y con la dinámica espectral; su lugar en la cadena y sus filtros (bit a bit, una `Saturation` sobre la salida sin ella); encender y apagar en IIR sin hueco y en fase lineal como el cambio de modo, sin chasquidos; cambiar de modo con ella; independencia del tamaño de bloque; bypass.
+- `tests/plugin/saturation_test.cpp`: con Off, la latencia, la cola y el sonido de antes en los cuatro modos; con ella, la latencia comunicada es la medida en los cuatro modos y a 44,1, 48, 96 y 192 kHz, y el aviso al host en fase lineal.
 - `tests/plugin/spectral_test.cpp`: con dinámica espectral, la latencia comunicada es la medida en los cuatro modos y a 44,1, 48, 96 y 192 kHz, el aviso al host al encender la primera banda, sin chasquidos, y el interruptor llegando al audio y al medidor.
 
 Se comprobó que los tests detectan los fallos: quitando el fundido entre núcleos, los fundidos al cambiar de modo, la espera de la latencia, el retraso del detector, el del sidechain o el de la señal seca del bypass, la petición de un FIR nuevo al descartar un camino, o la parte estática del modo solo dinámica, falla al menos un test.

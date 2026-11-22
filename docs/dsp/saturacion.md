@@ -2,7 +2,7 @@
 
 Cómo funciona la saturación de esceQ: una etapa global de saturación suave tras el ecualizador, para dar color armónico, con sobremuestreo contra el aliasing, compensación del drive y mezcla con la señal seca. Código en `dsp/include/esceq/dsp/saturation.h` (`dsp::Saturation`, el motor, y `dsp::Oversampler`, el sobremuestreo). Las decisiones y sus motivos están en la [ADR 0026](../decisiones/0026-saturacion.md), y el comportamiento que verá el usuario, en la sección 5.8 del [plan](../../PLAN.md).
 
-Estado: el motor (bloque 6.7) está hecho y medido. Falta su integración en `dsp::PhaseEqualizer`, con los parámetros `sat_mode`, `sat_drive` y `sat_mix` (bloque 6.8), y la interfaz (bloque 6.9): hasta entonces no suena en el plugin.
+Estado: el motor (bloque 6.7) y su integración en `dsp::PhaseEqualizer`, con los parámetros `sat_mode`, `sat_drive` y `sat_mix` (bloque 6.8), están hechos y medidos: suena en el plugin y se puede automatizar desde el host. Falta la interfaz (bloque 6.9).
 
 ## Cadena
 
@@ -67,9 +67,21 @@ Los coeficientes están en `saturation.cpp`, en float. Los tests miden la respue
 - **Mezcla:** rampa lineal de 20 ms.
 - **Soft ↔ Warm:** la polarización va de 0 a 0,25 (o al revés) en 20 ms, con la compensación; el bloqueador ya estaba en marcha.
 - **Off ↔ Soft o Warm:** fundido de 20 ms con la entrada tal cual. Al encender desde parado, la memoria empieza a cero; al apagar, terminado el fundido, se borra y `process()` deja de tocar las muestras, y la salida es la entrada bit a bit.
-- **Filtros (IIR ↔ fase lineal) y frecuencia de muestreo:** borran la memoria y cambian la latencia de golpe. Quien lo use lo hace en silencio, como el cambio de modo de fase. Por la misma razón, en fase lineal, encender y apagar cambian la latencia que hay que comunicar (de 0 a 47 muestras a 48 kHz), y el fundido con la entrada sin retrasar solo vale bajo ese silencio (bloque 6.8).
+- **Filtros (IIR ↔ fase lineal) y frecuencia de muestreo:** borran la memoria y cambian la latencia de golpe. Quien lo use lo hace en silencio, como el cambio de modo de fase. Por la misma razón, en fase lineal, encender y apagar cambian la latencia que hay que comunicar (de 0 a 47 muestras a 48 kHz), y el fundido con la entrada sin retrasar solo vale bajo ese silencio: `PhaseEqualizer` lo hace así (ver «En el procesador»).
 
 Ningún cambio hace chasquidos: con un seno de 50 Hz y todos esos cambios seguidos, la mayor diferencia entre dos muestras no pasa de la de los tramos estables (test "los cambios van con rampa y sin chasquidos").
+
+## En el procesador
+
+`dsp::PhaseEqualizer` lleva una `Saturation` al final (bloque 6.8, nota en la [ADR 0026](../decisiones/0026-saturacion.md)), que recibe con `setSaturation()` los ajustes de `sat_mode`, `sat_drive` y `sat_mix` (`core::saturationSettings()`, la mezcla de 0 a 100 % pasada a 0..1):
+
+- **Lugar en la cadena:** tras el IIR o el FIR (con la dinámica) y tras la dinámica espectral; antes de la ganancia de salida y de la compensación automática, que no la tiene en cuenta (compensa la curva; la saturación compensa su drive). La salida es, bit a bit, la de una `Saturation` sola sobre la salida del ecualizador sin ella.
+- **Filtros:** los del modo que suena, IIR en IIR y de fase lineal en Low, Medium y High. Cambian (con `setFilter()`, que borra la memoria) en el silencio del cambio de modo.
+- **Latencia:** la del modo y la de la dinámica espectral, más `Saturation::latencySamples()` mientras `sat_mode` no esté en Off (`PhaseEqualizer::saturationLatency()`): 0 en IIR; en fase lineal, 47 muestras a 44,1 y 48 kHz, 43 a 96 y 35 a 192. La mezcla no la cambia: con la mezcla al 0 % la salida pasa por los filtros igual.
+- **Encender y apagar:** en IIR, el fundido de 20 ms del motor con la entrada tal cual, sin silencio (no cambia la latencia; mientras dura, se mezclan la entrada y la salida por los filtros IIR, con unas pocas muestras de retardo de grupo entre ellas). En fase lineal cambia la latencia, así que se hace como el cambio de modo: 10 ms a silencio, el cambio (con la memoria borrada y sin fundido: la saturación entra o sale entera en el silencio), silencio mientras se llena la latencia nueva y 10 ms de subida; el hilo de control avisa al host. Si se vuelve a pedir lo que suena antes del cambio (Off, Soft y Off otra vez), la bajada se deshace. Entre Soft y Warm, el drive y la mezcla: las rampas de 20 ms del motor, sin silencio, en todos los modos.
+- **Bypass:** como la dinámica espectral, un fundido de 10 ms con su entrada retrasada lo que la saturación (47 muestras en fase lineal; nada en IIR), así que la latencia no cambia y, con el bypass completo, la salida es la entrada retrasada, bit a bit. La saturación sigue en marcha durante el bypass.
+- **Con Off**, terminado el fundido, la etapa no se ejecuta: el ecualizador es bit a bit el de antes, con la misma latencia en los cuatro modos. Comparado con el código anterior a la integración (el commit `a12f972`): un programa que pasa 60 000 muestras de ruido por `PhaseEqualizer`, con una campana, una banda dinámica en Mid, un corte y una banda dinámica en Side escuchando el sidechain (en otra tanda, espectral), a 44,1, 48 y 96 kHz, en los cuatro modos, con bloques irregulares, el bypass puesto y quitado, un cambio de modo y una banda movida, y que con el código nuevo llama además a `setSaturation()` con Off y otros drive y mezcla: las 24 salidas son iguales bit a bit, con las mismas latencias. Con Soft, las 24 cambian (el programa distingue).
+- **No asigna:** su memoria (el motor y las líneas de retardo de la seca) se reserva en `prepare()`; `setSaturation()` es segura en tiempo real (calcula la compensación si cambia el drive: unos microsegundos).
 
 ## Medidas
 
@@ -120,6 +132,20 @@ Instancia estéreo, 12 dB de drive, mezcla al 50 %, en % de un núcleo: las medi
 | IIR (Clang) | 0,9–1,0 | 0,9–1,1 | 1,0–1,6 | 1,0–1,4 |
 | Fase lineal (Clang) | 0,8–1,2 | 0,9–1,2 | 1,0–1,9 | 1,0–1,4 |
 
+Con el ecualizador (`esceq_bench --scenario mezcla,saturacion,mezcla-sat --rate 44100,48000,192000 --repeat 7`, bloques de 256; `saturacion` es la saturación sola, Warm a 12 dB con la mezcla al 50 %, y `mezcla-sat`, la mezcla de 8 bandas con Soft a 6 dB y al 100 %), en % de un núcleo, la mediana de 7 medidas:
+
+| Escenario, compilador | IIR | Low | Medium | High |
+|---|---|---|---|---|
+| `mezcla`, GCC, 48 kHz | 0,61 | 0,74 | 0,78 | 0,85 |
+| `mezcla-sat`, GCC, 48 kHz | 1,56 | 1,45 | 1,57 | 1,65 |
+| `saturacion`, GCC, 48 kHz | 0,90 | 0,95 | 1,00 | 1,08 |
+| `mezcla`, Clang, 48 kHz | 0,73 | 0,82 | 0,90 | 0,93 |
+| `mezcla-sat`, Clang, 48 kHz | 1,73 | 1,76 | 1,82 | 1,88 |
+| `mezcla`, GCC, 192 kHz | 1,83 | 2,15 | 2,42 | 3,17 |
+| `mezcla-sat`, GCC, 192 kHz | 2,78 | 3,25 | 3,64 | 4,39 |
+
+La saturación suma a la mezcla del 0,7 al 1,0 % a 44,1 y 48 kHz con los dos compiladores y del 0,95 al 1,2 % a 192 kHz: lo que costaba el motor solo. `saturacion` incluye, en los lineales, el camino del FIR (la identidad retrasada). La llamada más lenta no cambia de escala (de 0,10 a 0,22 ms a 48 kHz con bloques de 256, que duran 5,3 ms). Con bloques de 32 y de 1024 muestras, lo mismo (de 1,6 a 1,8 % con la mezcla a 48 kHz). La máquina es ruidosa: las medidas varían un ±20 %.
+
 El criterio pide menos del 2 % a 48 kHz. La primera versión, con la tanh de la biblioteca, los canales por separado y los FIR muestra a muestra, costaba del 1,6 al 1,9 % en IIR y del 2,5 al 3 % en fase lineal; de ahí la tanh propia (la de la biblioteca se llevaba un 0,65 % ella sola), los canales en el mismo bucle y la convolución por bloques. Con Off, nada.
 
 ## Verificación
@@ -143,9 +169,12 @@ El criterio pide menos del 2 % a 48 kHz. La primera versión, con la tanh de la 
 | las imagenes al subir quedan por debajo de -100 dB | `Oversampler` con 1, 2 y 3 etapas, IIR y fase lineal |
 | las llamadas del hilo de audio no asignan | Con RealtimeSanitizer (job `rtsan` del CI) |
 
+La integración la comprueban `tests/dsp/phase_equalizer_test.cpp` (con Off, la latencia y el sonido de siempre en los cuatro modos; la latencia sumada a la del modo y medida con un impulso a 44,1, 48, 96 y 192 kHz, sola y con la dinámica espectral; el lugar en la cadena y los filtros, bit a bit contra una `Saturation` sola; encender y apagar en IIR sin hueco y en fase lineal con el silencio del cambio de modo, y de Soft a Warm sin hueco, sin chasquidos; cambiar de modo con ella encendida; bloques de 1 a 4096 muestras, bit a bit; el bypass) y `tests/plugin/saturation_test.cpp` (con Off, la latencia, la cola y el sonido de antes en los cuatro modos; la latencia comunicada al host es la medida en los cuatro modos y a 44,1, 48, 96 y 192 kHz; los proyectos de las versiones 1 a 3 y los presets anteriores la dejan en Off; viaja con el estado; el aviso al host al encenderla en fase lineal, y en IIR, sin cambio; la automatización de los tres parámetros llega al audio sin chasquidos; el bypass en fase lineal). En `core`, los parámetros: su posición, sus valores por defecto, su texto, su traducción, los presets y los estados anteriores. Las llamadas de `PhaseEqualizer` las vigila RealtimeSanitizer en todos sus tests.
+
 ## Limitaciones conocidas
 
 - Entre 0,41·fs y fs/2 (de 18 a 22 kHz a 44,1 kHz) la respuesta cae y puede aparecer algo de aliasing atenuado: es la banda de transición de la primera etapa.
+- En fase lineal, encender o apagar la saturación (también con un preset que lo haga, o con la automatización de `sat_mode`) deja un hueco: a 48 kHz, 10 ms de bajada, el silencio mientras se llena la latencia nueva (27,6 ms en Low, 97 en Medium y 363,6 en High) y 10 ms de subida. No se puede pasar sin él de una latencia a otra. En IIR, no.
 - En IIR, la fase de la señal cambia en agudos (11 muestras de retardo de grupo a 18 kHz frente a 6 en graves) aunque la mezcla esté a 0: los filtros de sobremuestreo están en la cadena mientras la saturación no esté en Off.
 - La compensación iguala el nivel de un seno de −18 dBFS. Con señales mucho más fuertes y mucho drive, la salida queda por debajo de la entrada, porque la curva limita.
 - El bloqueador quita también la continua (y lo que haya por debajo de unos 5 Hz) de la parte húmeda; la seca la conserva.

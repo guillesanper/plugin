@@ -1,6 +1,6 @@
 # 0026. Saturación: sobremuestreo hasta unos 384 kHz con filtros de media banda (IIR o de fase lineal según el modo de fase), sin ADAA, compensación del drive en dB y mezcla dentro
 
-**Estado:** Aceptada (noviembre de 2026), con las medidas del bloque 6.7 del [plan](../../PLAN.md). La elección del sobremuestreo la ha decidido el usuario con estas medidas. Falta la integración (bloque 6.8) y la interfaz (bloque 6.9).
+**Estado:** Aceptada (noviembre de 2026), con las medidas del bloque 6.7 del [plan](../../PLAN.md). La elección del sobremuestreo la ha decidido el usuario con estas medidas. La integración (bloque 6.8) está hecha (nota al final); falta la interfaz (bloque 6.9).
 
 ## Contexto
 
@@ -52,4 +52,16 @@ El criterio no dice a qué nivel se mide, y es lo que decide: con 12 dB de drive
 - La compensación iguala el nivel a −18 dBFS; con señales mucho más fuertes y mucho drive, la salida queda por debajo de la entrada.
 - El bloqueador quita la continua y lo que hay por debajo de unos 5 Hz de la húmeda; la seca la conserva.
 - Los coeficientes, b, el bloqueador, la compensación y la tanh fijan el sonido: una vez publicados, cambiarlos exige una versión de algoritmo en el estado (sección 2.1 del plan).
-- Queda para el 6.8: los tres parámetros (388 a 390), el lugar en `PhaseEqualizer` (tras la dinámica espectral, antes de la ganancia de salida) y la latencia.
+- Queda para el 6.8: los tres parámetros (388 a 390), el lugar en `PhaseEqualizer` (tras la dinámica espectral, antes de la ganancia de salida) y la latencia (hecho: nota al final).
+
+## Nota: la integración (bloque 6.8)
+
+Al integrarla en `dsp::PhaseEqualizer` no ha cambiado ninguna decisión; lo que la sección 5.8 dejaba abierto se ha resuelto así, sin alternativas que pidieran al usuario decidir:
+
+- **En IIR no hay nada que comunicar:** encender o apagar la saturación (de Off a Soft o Warm, o al revés) es el fundido de 20 ms del motor, sin silencio y sin cambio de latencia. Los filtros IIR tienen unas pocas muestras de retardo de grupo, que no son latencia (la decisión 2): durante el fundido se mezclan la entrada y la salida por los filtros, como se mezclan la seca y la ecualizada en cualquier cambio del IIR.
+- **En fase lineal, la latencia la enciende `sat_mode`** fuera de Off, con cualquier drive y mezcla (con la mezcla al 0 %, la señal pasa igual por los filtros). Encenderla o apagarla se hace como el cambio de modo de fase, con la memoria borrada y sin el fundido del motor, que solo valía bajo ese silencio; mientras se baja a silencio el motor sigue como estaba. Entre Soft y Warm, el drive y la mezcla van con sus rampas, sin silencio.
+- **Los filtros siguen al modo que suena**, no al pedido: mientras se diseña un modo lineal nuevo suena el anterior con sus filtros, y cambian en el silencio del cambio.
+- **El bypass** es el de la dinámica espectral: un fundido con la entrada de la saturación retrasada lo que ella (nada en IIR), así que la latencia no cambia.
+- **La saturación va en los presets** (decidido antes, sección 5.8): cargar un preset que la encienda o la apague en fase lineal deja el hueco del cambio de latencia, como el interruptor de la dinámica espectral.
+
+Con Off, el ecualizador es bit a bit el de antes, con la misma latencia en los cuatro modos (comparado con el código anterior: [docs/dsp/saturacion.md](../dsp/saturacion.md), «En el procesador»). Coste con la mezcla de 8 bandas a 48 kHz: del 0,7 al 1,0 % más; la mezcla con saturación, del 1,45 al 1,9 % en los cuatro modos y con los dos compiladores.
