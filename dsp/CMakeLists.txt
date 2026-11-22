@@ -12,6 +12,7 @@ add_library(esceq_dsp STATIC
     src/linear_phase.cpp
     src/partitioned_convolver.cpp
     src/phase_equalizer.cpp
+    src/saturation.cpp
     src/spectral_dynamics.cpp
     src/spectrum_analyzer.cpp
     src/spectrum_collision.cpp
@@ -23,3 +24,11 @@ add_library(esceq_dsp STATIC
 target_compile_features(esceq_dsp PUBLIC cxx_std_20)
 target_include_directories(esceq_dsp PUBLIC include)
 target_link_libraries(esceq_dsp PRIVATE esceq_warnings)
+
+# La curva de la saturación (fastTanh) solo se vectoriza en GCC si puede
+# calcular las dos ramas de un `?:` de coma flotante sin miedo a una
+# excepción. No cambia ningún resultado: sin reasociar ni contraer, cada
+# operación da lo mismo. Clang y MSVC no lo necesitan.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    set_source_files_properties(src/saturation.cpp PROPERTIES COMPILE_OPTIONS -fno-trapping-math)
+endif()

@@ -23,6 +23,7 @@ add_executable(esceq_tests
     dsp/handoff_test.cpp
     dsp/linear_phase_test.cpp
     dsp/phase_equalizer_test.cpp
+    dsp/saturation_test.cpp
     dsp/spectral_dynamics_test.cpp
     dsp/spectrum_collision_test.cpp
     core/band_model_test.cpp
