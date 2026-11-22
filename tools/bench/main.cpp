@@ -20,6 +20,10 @@
 //   --spectral       en vez del ecualizador, el motor de la dinámica espectral
 //                    solo (dsp::SpectralDynamics, docs/dsp/dinamica-espectral.md),
 //                    con --rate, --block, --seconds y --repeat
+//   --saturation     en vez del ecualizador, la saturación (dsp::Saturation,
+//                    docs/dsp/saturacion.md): las alternativas contra el
+//                    aliasing comparadas a 48 kHz y el coste del motor, con
+//                    --rate, --block, --seconds y --repeat
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
@@ -55,18 +59,33 @@
 //                 Stereo, Left, Right, Mid y Side, la mitad con tiempos
 //                 automáticos y 4 escuchando el sidechain: L/R y M/S a la vez.
 //   24 en reposo  las mismas, con el umbral por encima de la señal.
+//
+// Con --saturation, primero las alternativas de la ADR 0026 con la curva Soft
+// sin compensar y 12 dB de drive, a 48 kHz: el aliasing de un seno de 10 kHz
+// a −18, −6 y 0 dBFS (todo lo que no es un armónico por debajo de Nyquist,
+// relativo a la fundamental); la respuesta en agudos con señal pequeña
+// (−60 dBFS, la húmeda dividida por el drive): la húmeda sola y la mezcla al
+// 50 % con la seca, a 18 kHz y relativas a 1 kHz; y el coste con la señal de
+// los escenarios, en bloques de 256. Luego, el motor a 48 kHz (×8) con 12 dB
+// de drive: el mismo aliasing, el nivel de un seno de −18 dBFS a 1 kHz y la
+// mezcla al 0 % a 18 kHz; y su coste (Soft y Warm, filtros IIR y de fase
+// lineal) con --rate y --block.
 #include "esceq/dsp/curve_match.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/partitioned_convolver.h"
 #include "esceq/dsp/phase_equalizer.h"
+#include "esceq/dsp/saturation.h"
 #include "esceq/dsp/spectral_dynamics.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
+#include <numbers>
 #include <span>
 #include <string>
 #include <string_view>
@@ -92,6 +111,7 @@ struct Options
     bool convolution = false;
     bool match = false;
     bool spectral = false;
+    bool saturation = false;
 };
 
 std::vector<std::string> splitList(std::string_view text)
@@ -127,6 +147,11 @@ bool parse(std::span<char* const> args, Options& options)
         if (name == "--spectral")
         {
             options.spectral = true;
+            continue;
+        }
+        if (name == "--saturation")
+        {
+            options.saturation = true;
             continue;
         }
         if (i + 1 >= args.size())
@@ -608,6 +633,291 @@ void runSpectral(const Options& options)
             }
 }
 
+
+/// Una alternativa contra el aliasing de la ADR 0026: tanh(d·x) sin
+/// compensar, sobremuestreada con `stages` etapas (0: sin sobremuestreo) y
+/// con o sin ADAA de primer orden (Parker, Zavalishin y Le Bivic, 2016;
+/// Bilbao, Esqueda, Parker y Välimäki, 2017). `mix`: la parte de la húmeda,
+/// dividida por el drive, con la seca por los mismos filtros.
+class Alternative
+{
+public:
+    Alternative(int stages, esceq::dsp::OversamplingFilter filter, bool adaa, double driveDb, double mix)
+        : stages_(stages), adaa_(adaa), drive_(std::pow(10.0, driveDb / 20.0)), mix_(mix)
+    {
+        if (stages_ > 0)
+            oversampler_.setup(filter, stages_);
+    }
+
+    void process(float* const* channels, int numChannels, int numSamples)
+    {
+        constexpr int kBlock = esceq::dsp::Oversampler::kMaxBlock;
+        const int factor = 1 << stages_;
+        for (int offset = 0; offset < numSamples; offset += kBlock)
+        {
+            const int length = std::min(kBlock, numSamples - offset);
+            std::array<float*, 2> io{};
+            std::array<float*, 2> work{};
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                const auto c = static_cast<std::size_t>(ch);
+                io[c] = channels[ch] + offset;
+                work[c] = stages_ > 0 ? buffers_[c].data() : io[c];
+            }
+            if (stages_ > 0)
+                oversampler_.upsample(io.data(), work.data(), numChannels, length);
+            for (int ch = 0; ch < numChannels; ++ch)
+            {
+                double& previous = previous_[static_cast<std::size_t>(ch)];
+                float* w = work[static_cast<std::size_t>(ch)];
+                for (int i = 0; i < length * factor; ++i)
+                {
+                    const double x = w[i];
+                    const double u = drive_ * x;
+                    double y = 0.0;
+                    if (!adaa_)
+                        y = std::tanh(u);
+                    else
+                    {
+                        const double delta = u - previous;
+                        y = std::abs(delta) > 1.0e-5 ? (logCosh(u) - logCosh(previous)) / delta
+                                                     : std::tanh(0.5 * (u + previous));
+                        previous = u;
+                    }
+                    w[i] = static_cast<float>(x + mix_ * (y / drive_ - x));
+                }
+            }
+            if (stages_ > 0)
+                oversampler_.downsample(work.data(), io.data(), numChannels, length);
+        }
+    }
+
+private:
+    static double logCosh(double u)
+    {
+        const double a = std::abs(u);
+        return a + std::log1p(std::exp(-2.0 * a)) - std::numbers::ln2;
+    }
+
+    int stages_;
+    bool adaa_;
+    double drive_;
+    double mix_;
+    esceq::dsp::Oversampler oversampler_;
+    std::array<double, 2> previous_{};
+    using Inner = std::array<float, esceq::dsp::Oversampler::kMaxBlock * esceq::dsp::Oversampler::kMaxFactor>;
+    std::array<Inner, 2> buffers_{};
+};
+
+/// Potencia del componente de `hz` (amplitud²/2; en 0 Hz, la media²) en `n`
+/// muestras desde `start`, con un número entero de sus periodos.
+double powerAt(const std::vector<float>& x, std::size_t start, std::size_t n, double hz, double rate)
+{
+    double a = 0.0;
+    double b = 0.0;
+    for (std::size_t i = 0; i < n; ++i)
+    {
+        const double phase = 2.0 * std::numbers::pi * hz * static_cast<double>(i) / rate;
+        a += x[start + i] * std::cos(phase);
+        b += x[start + i] * std::sin(phase);
+    }
+    const double scale = hz == 0.0 ? 1.0 / static_cast<double>(n) : 2.0 / static_cast<double>(n);
+    a *= scale;
+    b *= scale;
+    return hz == 0.0 ? a * a : 0.5 * (a * a + b * b);
+}
+
+std::vector<float> sine(std::size_t length, double hz, double amplitude, double rate)
+{
+    std::vector<float> out(length);
+    for (std::size_t i = 0; i < length; ++i)
+        out[i] = static_cast<float>(amplitude * std::sin(2.0 * std::numbers::pi * hz * static_cast<double>(i) / rate));
+    return out;
+}
+
+template <typename Processor>
+std::vector<float> processMono(Processor& processor, std::vector<float> signal)
+{
+    for (std::size_t position = 0; position < signal.size(); position += 256)
+    {
+        float* channels[] = {signal.data() + position};
+        processor.process(channels, 1, static_cast<int>(std::min<std::size_t>(256, signal.size() - position)));
+    }
+    return signal;
+}
+
+/// Aliasing de un seno de 10 kHz a 48 kHz, en dB relativos a la fundamental:
+/// por Parseval, la potencia que no es la continua ni un armónico por debajo
+/// de Nyquist. 4800 muestras contienen un número entero de periodos de todo.
+double aliasingDb(const std::vector<float>& y)
+{
+    constexpr double kRate = 48000.0;
+    constexpr std::size_t kStart = 24000;
+    constexpr std::size_t kLength = 4800;
+    double total = 0.0;
+    for (std::size_t i = 0; i < kLength; ++i)
+        total += static_cast<double>(y[kStart + i]) * y[kStart + i];
+    double rest = total / static_cast<double>(kLength) - powerAt(y, kStart, kLength, 0.0, kRate);
+    for (double hz = 10000.0; hz < kRate / 2.0; hz += 10000.0)
+        rest -= powerAt(y, kStart, kLength, hz, kRate);
+    return 10.0 * std::log10(std::max(rest, 1e-30) / powerAt(y, kStart, kLength, 10000.0, kRate));
+}
+
+/// Cuánto tarda un proceso estéreo con la señal de los escenarios, en % de un
+/// núcleo: mediana, mínimo y máximo de `repeat` medidas.
+template <typename Make>
+std::vector<double> stereoLoads(Make make, double rate, int block, double seconds, int repeat)
+{
+    const int length = static_cast<int>(seconds * rate);
+    const std::vector<float> left = noise(length, 0x9E3779B97F4A7C15ull);
+    const std::vector<float> right = noise(length, 0xD1B54A32D192ED03ull);
+    std::vector<float> ioLeft(left.size()), ioRight(right.size());
+    std::vector<double> loads;
+    for (int r = 0; r < repeat; ++r)
+    {
+        auto processor = make();
+        std::ranges::copy(left, ioLeft.begin());
+        std::ranges::copy(right, ioRight.begin());
+        const auto start = Clock::now();
+        for (int position = 0; position + block <= length; position += block)
+        {
+            float* io[] = {ioLeft.data() + position, ioRight.data() + position};
+            processor->process(io, 2, block);
+        }
+        const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
+        loads.push_back(100.0 * elapsed * rate / static_cast<double>(length - length % block));
+    }
+    std::ranges::sort(loads);
+    return loads;
+}
+
+void runSaturation(const Options& options)
+{
+    using esceq::dsp::OversamplingFilter;
+    struct Candidate
+    {
+        const char* name;
+        int stages;
+        OversamplingFilter filter;
+        bool adaa;
+    };
+    const Candidate candidates[] = {
+        {"sin sobremuestreo", 0, OversamplingFilter::Iir, false},
+        {"ADAA", 0, OversamplingFilter::Iir, true},
+        {"x2 IIR", 1, OversamplingFilter::Iir, false},
+        {"x2 IIR + ADAA", 1, OversamplingFilter::Iir, true},
+        {"x4 IIR", 2, OversamplingFilter::Iir, false},
+        {"x4 IIR + ADAA", 2, OversamplingFilter::Iir, true},
+        {"x8 IIR", 3, OversamplingFilter::Iir, false},
+        {"x4 fase lineal", 2, OversamplingFilter::LinearPhase, false},
+        {"x8 fase lineal", 3, OversamplingFilter::LinearPhase, false},
+    };
+    constexpr double kRate = 48000.0;
+    constexpr double kDriveDb = 12.0;
+    std::printf("Alternativas, 48 kHz, 12 dB de drive (Soft, sin compensar)\n");
+    std::printf("%-18s  aliasing (dB): -18    -6     0 dBFS   18 kHz: húmeda  mezcla 50 %%   %% de un núcleo\n",
+                "alternativa");
+    for (const Candidate& c : candidates)
+    {
+        double aliasing[3] = {};
+        const double levels[] = {-18.0, -6.0, 0.0};
+        for (int l = 0; l < 3; ++l)
+        {
+            Alternative alternative(c.stages, c.filter, c.adaa, kDriveDb, 1.0);
+            const std::vector<float> x = sine(28800, 10000.0, std::pow(10.0, levels[l] / 20.0), kRate);
+            aliasing[l] = aliasingDb(processMono(alternative, x));
+        }
+        // Respuesta con señal pequeña: frecuencias enteras, 1 s con un número entero de periodos.
+        const auto response = [&](double mix) {
+            const auto gain = [&](double hz) {
+                Alternative alternative(c.stages, c.filter, c.adaa, kDriveDb, mix);
+                const std::vector<float> y = processMono(alternative, sine(60000, hz, 1.0e-3, kRate));
+                return powerAt(y, 12000, 48000, hz, kRate);
+            };
+            return 10.0 * std::log10(gain(18000.0) / gain(1000.0));
+        };
+        const double wet = response(1.0);
+        const double half = response(0.5);
+        const std::vector<double> loads = stereoLoads(
+            [&] { return std::make_unique<Alternative>(c.stages, c.filter, c.adaa, kDriveDb, 1.0); }, kRate, 256,
+            options.seconds, options.repeat);
+        std::printf("%-18s  %20.1f %6.1f %6.1f   %14.2f %11.2f   %6.2f (%.2f–%.2f)\n", c.name, aliasing[0],
+                    aliasing[1], aliasing[2], wet, half, median(loads), loads.front(), loads.back());
+        std::fflush(stdout);
+    }
+
+    std::printf("\nMotor a 48 kHz (dsp::Saturation, x8), 12 dB de drive\n");
+    std::printf("%-6s %-14s  aliasing (dB): -18    -6     0 dBFS   -18 dBFS a 1 kHz (dB)   mezcla 0 %%, 18 kHz (dB)\n",
+                "curva", "filtros");
+    for (const auto mode : {esceq::dsp::SaturationMode::Soft, esceq::dsp::SaturationMode::Warm})
+        for (const auto filter : {OversamplingFilter::Iir, OversamplingFilter::LinearPhase})
+        {
+            const auto make = [&](double mix) {
+                esceq::dsp::Saturation engine;
+                engine.setFilter(filter);
+                engine.setMode(mode);
+                engine.setDriveDb(kDriveDb);
+                engine.setMix(mix);
+                engine.prepare(kRate);
+                return engine;
+            };
+            double aliasing[3] = {};
+            const double levels[] = {-18.0, -6.0, 0.0};
+            for (int l = 0; l < 3; ++l)
+            {
+                esceq::dsp::Saturation engine = make(1.0);
+                const std::vector<float> tone = sine(28800, 10000.0, std::pow(10.0, levels[l] / 20.0), kRate);
+                aliasing[l] = aliasingDb(processMono(engine, tone));
+            }
+            const auto gainDb = [&](double mix, double hz, double amplitude) {
+                esceq::dsp::Saturation engine = make(mix);
+                const std::vector<float> x = sine(60000, hz, amplitude, kRate);
+                const std::vector<float> y = processMono(engine, x);
+                return 10.0 * std::log10(powerAt(y, 12000, 48000, hz, kRate) / powerAt(x, 12000, 48000, hz, kRate));
+            };
+            // El nivel del seno de calibración: su valor eficaz (con los armónicos).
+            esceq::dsp::Saturation engine = make(1.0);
+            const std::vector<float> x = sine(60000, 1000.0, std::pow(10.0, -18.0 / 20.0), kRate);
+            const std::vector<float> y = processMono(engine, x);
+            double in = 0.0;
+            double out = 0.0;
+            for (std::size_t i = 12000; i < 60000; ++i)
+            {
+                in += static_cast<double>(x[i]) * x[i];
+                out += static_cast<double>(y[i]) * y[i];
+            }
+            std::printf("%-6s %-14s  %20.1f %6.1f %6.1f   %21.4f   %24.4f\n",
+                        mode == esceq::dsp::SaturationMode::Soft ? "Soft" : "Warm",
+                        filter == OversamplingFilter::Iir ? "IIR" : "fase lineal", aliasing[0], aliasing[1],
+                        aliasing[2], 10.0 * std::log10(out / in), gainDb(0.0, 18000.0, 0.5));
+            std::fflush(stdout);
+        }
+
+    std::printf("\nMotor (dsp::Saturation, 12 dB de drive, mezcla al 50 %%)\n");
+    std::printf("%-6s %-14s %7s %6s  %% de un núcleo: mediana (mín.–máx.)\n", "curva", "filtros", "Hz", "bloque");
+    for (const auto mode : {esceq::dsp::SaturationMode::Soft, esceq::dsp::SaturationMode::Warm})
+        for (const auto filter : {OversamplingFilter::Iir, OversamplingFilter::LinearPhase})
+            for (const double rate : options.rates)
+                for (const int block : options.blocks)
+                {
+                    const auto make = [&] {
+                        auto engine = std::make_unique<esceq::dsp::Saturation>();
+                        engine->setFilter(filter);
+                        engine->setMode(mode);
+                        engine->setDriveDb(kDriveDb);
+                        engine->setMix(0.5);
+                        engine->prepare(rate);
+                        return engine;
+                    };
+                    const std::vector<double> loads = stereoLoads(make, rate, block, options.seconds, options.repeat);
+                    std::printf("%-6s %-14s %7.0f %6d  %6.2f (%.2f–%.2f)\n",
+                                mode == esceq::dsp::SaturationMode::Soft ? "Soft" : "Warm",
+                                filter == OversamplingFilter::Iir ? "IIR" : "fase lineal", rate, block,
+                                median(loads), loads.front(), loads.back());
+                    std::fflush(stdout);
+                }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -622,6 +932,8 @@ int main(int argc, char** argv)
         runMatch(options);
     else if (options.spectral)
         runSpectral(options);
+    else if (options.saturation)
+        runSaturation(options);
     else if (options.convolution)
         runConvolution(options);
     else
