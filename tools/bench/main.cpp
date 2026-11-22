@@ -5,8 +5,8 @@
 // (ADR 0020). Solo depende de dsp/.
 //
 // Uso: esceq_bench [opciones]
-//   --scenario A,B   campanas, cortes, dinamicas, mezcla, espectral, mezcla-esp
-//                    (por defecto, todos)
+//   --scenario A,B   campanas, cortes, dinamicas, mezcla, espectral, mezcla-esp,
+//                    saturacion, mezcla-sat (por defecto, todos)
 //   --mode A,B       iir, low, medium, high (por defecto, todos)
 //   --rate A,B       frecuencias de muestreo en Hz (por defecto, 48000,192000)
 //   --block A,B      tamaños de bloque del host (por defecto, 256)
@@ -42,6 +42,9 @@
 //   espectral  24 campanas espectrales (las de "24 bandas" de --spectral, con
 //              `dynamics.spectral`): L/R y M/S, 4 escuchando el sidechain.
 //   mezcla-esp la mezcla, con sus 2 campanas dinámicas espectrales.
+//   saturacion sin bandas, solo la saturación: Warm, 12 dB de drive, mezcla al
+//              50 % (lo más caro: la seca y la húmeda), con los filtros del modo.
+//   mezcla-sat la mezcla, con la saturación Soft a 6 dB (por defecto) y al 100 %.
 //
 // Con --match, dos objetivos en la rejilla de la sesión (192 puntos), con la
 // referencia igual a la pista por unas bandas conocidas, al 100 %:
@@ -97,11 +100,14 @@ using esceq::dsp::BandSettings;
 using esceq::dsp::FilterAlgorithm;
 using esceq::dsp::FilterType;
 using esceq::dsp::PhaseMode;
+using esceq::dsp::SaturationMode;
+using esceq::dsp::SaturationSettings;
 using Clock = std::chrono::steady_clock;
 
 struct Options
 {
-    std::vector<std::string> scenarios{"campanas", "cortes", "dinamicas", "mezcla", "espectral", "mezcla-esp"};
+    std::vector<std::string> scenarios{"campanas",  "cortes",     "dinamicas",  "mezcla",
+                                       "espectral", "mezcla-esp", "saturacion", "mezcla-sat"};
     std::vector<std::string> modes{"iir", "low", "medium", "high"};
     std::vector<double> rates{48000.0, 192000.0};
     std::vector<int> blocks{256};
@@ -239,9 +245,11 @@ BandSettings cut(FilterType type, double frequencyHz, int slope, FilterAlgorithm
 
 std::vector<BandSettings> spectralBands(int count, bool resting);
 
-/// Las bandas del escenario (vacío si no existe).
+/// Las bandas del escenario (vacío si no existe o si no tiene bandas).
 std::vector<BandSettings> scenarioBands(std::string_view name, FilterAlgorithm algorithm)
 {
+    if (name == "mezcla-sat")
+        return scenarioBands("mezcla", algorithm);
     if (name == "espectral")
     {
         auto bands = spectralBands(esceq::dsp::kMaxBands, false);
@@ -323,8 +331,18 @@ struct EqualizerMeasure
     double slowestCallMs = 0.0; ///< Mediana entre repeticiones de la llamada más lenta de cada una.
 };
 
-EqualizerMeasure measureEqualizer(const std::vector<BandSettings>& bands, PhaseMode mode, double sampleRate,
-                                  int block, const Options& options)
+/// La saturación del escenario: Off salvo en los de saturación.
+SaturationSettings scenarioSaturation(std::string_view name)
+{
+    if (name == "saturacion")
+        return {SaturationMode::Warm, 12.0, 0.5};
+    if (name == "mezcla-sat")
+        return {SaturationMode::Soft, 6.0, 1.0};
+    return {};
+}
+
+EqualizerMeasure measureEqualizer(const std::vector<BandSettings>& bands, const SaturationSettings& saturation,
+                                  PhaseMode mode, double sampleRate, int block, const Options& options)
 {
     const int length = static_cast<int>(options.seconds * sampleRate);
     const std::vector<float> left = noise(length, 0x9E3779B97F4A7C15ull);
@@ -343,6 +361,7 @@ EqualizerMeasure measureEqualizer(const std::vector<BandSettings>& bands, PhaseM
         equalizer.setPhaseMode(mode);
         for (std::size_t b = 0; b < bands.size(); ++b)
             equalizer.setBand(static_cast<int>(b), bands[b]);
+        equalizer.setSaturation(saturation);
 
         // Calentamiento, hasta que el modo está activo y los fundidos han
         // acabado. El diseño (el hilo de control en el plugin) se hace aquí y
@@ -396,7 +415,8 @@ void runEqualizer(const Options& options)
     for (const std::string& scenario : options.scenarios)
     {
         const std::vector<BandSettings> bands = scenarioBands(scenario, options.algorithm);
-        if (bands.empty())
+        const SaturationSettings saturation = scenarioSaturation(scenario);
+        if (bands.empty() && saturation.mode == SaturationMode::Off)
         {
             std::fprintf(stderr, "escenario desconocido: %s\n", scenario.c_str());
             continue;
@@ -418,7 +438,7 @@ void runEqualizer(const Options& options)
                                      rate);
                         continue;
                     }
-                    const EqualizerMeasure measure = measureEqualizer(bands, mode, rate, block, options);
+                    const EqualizerMeasure measure = measureEqualizer(bands, saturation, mode, rate, block, options);
                     const std::vector<double>& loads = measure.loads;
                     std::printf("%-10s %-7s %7.0f %6d  %6.2f (%.2f–%.2f)   %.3f (%.3f)\n", scenario.c_str(),
                                 modeName.c_str(), rate, block, median(loads), loads.front(), loads.back(),
