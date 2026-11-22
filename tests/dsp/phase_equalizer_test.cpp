@@ -912,3 +912,322 @@ TEST_CASE("PhaseEqualizer: en fase lineal el detector espectral escucha la entra
     const auto latency = static_cast<std::size_t>(eq.latencySamples());
     CHECK_THAT(toneChangeDb(burst, out[0], 3000.0, static_cast<int>(latency), 13000, 17000), WithinAbs(-9.0, 1.0));
 }
+
+// ---------------------------------------------------------------------------
+// Saturación (PLAN.md 5.8, ADR 0026)
+
+namespace
+{
+
+SaturationSettings saturation(SaturationMode mode, double driveDb = 12.0, double mix = 1.0)
+{
+    return {mode, driveDb, mix};
+}
+
+/// Prepara en un modo con la saturación, como hace el plugin al arrancar.
+void prepareSaturated(PhaseEqualizer& eq, PhaseMode mode, const SaturationSettings& settings,
+                      std::initializer_list<BandSettings> bands, int numChannels = 2)
+{
+    eq.setSaturation(settings);
+    prepareIn(eq, mode, bands, numChannels);
+}
+
+/// La Saturation sola, como la usa PhaseEqualizer en ese modo, sobre `signal`.
+void saturateAlone(Stereo& signal, PhaseMode mode, const SaturationSettings& settings)
+{
+    Saturation engine;
+    engine.setFilter(isLinearPhase(mode) ? OversamplingFilter::LinearPhase : OversamplingFilter::Iir);
+    engine.prepare(kFs);
+    engine.setDriveDb(settings.driveDb);
+    engine.setMix(settings.mix);
+    engine.setMode(settings.mode);
+    engine.reset(); // sin el fundido de entrada, como al preparar
+    float* channels[2] = {signal[0].data(), signal[1].data()};
+    engine.process(channels, 2, static_cast<int>(signal[0].size()));
+}
+
+/// El valor eficaz más bajo, en ventanas de 5 ms, entre `from` y `to`.
+double lowestRms(const std::vector<float>& signal, std::size_t from, std::size_t to)
+{
+    double lowest = 1.0e9;
+    for (std::size_t at = from; at + 240 < to; at += 240)
+    {
+        double energy = 0.0;
+        for (std::size_t i = at; i < at + 240; ++i)
+            energy += static_cast<double>(signal[i]) * signal[i];
+        lowest = std::min(lowest, std::sqrt(energy / 240.0));
+    }
+    return lowest;
+}
+
+} // namespace
+
+TEST_CASE("PhaseEqualizer: con la saturacion en Off, la latencia y el sonido de siempre")
+{
+    // Criterio de PLAN.md 5.8: con Off, bit a bit lo de antes y la latencia de
+    // antes, en los cuatro modos. Aquí: el drive y la mezcla no cambian nada
+    // con Off, y apagarla deja el ecualizador como si nunca se hubiera
+    // encendido. La comparación con el código anterior está en
+    // docs/dsp/saturacion.md.
+    const BandSettings dynamicBell{true, {FilterType::Bell, 3000.0, 2.0, 1.5}, {true, -30.0, -8.0, 6.0, 2.0, 80.0}};
+    const Stereo input{noise(30000, 51u), noise(30000, 52u)};
+    for (const auto mode : kAllModes)
+    {
+        INFO("modo " << static_cast<int>(mode));
+        PhaseEqualizer plain, toggled;
+        prepareIn(plain, mode, {bell(300.0, 4.0), dynamicBell});
+        prepareSaturated(toggled, mode, saturation(SaturationMode::Off, 20.0, 0.3), {bell(300.0, 4.0), dynamicBell});
+        CHECK(plain.latencySamples() == linearPhaseSize(mode, kFs).latency());
+        CHECK(toggled.latencySamples() == plain.latencySamples());
+        CHECK_FALSE(toggled.saturationActive());
+
+        toggled.setSaturation(saturation(SaturationMode::Warm));
+        settle(toggled);
+        CHECK(toggled.saturationActive());
+        CHECK(toggled.latencySamples() == plain.latencySamples() + PhaseEqualizer::saturationLatency(mode, kFs));
+        Stereo warm = input;
+        run(toggled, warm, 256);
+        toggled.setSaturation(saturation(SaturationMode::Off, 3.0, 0.0));
+        settle(toggled);
+        CHECK_FALSE(toggled.saturationActive());
+        CHECK(toggled.latencySamples() == plain.latencySamples());
+
+        settle(plain);
+        Stereo a = input, b = input;
+        run(plain, a, 0);
+        run(toggled, b, 0);
+        CHECK(a == b);
+    }
+}
+
+TEST_CASE("PhaseEqualizer: la saturacion suma su latencia en fase lineal")
+{
+    // Criterio de PLAN.md 5.8: la latencia comunicada es la medida, en los
+    // cuatro modos y a 44,1, 48, 96 y 192 kHz, sola y con la dinámica
+    // espectral. Un impulso pequeño (la curva, casi lineal) sale entero en la
+    // latencia. En IIR no hay latencia: el pico sale en las primeras muestras,
+    // por el retardo de grupo de los filtros IIR (unas 6 muestras en graves).
+    for (const double rate : {44100.0, 48000.0, 96000.0, 192000.0})
+        for (const auto mode : kAllModes)
+            for (const bool spectral : {false, true})
+            {
+                INFO("fs " << rate << ", modo " << static_cast<int>(mode) << (spectral ? ", espectral" : ""));
+                PhaseEqualizer eq;
+                eq.setSaturation(saturation(SaturationMode::Soft, 6.0));
+                eq.setPhaseMode(mode);
+                if (spectral)
+                    eq.setBand(0, spectralBell(2000.0, 0.0, -12.0));
+                eq.prepare(rate, 2);
+                eq.serviceDesigns();
+                eq.update();
+                const int saturating = PhaseEqualizer::saturationLatency(mode, rate);
+                CHECK(saturating == (isLinearPhase(mode) ? Saturation::latencySamples(OversamplingFilter::LinearPhase,
+                                                                                      rate)
+                                                         : 0));
+                const int expected = linearPhaseSize(mode, rate).latency() +
+                                     (spectral ? SpectralDynamics::latencySamples(rate) : 0) + saturating;
+                CHECK(eq.latencySamples() == expected);
+                CHECK(eq.saturationActive());
+
+                const int length = expected + 4096;
+                Stereo signal{std::vector<float>(static_cast<std::size_t>(length)),
+                              std::vector<float>(static_cast<std::size_t>(length))};
+                signal[0][0] = 0.01f;
+                signal[1][0] = 0.01f;
+                run(eq, signal, 512);
+                const auto peak = std::max_element(signal[0].begin(), signal[0].end(),
+                                                   [](float a, float b) { return std::abs(a) < std::abs(b); });
+                if (isLinearPhase(mode))
+                {
+                    CHECK(peak - signal[0].begin() == expected);
+                    CHECK_THAT(*peak, WithinAbs(0.01, 0.002));
+                }
+                else
+                {
+                    CHECK(peak - signal[0].begin() >= expected);
+                    CHECK(peak - signal[0].begin() < expected + 8);
+                }
+            }
+}
+
+TEST_CASE("PhaseEqualizer: la saturacion va tras la dinamica espectral y con los filtros del modo")
+{
+    // PLAN.md 5.8: tras el ecualizador y la dinámica espectral. La salida es,
+    // bit a bit, la de una Saturation (con filtros IIR en IIR y de fase lineal
+    // en los lineales) sobre la salida del ecualizador sin ella.
+    const BandSettings bands[] = {bell(300.0, 6.0), spectralBell(3000.0, -30.0, -6.0),
+                                  {true, {FilterType::Bell, 800.0, 0.0, 1.0}, {true, -30.0, -6.0, 6.0, 5.0, 80.0}}};
+    const Stereo input{noise(20000, 61u), noise(20000, 62u)};
+    for (const auto mode : {PhaseMode::Iir, PhaseMode::LinearLow})
+        for (const auto settings :
+             {saturation(SaturationMode::Soft, 12.0, 1.0), saturation(SaturationMode::Warm, 18.0, 0.4)})
+        {
+            INFO("modo " << static_cast<int>(mode) << ", curva " << static_cast<int>(settings.mode));
+            PhaseEqualizer plain, saturated;
+            prepareIn(plain, mode, {bands[0], bands[1], bands[2]});
+            prepareSaturated(saturated, mode, settings, {bands[0], bands[1], bands[2]});
+            Stereo expected = input, signal = input;
+            run(plain, expected, 256);
+            saturateAlone(expected, mode, settings);
+            run(saturated, signal, 256);
+            CHECK(signal == expected);
+            CHECK(signal != input);
+        }
+}
+
+TEST_CASE("PhaseEqualizer: encender la saturacion en IIR no deja hueco; en fase lineal, como el cambio de modo")
+{
+    // En IIR no cambia la latencia: encender y apagar es el fundido de 20 ms
+    // de Saturation, sin silencio. En fase lineal, la latencia cambia en
+    // Saturation::latencySamples() con el fundido del cambio de modo. Entre
+    // Soft y Warm, ni silencio ni cambio de latencia. Sin chasquidos.
+    for (const auto mode : {PhaseMode::Iir, PhaseMode::LinearLow})
+    {
+        INFO("modo " << static_cast<int>(mode));
+        PhaseEqualizer eq;
+        prepareIn(eq, mode, {bell(500.0, 6.0)});
+        settle(eq);
+        const int base = eq.latencySamples();
+
+        Stereo signal{sine(48000 * 4, 440.0, 0.4), sine(48000 * 4, 440.0, 0.4)};
+        const int total = static_cast<int>(signal[0].size());
+        std::vector<int> latencies{base};
+        std::vector<int> changes;
+        const SaturationSettings steps[] = {saturation(SaturationMode::Soft, 6.0),
+                                            saturation(SaturationMode::Warm, 6.0),
+                                            saturation(SaturationMode::Off, 6.0)};
+        for (int pos = 0, block = 0; pos < total; pos += 256, ++block)
+        {
+            const int toggles[] = {40, 200, 360};
+            for (int t = 0; t < 3; ++t)
+                if (block == toggles[t])
+                {
+                    eq.setSaturation(steps[t]);
+                    changes.push_back(pos);
+                }
+            eq.serviceDesigns();
+            float* channels[2] = {signal[0].data() + pos, signal[1].data() + pos};
+            eq.process(channels, 2, std::min(256, total - pos));
+            if (latencies.back() != eq.latencySamples())
+                latencies.push_back(eq.latencySamples());
+        }
+        CHECK_FALSE(eq.saturationActive());
+        // Un seno de 440 Hz a 0,4 (con +6 dB a 500 Hz, ~0,75) cambia ~0,04 por
+        // muestra; un corte sin fundido saltaría hasta 0,75.
+        CHECK(maxStep(signal[0]) < 0.06f);
+        const int saturating = PhaseEqualizer::saturationLatency(mode, kFs);
+        if (mode == PhaseMode::Iir)
+        {
+            CHECK(latencies == std::vector<int>{base});
+            // Ningún hueco, ni al encender ni al apagar.
+            CHECK(lowestRms(signal[0], 4800, signal[0].size()) > 0.3);
+        }
+        else
+        {
+            CHECK(latencies == std::vector<int>{base, base + saturating, base});
+            // Pasar de Soft a Warm no deja hueco.
+            const auto from = static_cast<std::size_t>(changes[0] + base + saturating + 4800);
+            CHECK(lowestRms(signal[0], from, static_cast<std::size_t>(changes[2])) > 0.3);
+            // Encender sí: silencio mientras se llena la latencia nueva.
+            const auto on = static_cast<std::size_t>(changes[0]);
+            CHECK(lowestRms(signal[0], on, on + 9600) < 1.0e-6);
+        }
+    }
+}
+
+TEST_CASE("PhaseEqualizer: cambiar de modo con la saturacion cambia sus filtros y su latencia")
+{
+    // Los filtros del sobremuestreo son los del modo que suena: cambian en el
+    // silencio del cambio de modo, con la latencia.
+    PhaseEqualizer eq;
+    prepareSaturated(eq, PhaseMode::Iir, saturation(SaturationMode::Soft), {bell(1000.0, 3.0)});
+    CHECK(eq.latencySamples() == 0);
+    for (const auto mode : {PhaseMode::LinearLow, PhaseMode::LinearHigh, PhaseMode::Iir})
+    {
+        INFO("modo " << static_cast<int>(mode));
+        eq.setPhaseMode(mode);
+        settle(eq);
+        CHECK(eq.activePhaseMode() == mode);
+        CHECK(eq.latencySamples() ==
+              linearPhaseSize(mode, kFs).latency() + PhaseEqualizer::saturationLatency(mode, kFs));
+        // Lo mismo que preparar ya en ese modo.
+        PhaseEqualizer fresh;
+        prepareSaturated(fresh, mode, saturation(SaturationMode::Soft), {bell(1000.0, 3.0)});
+        const Stereo input{noise(8000, 71u), noise(8000, 72u)};
+        Stereo a = input, b = input;
+        run(eq, a, 256);
+        run(fresh, b, 256);
+        CHECK(a == b);
+    }
+}
+
+TEST_CASE("PhaseEqualizer: con saturacion el resultado no depende del tamano de bloque")
+{
+    // Criterio de PLAN.md 5.8: bloques de 1 a 4096 muestras, bit a bit, con
+    // la dinámica espectral y una banda dinámica normal delante.
+    const BandSettings bands[] = {spectralBell(1500.0, -30.0, -8.0), bell(300.0, 4.0),
+                                  {true, {FilterType::Bell, 5000.0, 3.0, 1.0}, {true, -30.0, 4.0, 6.0, 5.0, 80.0}}};
+    const Stereo input{noise(20000, 81u), noise(20000, 82u)};
+    for (const auto mode : {PhaseMode::Iir, PhaseMode::LinearMedium})
+    {
+        INFO("modo " << static_cast<int>(mode));
+        PhaseEqualizer reference;
+        prepareSaturated(reference, mode, saturation(SaturationMode::Warm, 15.0, 0.7), {bands[0], bands[1], bands[2]});
+        Stereo expected = input;
+        run(reference, expected, 4096);
+        for (const int block : {1, 0, 64, 1000})
+        {
+            INFO("bloque " << block);
+            PhaseEqualizer eq;
+            prepareSaturated(eq, mode, saturation(SaturationMode::Warm, 15.0, 0.7), {bands[0], bands[1], bands[2]});
+            Stereo signal = input;
+            run(eq, signal, block);
+            CHECK(signal == expected);
+        }
+    }
+}
+
+TEST_CASE("PhaseEqualizer: el bypass con saturacion mantiene la latencia")
+{
+    for (const auto mode : {PhaseMode::Iir, PhaseMode::LinearLow})
+    {
+        INFO("modo " << static_cast<int>(mode));
+        PhaseEqualizer eq;
+        prepareSaturated(eq, mode, saturation(SaturationMode::Warm, 18.0), {bell(3000.0, 6.0)});
+        settle(eq);
+        const int latency = eq.latencySamples();
+        CHECK(latency == linearPhaseSize(mode, kFs).latency() + PhaseEqualizer::saturationLatency(mode, kFs));
+
+        SECTION("bypass completo: la entrada retrasada, bit a bit")
+        {
+            eq.setBypassed(true);
+            settle(eq);
+            const auto input = noise(latency + 4000, 5u);
+            Stereo signal{input, input};
+            run(eq, signal, 100);
+            bool exact = true;
+            for (std::size_t i = static_cast<std::size_t>(latency); i < input.size(); ++i)
+                exact = exact && signal[0][i] == input[i - static_cast<std::size_t>(latency)];
+            CHECK(exact);
+            CHECK(eq.latencySamples() == latency);
+        }
+        SECTION("activar y quitar el bypass con un seno no produce saltos")
+        {
+            Stereo signal{sine(latency + 30000, 1000.0, 0.3), sine(latency + 30000, 1000.0, 0.3)};
+            const int total = static_cast<int>(signal[0].size());
+            for (int pos = 0; pos < total; pos += 64)
+            {
+                if (pos == latency + 6400)
+                    eq.setBypassed(true);
+                if (pos == latency + 19200)
+                    eq.setBypassed(false);
+                float* channels[2] = {signal[0].data() + pos, signal[1].data() + pos};
+                eq.process(channels, 2, std::min(64, total - pos));
+            }
+            // Un seno de 1 kHz a 0,3 cambia como mucho 0,04 por muestra (la
+            // saturación lo deja por debajo: sale a un nivel parecido).
+            CHECK(maxStep(signal[0], static_cast<std::size_t>(latency) + 10) < 0.06f);
+            CHECK(eq.latencySamples() == latency);
+        }
+    }
+}

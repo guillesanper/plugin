@@ -5,6 +5,7 @@
 #include "esceq/dsp/handoff.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/realtime.h"
+#include "esceq/dsp/saturation.h"
 #include "esceq/dsp/spectral_dynamics.h"
 
 #include <array>
@@ -32,6 +33,13 @@ namespace esceq::dsp
 /// SpectralDynamics::latencySamples(). Sin ninguna banda espectral, todo es
 /// bit a bit como si no existiera.
 ///
+/// Saturación (PLAN.md 5.8, ADR 0026): una Saturation tras la dinámica
+/// espectral (o tras el IIR o el FIR, si no la hay), con los filtros del
+/// sobremuestreo del modo que suena: IIR en IIR y de fase lineal en los
+/// lineales. Fuera de Off, la latencia crece en Saturation::latencySamples()
+/// (0 en IIR). Con Off, la etapa no se ejecuta: todo es bit a bit como si no
+/// existiera, con la misma latencia.
+///
 /// Dos hilos:
 ///  - El hilo de audio llama a todo lo que está marcado como seguro en tiempo
 ///    real (setBand, process...). No asigna memoria ni bloquea.
@@ -55,15 +63,22 @@ namespace esceq::dsp
 ///    demás bandas espectrales se encienden y se apagan sin cambiar la
 ///    latencia: la dinámica normal de la banda se funde (Equalizer) y la
 ///    máscara entra en la trama siguiente.
-///  - Bypass en fase lineal o con dinámica espectral: fundido con la señal
-///    seca retrasada, para que la latencia no cambie.
+///  - Saturación en IIR: encender y apagar (desde Off o hacia Off) es el
+///    fundido de 20 ms de Saturation, sin silencio: no cambia la latencia.
+///  - Saturación en fase lineal: encender y apagar cambian la latencia, y se
+///    hacen como el cambio de modo (silencio, cambio, la latencia nueva en
+///    silencio y subida). Lo mismo al cambiar de modo de fase con la
+///    saturación encendida: sus filtros cambian en el silencio del cambio.
+///    Entre Soft y Warm, el drive y la mezcla van con las rampas de Saturation.
+///  - Bypass en fase lineal, con dinámica espectral o con saturación: fundido
+///    con la señal seca retrasada, para que la latencia no cambie.
 ///
 /// Garantías (además de las de Equalizer en IIR):
 ///  - Con parámetros constantes, el resultado no depende de cómo se trocee el
 ///    audio en bloques.
-///  - En fase lineal, con todas las bandas desactivadas (o sin efecto) y sin
-///    dinámica espectral, y con el bypass completo en cualquier modo, la
-///    salida es la entrada retrasada, bit a bit.
+///  - En fase lineal, con todas las bandas desactivadas (o sin efecto), sin
+///    dinámica espectral y con la saturación en Off, y con el bypass completo
+///    en cualquier modo, la salida es la entrada retrasada, bit a bit.
 ///  - Las muestras no finitas de la entrada y del sidechain cuentan como
 ///    silencio en fase lineal (no se quedan en la memoria del FIR).
 ///  - No es segura entre hilos salvo lo dicho: un hilo de audio y un hilo de diseño.
@@ -90,6 +105,9 @@ public:
     void setBand(int index, const BandSettings& settings) noexcept ESCEQ_NONBLOCKING;
     void setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING;
     void setPhaseMode(PhaseMode mode) noexcept ESCEQ_NONBLOCKING;
+    /// Ajustes de la saturación (un modo fuera de rango cuenta como Off; el
+    /// drive y la mezcla se limitan como en Saturation).
+    void setSaturation(const SaturationSettings& settings) noexcept ESCEQ_NONBLOCKING;
 
     /// Borra la memoria de los filtros, termina cualquier transición y salta
     /// sin transición a los ajustes objetivo.
@@ -110,8 +128,8 @@ public:
     /// Modo que suena ahora mismo (puede ir por detrás del pedido).
     PhaseMode activePhaseMode() const noexcept { return activeMode_; }
 
-    /// Latencia en muestras de lo que suena (el modo y, si la hay, la dinámica
-    /// espectral). Se puede leer desde cualquier hilo.
+    /// Latencia en muestras de lo que suena (el modo y, si las hay, la
+    /// dinámica espectral y la saturación). Se puede leer desde cualquier hilo.
     int latencySamples() const noexcept { return latency_.load(std::memory_order_relaxed); }
 
     /// true si alguna banda pide la dinámica espectral (`dynamics.spectral`).
@@ -120,6 +138,15 @@ public:
     bool spectralActive() const noexcept { return activeSpectral_; }
     /// El motor de la dinámica espectral, para leer sus máscaras (en el hilo de audio).
     const SpectralDynamics& spectralDynamics() const noexcept;
+
+    /// Ajustes de la saturación pedidos con setSaturation().
+    const SaturationSettings& saturation() const noexcept { return saturationSettings_; }
+    /// true si suena la saturación (fuera de Off; puede ir por detrás de lo
+    /// pedido en fase lineal, hasta el silencio del cambio).
+    bool saturationActive() const noexcept { return activeSaturation_; }
+    /// La latencia de la saturación con ese modo, a esa frecuencia de
+    /// muestreo, si está fuera de Off: la que suma a la del modo.
+    static int saturationLatency(PhaseMode mode, double sampleRate) noexcept;
 
     /// Ajustes objetivo de la banda (los últimos recibidos, saneados).
     const BandSettings& target(int index) const noexcept;
@@ -144,6 +171,7 @@ private:
     struct Kernel;
     struct LinearPath;
     struct SpectralPath;
+    struct SaturationPath;
 
     /// Lo que el hilo de audio pide diseñar.
     struct DesignRequest
@@ -168,14 +196,20 @@ private:
     /// Pasa los ajustes de la banda al Equalizer y a la dinámica espectral,
     /// según suene o no la dinámica espectral.
     void routeBand(int index) noexcept;
-    /// Lo que suena no es lo pedido (el modo o la dinámica espectral).
+    /// Lo que suena no es lo pedido (el modo, la dinámica espectral o, en fase
+    /// lineal, si la saturación está fuera de Off).
     bool switchPending() const noexcept;
     bool targetReady() const noexcept;
     void beginTransitionIfNeeded() noexcept;
-    /// Pasa al modo pedido y a la dinámica espectral pedida: retira lo
-    /// anterior e instala lo nuevo.
+    /// Pasa al modo pedido, a la dinámica espectral pedida y a la saturación
+    /// pedida: retira lo anterior e instala lo nuevo.
     void switchMode() noexcept;
     void resetSpectral() noexcept;
+    /// Pasa el modo de la saturación al motor si no cambia la latencia (en
+    /// IIR, o entre Soft y Warm); si la cambia, espera al cambio con silencio.
+    void applySaturationMode() noexcept;
+    /// Borra la memoria de la saturación y deja su bypass donde toca.
+    void resetSaturation() noexcept;
     void configureIir() noexcept;
     void takeKernels() noexcept;
     void takePaths() noexcept;
@@ -186,6 +220,9 @@ private:
     /// La dinámica espectral sobre la salida del ecualizador, con su bypass.
     void renderSpectral(float* const* io, int numChannels, int length, const float* const* sidechain,
                         int numSidechainChannels, const float* const* detectorInput) noexcept;
+    /// La saturación sobre lo anterior, con su bypass. Con Off (y su fundido
+    /// terminado), no toca nada.
+    void renderSaturation(float* const* io, int numChannels, int length) noexcept;
     /// Muestras que se pueden procesar seguidas sin cambiar de etapa ni de bloque.
     int segmentLength(int available) const noexcept;
     void applyTransition(float* const* io, int numChannels, int length) noexcept;
@@ -198,6 +235,10 @@ private:
     bool requestedSpectral_ = false;
     bool activeSpectral_ = false;
     std::unique_ptr<SpectralPath> spectral_; ///< Siempre existe; su memoria se reserva en prepare().
+    SaturationSettings saturationSettings_{};
+    bool requestedSaturation_ = false; ///< Fuera de Off.
+    bool activeSaturation_ = false;    ///< Fuera de Off en el motor: la que cuenta en la latencia.
+    std::unique_ptr<SaturationPath> saturation_; ///< Siempre existe; su memoria se reserva en prepare().
     double sampleRate_ = 48000.0;
     int numChannels_ = 2;
     bool bypassed_ = false;

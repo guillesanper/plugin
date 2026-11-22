@@ -150,9 +150,44 @@ struct PhaseEqualizer::SpectralPath
     float wet = 1.0f; ///< Mezcla del bypass.
 };
 
-PhaseEqualizer::PhaseEqualizer() : spectral_(std::make_unique<SpectralPath>())
+/// La saturación, al final: el motor y la señal seca retrasada como él en
+/// fase lineal (para el bypass; en IIR no tiene latencia).
+struct PhaseEqualizer::SaturationPath
+{
+    SaturationPath() : dry{DelayLine(0), DelayLine(0)} {}
+
+    void prepare(double sampleRate, OversamplingFilter filter)
+    {
+        engine.setFilter(filter);
+        engine.prepare(sampleRate);
+        for (auto& line : dry)
+            line = DelayLine(Saturation::latencySamples(OversamplingFilter::LinearPhase, sampleRate));
+        for (auto& buffer : delayed)
+            buffer.assign(static_cast<std::size_t>(kSaturationChunk), 0.0f);
+    }
+
+    void reset(bool bypassed) noexcept
+    {
+        engine.reset();
+        for (auto& line : dry)
+            line.reset();
+        wet = bypassed ? 0.0f : 1.0f;
+    }
+
+    /// Tramo más largo de la señal seca retrasada.
+    static constexpr int kSaturationChunk = 512;
+
+    Saturation engine;
+    std::array<DelayLine, kMaxChannels> dry;
+    std::array<std::vector<float>, kMaxChannels> delayed;
+    float wet = 1.0f; ///< Mezcla del bypass.
+};
+
+PhaseEqualizer::PhaseEqualizer()
+    : spectral_(std::make_unique<SpectralPath>()), saturation_(std::make_unique<SaturationPath>())
 {
     spectral_->prepare(sampleRate_);
+    saturation_->prepare(sampleRate_, OversamplingFilter::Iir);
     publishRequest();
 }
 
@@ -165,6 +200,7 @@ void PhaseEqualizer::prepare(double sampleRate, int numChannels)
     fadeLength_ = std::max(1, static_cast<int>(std::lround(kTransitionSeconds * sampleRate_)));
     iir_.prepare(sampleRate_);
     spectral_->prepare(sampleRate_);
+    saturation_->prepare(sampleRate_, OversamplingFilter::Iir);
 
     // Lo de antes era para otra frecuencia de muestreo. No es tiempo real:
     // se puede destruir aquí.
@@ -174,6 +210,10 @@ void PhaseEqualizer::prepare(double sampleRate, int numChannels)
     activeSpectral_ = false;
     for (int index = 0; index < kMaxBands; ++index)
         routeBand(index);
+    // En IIR, la saturación no cambia la latencia: suena ya, sin fundido.
+    activeSaturation_ = requestedSaturation_;
+    saturation_->engine.setMode(saturationSettings_.mode);
+    resetSaturation();
     latency_.store(0, std::memory_order_relaxed);
     configureIir();
     stage_ = Stage::Steady;
@@ -262,6 +302,58 @@ void PhaseEqualizer::setPhaseMode(PhaseMode mode) noexcept ESCEQ_NONBLOCKING
     publishRequest();
 }
 
+void PhaseEqualizer::setSaturation(const SaturationSettings& settings) noexcept ESCEQ_NONBLOCKING
+{
+    SaturationSettings next = settings;
+    if (next.mode > SaturationMode::Warm)
+        next.mode = SaturationMode::Off;
+    Saturation& engine = saturation_->engine;
+    // El drive y la mezcla, siempre: con Off no suenan y saltan sin rampa.
+    engine.setDriveDb(next.driveDb);
+    engine.setMix(next.mix);
+    if (std::isfinite(next.driveDb))
+        next.driveDb = std::clamp(next.driveDb, 0.0, Saturation::kMaxDriveDb);
+    else
+        next.driveDb = saturationSettings_.driveDb;
+    if (std::isfinite(next.mix))
+        next.mix = std::clamp(next.mix, 0.0, 1.0);
+    else
+        next.mix = saturationSettings_.mix;
+    saturationSettings_ = next;
+    requestedSaturation_ = next.mode != SaturationMode::Off;
+    applySaturationMode();
+}
+
+void PhaseEqualizer::applySaturationMode() noexcept
+{
+    // En fase lineal, encender o apagar cambia la latencia: se hace en el
+    // silencio del cambio (switchMode()). Mientras, el motor sigue como estaba.
+    if (requestedSaturation_ != activeSaturation_ && isLinearPhase(activeMode_))
+        return;
+    Saturation& engine = saturation_->engine;
+    const bool wasRunning = engine.isActive();
+    activeSaturation_ = requestedSaturation_;
+    engine.setMode(saturationSettings_.mode);
+    if (!wasRunning && engine.isActive())
+    {
+        // Empieza de cero, con su fundido (Saturation), y con el bypass donde toca.
+        for (auto& line : saturation_->dry)
+            line.reset();
+        saturation_->wet = bypassed_ ? 0.0f : 1.0f;
+    }
+}
+
+void PhaseEqualizer::resetSaturation() noexcept
+{
+    saturation_->reset(bypassed_);
+}
+
+int PhaseEqualizer::saturationLatency(PhaseMode mode, double sampleRate) noexcept
+{
+    return Saturation::latencySamples(isLinearPhase(mode) ? OversamplingFilter::LinearPhase : OversamplingFilter::Iir,
+                                      sampleRate);
+}
+
 const BandSettings& PhaseEqualizer::target(int index) const noexcept
 {
     return bands_[static_cast<std::size_t>(std::clamp(index, 0, kMaxBands - 1))];
@@ -289,6 +381,7 @@ void PhaseEqualizer::reset() noexcept ESCEQ_NONBLOCKING
         path_->wet = bypassed_ ? 0.0f : 1.0f;
     }
     resetSpectral();
+    resetSaturation();
     fresh_ = true;
 }
 
@@ -301,13 +394,14 @@ void PhaseEqualizer::resetSpectral() noexcept
 
 bool PhaseEqualizer::switchPending() const noexcept
 {
-    return activeMode_ != requestedMode_ || activeSpectral_ != requestedSpectral_;
+    return activeMode_ != requestedMode_ || activeSpectral_ != requestedSpectral_ ||
+           activeSaturation_ != requestedSaturation_;
 }
 
 bool PhaseEqualizer::targetReady() const noexcept
 {
     if (activeMode_ == requestedMode_)
-        return true; // solo cambia la dinámica espectral
+        return true; // solo cambia la dinámica espectral o la saturación
     if (isLinearPhase(requestedMode_))
         return incoming_ != nullptr;
     // A IIR: hay que poder devolver el camino lineal.
@@ -335,10 +429,19 @@ void PhaseEqualizer::switchMode() noexcept
         for (int index = 0; index < kMaxBands; ++index)
             routeBand(index);
     }
-    // Lo que tuviera dentro saldría tras el silencio: se empieza de cero.
+    // La saturación, con los filtros del modo que suena y en el modo pedido.
+    Saturation& saturation = saturation_->engine;
+    saturation.setFilter(isLinearPhase(activeMode_) ? OversamplingFilter::LinearPhase : OversamplingFilter::Iir);
+    activeSaturation_ = requestedSaturation_;
+    saturation.setMode(saturationSettings_.mode);
+    // Lo que tuviera dentro saldría tras el silencio: se empieza de cero (la
+    // saturación, también sin el fundido: entra y sale en el silencio).
     resetSpectral();
+    resetSaturation();
     const int linear = path_ != nullptr ? path_->size.latency() : 0;
-    latency_.store(linear + (activeSpectral_ ? spectral_->engine.latency() : 0), std::memory_order_relaxed);
+    const int spectral = activeSpectral_ ? spectral_->engine.latency() : 0;
+    const int saturating = activeSaturation_ ? saturation.latency() : 0;
+    latency_.store(linear + spectral + saturating, std::memory_order_relaxed);
 }
 
 void PhaseEqualizer::discardPath(std::unique_ptr<LinearPath> path) noexcept
@@ -524,10 +627,11 @@ void PhaseEqualizer::process(float* const* channels, int numChannels, int numSam
     fresh_ = false;
     beginTransitionIfNeeded();
 
-    // Lo normal en IIR: el IIR, sin nada más.
+    // Lo normal en IIR: el IIR y, si no está en Off, la saturación.
     if (stage_ == Stage::Steady && path_ == nullptr && !activeSpectral_)
     {
         iir_.process(channels, usedChannels, numSamples, sidechain, numSidechainChannels);
+        renderSaturation(channels, usedChannels, numSamples);
         return;
     }
 
@@ -570,6 +674,7 @@ void PhaseEqualizer::process(float* const* channels, int numChannels, int numSam
         }
         if (activeSpectral_)
             renderSpectral(io.data(), usedChannels, length, side, scChannels, detector.data());
+        renderSaturation(io.data(), usedChannels, length);
 
         applyTransition(io.data(), usedChannels, length);
         position += length;
@@ -702,11 +807,58 @@ void PhaseEqualizer::renderSpectral(float* const* io, int numChannels, int lengt
     }
 }
 
+void PhaseEqualizer::renderSaturation(float* const* io, int numChannels, int length) noexcept
+{
+    SaturationPath& stage = *saturation_;
+    if (!stage.engine.isActive())
+        return; // Off: bit a bit lo de antes
+    const bool delayedDry = stage.engine.filter() == OversamplingFilter::LinearPhase;
+    const float wetTarget = bypassed_ ? 0.0f : 1.0f;
+    const float step = 1.0f / static_cast<float>(fadeLength_);
+    std::array<float*, kMaxChannels> out{};
+    for (int offset = 0; offset < length;)
+    {
+        const int count = std::min(length - offset, SaturationPath::kSaturationChunk);
+        // La señal seca para el bypass: retrasada como la saturación en fase
+        // lineal (la línea se alimenta siempre); en IIR, la entrada, solo si hace falta.
+        const bool mixing = stage.wet != wetTarget || wetTarget == 0.0f;
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            const auto c = static_cast<std::size_t>(ch);
+            out[c] = io[ch] + offset;
+            if (delayedDry)
+                stage.dry[c].process(out[c], stage.delayed[c].data(), count);
+            else if (mixing)
+                std::copy_n(out[c], count, stage.delayed[c].data());
+        }
+        stage.engine.process(out.data(), numChannels, count);
+
+        // Bypass: fundido con la señal seca retrasada, para que la latencia no cambie.
+        if (mixing)
+            for (int i = 0; i < count; ++i)
+            {
+                if (stage.wet != wetTarget)
+                    stage.wet = wetTarget > stage.wet ? std::min(wetTarget, stage.wet + step)
+                                                      : std::max(wetTarget, stage.wet - step);
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    const auto c = static_cast<std::size_t>(ch);
+                    const float dry = stage.delayed[c][static_cast<std::size_t>(i)];
+                    const float wet = out[c][i];
+                    out[c][i] = stage.wet == 1.0f ? wet : stage.wet == 0.0f ? dry : dry + stage.wet * (wet - dry);
+                }
+            }
+        offset += count;
+    }
+}
+
 bool PhaseEqualizer::isSettled() const noexcept
 {
     if (stage_ != Stage::Steady || switchPending() || !iir_.isSettled())
         return false;
     if (activeSpectral_ && spectral_->wet != (bypassed_ ? 0.0f : 1.0f))
+        return false;
+    if (saturation_->engine.isActive() && saturation_->wet != (bypassed_ ? 0.0f : 1.0f))
         return false;
     if (path_ == nullptr)
         return true;

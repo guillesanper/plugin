@@ -305,4 +305,15 @@ private:
     std::array<std::array<float, Oversampler::kMaxBlock>, kMaxChannels> dry_{};
 };
 
+/// Ajustes de la saturación, como los recibe dsp::PhaseEqualizer (los
+/// parámetros `sat_mode`, `sat_drive` y `sat_mix`, PLAN.md 5.8).
+struct SaturationSettings
+{
+    SaturationMode mode = SaturationMode::Off;
+    double driveDb = Saturation::kDefaultDriveDb; ///< De 0 a Saturation::kMaxDriveDb.
+    double mix = 1.0;                             ///< De 0 (la seca) a 1 (la húmeda).
+
+    bool operator==(const SaturationSettings&) const = default;
+};
+
 } // namespace esceq::dsp
