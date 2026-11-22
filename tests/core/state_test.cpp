@@ -545,6 +545,29 @@ TEST_CASE("Estado: los estados anteriores a los tiempos automaticos los cargan a
     CHECK((*restored)[autoTimingParameter(23)] == 1.0f);
 }
 
+TEST_CASE("Estado: los estados anteriores a la dinamica espectral la cargan apagada")
+{
+    // Si se encendiera sola, el sonido y la latencia de un proyecto anterior cambiarian.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v1_dynamics.txt", "v2_ui.txt", "v3_classic.txt",
+                             "v3_matched.txt", "release_0.1_full.txt"})
+    {
+        INFO(name);
+        const auto state = deserializePluginState(readFixture(name));
+        REQUIRE(state.has_value());
+        for (int band = 0; band < kNumBands; ++band)
+            CHECK(state->parameters[spectralParameter(band)] == 0.0f);
+    }
+
+    auto values = defaultValues();
+    values[spectralParameter(0)] = 1.0f;
+    values[spectralParameter(23)] = 1.0f;
+    const auto restored = deserializeState(serializeState(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[spectralParameter(0)] == 1.0f);
+    CHECK((*restored)[spectralParameter(23)] == 1.0f);
+    CHECK((*restored)[spectralParameter(12)] == 0.0f);
+}
+
 // ---------------------------------------------------------------------------
 // Version 3: algoritmo de filtro de la instancia (ADR 0013 y 0014)
 

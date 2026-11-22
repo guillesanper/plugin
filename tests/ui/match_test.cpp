@@ -490,6 +490,7 @@ TEST_CASE("Igualacion (ui): Apply crea las bandas en las libres, de la menor en 
     values[core::dynamicParameter(1, core::DynParam::Threshold)] = -12.0f;
     values[core::channelParameter(1)] = 3.0f;
     values[core::autoTimingParameter(1)] = 1.0f;
+    values[core::spectralParameter(1)] = 1.0f;
     values[enabledOf(2)] = 1.0f;
 
     const std::vector<dsp::FilterParams> bands = {
@@ -523,7 +524,8 @@ TEST_CASE("Igualacion (ui): Apply crea las bandas en las libres, de la menor en 
                                  core::dynamicParameter(band, core::DynParam::Release),
                                  core::dynamicParameter(band, core::DynParam::Knee),
                                  core::dynamicParameter(band, core::DynParam::Source),
-                                 core::channelParameter(band), core::autoTimingParameter(band)})
+                                 core::channelParameter(band), core::autoTimingParameter(band),
+                                 core::spectralParameter(band)})
             CHECK(after[index] == specs[index].defaultValue);
     }
     // Las bandas que había y las que no se tocan siguen igual.

@@ -259,3 +259,24 @@ TEST_CASE("Presets: los tiempos automaticos van en el preset")
     CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), autoTimingParameter(3)) ==
           kParametersOutsidePresets.end());
 }
+
+TEST_CASE("Presets: la dinamica espectral va en el preset")
+{
+    // Es parte del sonido de la banda, como los tiempos automaticos: un preset
+    // la lleva, y uno que no la lleva (todos los anteriores) la apaga.
+    auto values = defaultValues();
+    values[spectralParameter(5)] = 1.0f;
+    CHECK(serializePreset(values).find("b06_spectral 1") != std::string::npos);
+    CHECK(serializePreset(defaultValues()).find("spectral") == std::string::npos);
+    const auto restored = deserializeState(serializePreset(values));
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[spectralParameter(5)] == 1.0f);
+
+    auto current = defaultValues();
+    current[spectralParameter(5)] = 1.0f;
+    const auto preset = loadFactoryPreset("De-esser");
+    REQUIRE(preset.has_value());
+    CHECK(applyPreset(*preset, current)[spectralParameter(5)] == 0.0f);
+    CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), spectralParameter(5)) ==
+          kParametersOutsidePresets.end());
+}

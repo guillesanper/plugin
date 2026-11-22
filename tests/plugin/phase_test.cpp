@@ -236,6 +236,44 @@ TEST_CASE("Fase: con bypass en fase lineal la salida es la entrada retrasada")
     CHECK(exact);
 }
 
+TEST_CASE("Fase: sin dinamica espectral, la latencia y el sonido de antes en los cuatro modos")
+{
+    // Criterio de PLAN.md 5.7: con bNN_spectral apagado en todas las bandas,
+    // bit a bit lo de antes y la latencia de antes. Una instancia que la ha
+    // encendido y apagado suena igual que otra que no la ha tocado nunca; la
+    // comparación con el código anterior a la dinámica espectral está en
+    // docs/dsp/dinamica-espectral.md.
+    using core::DynParam;
+    const auto input = noise(30000, 9u);
+    for (const float mode : {0.0f, 1.0f, 2.0f, 3.0f})
+    {
+        INFO("modo " << mode);
+        std::vector<float> outputs[2];
+        for (int touched = 0; touched < 2; ++touched)
+        {
+            auto p = makeProcessor();
+            p->setNonRealtime(true);
+            bellAt1k(*p, 3.0f);
+            drag(*p, core::dynamicParameter(0, DynParam::Enabled), {1.0f});
+            drag(*p, core::dynamicParameter(0, DynParam::Threshold), {-30.0f});
+            drag(*p, core::kPhaseMode, {mode});
+            prepare(*p);
+            if (touched == 1)
+            {
+                drag(*p, core::spectralParameter(0), {1.0f});
+                (void)render(*p, input);
+                CHECK(p->engineLatencySamples() > p->getLatencySamples());
+                drag(*p, core::spectralParameter(0), {0.0f});
+                (void)render(*p, input);
+                prepare(*p);
+            }
+            CHECK(p->getLatencySamples() == dsp::linearPhaseSize(core::phaseModeFromChoice(mode), kRate).latency());
+            outputs[touched] = render(*p, input);
+        }
+        CHECK(outputs[0] == outputs[1]);
+    }
+}
+
 TEST_CASE("Fase: el modo viaja con el estado del proyecto")
 {
     auto a = makeProcessor();

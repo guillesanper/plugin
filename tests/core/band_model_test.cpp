@@ -157,6 +157,25 @@ TEST_CASE("Modelo: traduce los tiempos automaticos de una banda")
     CHECK(bandSettings(values, 5).dynamics.releaseMs == 100.0);
 }
 
+TEST_CASE("Modelo: traduce la dinamica espectral de una banda")
+{
+    auto values = defaultValues();
+    CHECK_FALSE(bandSettings(values, 7).dynamics.spectral);
+
+    values[spectralParameter(7)] = 1.0f;
+    CHECK(bandSettings(values, 7).dynamics.spectral);
+    CHECK_FALSE(bandSettings(values, 6).dynamics.spectral);
+    CHECK_FALSE(bandSettings(values, 8).dynamics.spectral);
+    // Es independiente de lo demás: la dinámica sigue apagada si lo estaba.
+    CHECK_FALSE(bandSettings(values, 7).dynamics.enabled);
+    CHECK_FALSE(bandSettings(values, 7).dynamics.autoTiming);
+    // Un valor fuera de rango se sanea, como en los demás interruptores.
+    values[spectralParameter(7)] = 7.0f;
+    CHECK(bandSettings(values, 7).dynamics.spectral);
+    values[spectralParameter(7)] = -1.0f;
+    CHECK_FALSE(bandSettings(values, 7).dynamics.spectral);
+}
+
 TEST_CASE("Modelo: modo de fase")
 {
     CHECK(phaseModeFromChoice(0.0f) == esceq::dsp::PhaseMode::Iir);

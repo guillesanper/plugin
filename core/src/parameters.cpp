@@ -125,6 +125,17 @@ struct Table
                 "Band " + std::to_string(band + 1) + " Auto Timing",
                 {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
         }
+
+        // Dinámica espectral (fase 6): al final, uno por banda. Apagados es el
+        // comportamiento de los estados anteriores.
+        for (int band = 0; band < kNumBands; ++band)
+        {
+            char prefix[8];
+            std::snprintf(prefix, sizeof prefix, "b%02d_", band + 1);
+            set(spectralParameter(band), std::string(prefix) + "spectral",
+                "Band " + std::to_string(band + 1) + " Spectral",
+                {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
+        }
     }
 };
 

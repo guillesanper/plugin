@@ -7,6 +7,7 @@
 #include "esceq/core/state.h"
 #include "esceq/dsp/decibels.h"
 #include "esceq/dsp/linear_phase.h"
+#include "esceq/dsp/spectral_dynamics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -87,7 +88,13 @@ double PluginProcessor::getTailLengthSeconds() const
     const auto mode = core::phaseModeFromChoice(raw_[core::kPhaseMode]->load(std::memory_order_relaxed));
     const double rate = currentSampleRate();
     const auto size = dsp::linearPhaseSize(mode, rate);
-    return static_cast<double>(size.latency() + size.firLength / 2) / rate;
+    // Con alguna banda espectral, su latencia (lo que tarda en salir lo último
+    // que entró; la trama que lo contiene ya está dentro de ella).
+    bool spectral = false;
+    for (int band = 0; band < core::kNumBands; ++band)
+        spectral = spectral || raw_[core::spectralParameter(band)]->load(std::memory_order_relaxed) >= 0.5f;
+    const int spectralLatency = spectral ? dsp::SpectralDynamics::latencySamples(rate) : 0;
+    return static_cast<double>(size.latency() + size.firLength / 2 + spectralLatency) / rate;
 }
 
 void PluginProcessor::updateTrackProperties(const TrackProperties& properties)

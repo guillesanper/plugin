@@ -112,6 +112,8 @@ dsp::BandSettings bandSettings(const ParameterValues& values, int band, dsp::Fil
     settings.dynamics.external = dyn(DynParam::Source) >= 0.5f;
     const std::size_t autoTiming = autoTimingParameter(band);
     settings.dynamics.autoTiming = sanitize(specs[autoTiming], values[autoTiming]) >= 0.5f;
+    const std::size_t spectral = spectralParameter(band);
+    settings.dynamics.spectral = sanitize(specs[spectral], values[spectral]) >= 0.5f;
 
     settings.channel = channelModeFromChoice(values[channelParameter(band)]);
     return settings;
