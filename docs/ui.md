@@ -85,7 +85,7 @@ El arco de valor sale **del centro** en los parámetros bipolares (ganancia, ran
 
 ### Interruptor, selector y desplegable
 
-- `ToggleSwitch`: interruptor (On, Dynamic) o botón que se queda encendido (Auto, Bypass). Espacio o Intro lo cambian.
+- `ToggleSwitch`: interruptor (On, Active, Auto, Spectral) o botón que se queda encendido (Auto de la barra superior, Bypass). Espacio o Intro lo cambian.
 - `Segmented`: una opción entre unas pocas, todas a la vista (canal de la banda).
 - `Dropdown`: desplegable (tipo, pendiente, fuente del detector, analizador, rango). La rueda cambia de opción.
 
@@ -148,7 +148,19 @@ La vista ampliada no se guarda: un proyecto abre siempre en la vista normal.
 
 ### Panel de banda
 
-Tres tarjetas: **banda** (color y número, activación, tipo, pendiente y canal), **EQ** (frecuencia, ganancia y Q) y **dinámica** (activación, fuente del detector con su aviso debajo, el interruptor *Auto* de los tiempos automáticos, umbral, rango, ataque, relajación, rodilla y un medidor de la ganancia dinámica). Los controles que no influyen con el tipo de filtro actual se desactivan; los de la dinámica apagada se atenúan pero se pueden editar. Con *Auto* encendido, el ataque y la relajación se atenúan y dicen "Auto" (también al lector de pantalla): conservan su valor, se pueden editar y vuelven a mandar al apagarlo. La ayuda del interruptor dice los tiempos que corresponden a la frecuencia de la banda ("attack 2.00 ms, release 20.0 ms (200 ms after long notes)", `autoTimingTooltip`; [ADR 0016](decisiones/0016-tiempos-automaticos-en-la-dinamica.md)).
+Tres tarjetas: **banda** (color y número, activación, tipo, pendiente y canal), **EQ** (frecuencia, ganancia y Q) y **dinámica** (activación, fuente del detector con su aviso debajo, los interruptores *Auto* de los tiempos automáticos y *Spectral* de la dinámica espectral, umbral, rango, ataque, relajación, rodilla y un medidor de la ganancia dinámica). Los controles que no influyen con el tipo de filtro actual se desactivan; los de la dinámica apagada se atenúan pero se pueden editar. Con *Auto* encendido, el ataque y la relajación se atenúan y dicen "Auto" (también al lector de pantalla): conservan su valor, se pueden editar y vuelven a mandar al apagarlo. La ayuda del interruptor dice los tiempos que corresponden a la frecuencia de la banda ("attack 2.00 ms, release 20.0 ms (200 ms after long notes)", `autoTimingTooltip`; [ADR 0016](decisiones/0016-tiempos-automaticos-en-la-dinamica.md)).
+
+### Dinámica espectral
+
+![La banda 6, espectral, reduce solo una resonancia en 8 kHz](img/ui/espectral.png)
+
+El interruptor *Spectral*, a la derecha de *Auto*, enciende la dinámica espectral de la banda (`bNN_spectral`, [ADR 0024](decisiones/0024-dinamica-espectral.md) y [ADR 0025](decisiones/0025-dinamica-espectral-en-el-procesador.md)): dentro de la banda solo se mueven las frecuencias que pasan del umbral, no la banda entera. Usa los mismos controles de la dinámica; no hay ninguno nuevo. Para que quepan los dos interruptores en una fila, la columna lateral de la tarjeta de dinámica pasó de 104 a 156 px (*Auto* mide 64 y *Spectral* 84); en el tamaño mínimo, cada celda de potenciómetro pasa de 88 a 81 px (el mínimo es 66).
+
+- **Desactivado** sin dinámica o en un tipo que no la admite (cortes, notch, paso banda, pasa todo), como manda `spectralSwitchEnabled`, pero con su estado a la vista: encendido, la latencia sigue aunque la banda no haga nada (ADR 0025). Para apagarlo hay que encender la dinámica.
+- **Ayuda:** dice la latencia que añade con la frecuencia de muestreo actual ("Spectral · adds 53.3 ms latency"; 58.0 ms a 44,1 kHz), qué hace, y que encender la primera banda espectral, o apagar la última, cambia la latencia y deja un hueco, también al automatizarlo. Encendido y desactivado, añade "also with dynamics off: turn dynamics on to switch it off" (`spectralTooltip`, en `control_logic.h`).
+- **Medidor** del panel y de junto al nodo, y etiqueta flotante ("Dyn"): la reducción máxima de la máscara, la del bin que más baja, por los 24 atómicos de siempre (`PhaseEqualizer::dynamicGainDb`).
+- **Curva:** la de la banda se queda en su ajuste estático (sin la ganancia dinámica, que es la de un solo bin, y sin la referencia punteada, que coincidiría) y la forma de la máscara se sombrea bajo ella, con el color de la banda; la curva blanca total le suma la máscara columna a columna, así que baja solo donde actúa. La máscara la publica el hilo de audio unas 30 veces por segundo de audio, reducida a 192 puntos de 20 Hz a 20 kHz (cada punto, el bin de su tramo que más cambia; `core/spectral_mask.h`), y la curva la lleva a sus columnas interpolando en escala logarítmica (`esceq/ui/spectral_mask.h`). Solo se rehace el sombreado cuando llega una máscara distinta.
+- **Vista ampliada:** la segunda fila de la etiqueta flotante termina en "Spectral" (también con la dinámica apagada, porque la latencia sigue).
 
 Con el teclado de notas visible, la etiqueta del potenciómetro de frecuencia dice la nota de la banda en lugar de "FREQ" ("A3 +0 CT"): junto al valor no cabe en los tamaños S y M. En el campo de frecuencia se puede escribir una nota ("A3", "C#2", "Eb4", con `#`/`♯` o `b`/`♭`), que suena a su frecuencia con la afinación elegida.
 
@@ -161,7 +173,8 @@ Sin banda seleccionada, el panel muestra los gestos de la curva, en dos filas de
 - **Nodos:** reposo; ratón encima (halo y curva resaltada); seleccionado (anillo blanco); arrastre (halo mayor). Con el bypass puesto, se atenúan. El nodo activo se dibuja siempre encima.
 - **Etiqueta flotante:** al señalar o arrastrar un nodo, muestra la banda, su tipo, y frecuencia, ganancia y Q; en las bandas dinámicas, también la ganancia dinámica del momento. Se coloca sobre el nodo, o debajo si arriba no cabe, y nunca se sale de la curva (`floatingLabelRect`).
 - **Canal:** una insignia con la letra (L, R, M, S) en las bandas que no son estéreo.
-- **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba).
+- **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba). En una banda espectral, la del bin que más cambia.
+- **Dinámica espectral:** la forma de la máscara, sombreada bajo la curva estática de la banda (ver más arriba).
 - **Escala de notas:** con el teclado visible, la etiqueta flotante añade a la frecuencia la nota más cercana y su desviación ("220 Hz · A3 +0 ct"). Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana a donde estaría sin ajustar, así que el nodo no se queda pegado; vale con el teclado oculto también.
 - **Igualación:** con el panel Match abierto, los espectros aprendidos, el objetivo, la propuesta y sus nodos en fantasma (ver más abajo).
 - **Analizador:** el espectro post relleno y, en pre + post, el pre como línea. Con *Peak hold*, una línea fina más clara con el máximo de cada punto del espectro post (`SpectrumPeakHold`, en `meter_logic.h`); un clic en la escala de dB (la columna de 40 px de la derecha, `onGainScale`) la borra, y cambiar la resolución o la inclinación también. Con *Freeze*, el espectro se queda quieto y la curva dice "Analyzer frozen" arriba a la izquierda; el audio sigue entrando en el historial, así que al descongelar el espectro es el de ese momento.

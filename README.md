@@ -2,7 +2,7 @@
 
 Ecualizador paramétrico y dinámico, libre, pensado para funcionar bien en FL Studio y en cualquier host VST3.
 
-Ecualizador de 24 bandas con curva interactiva, analizador de espectro ajustable y con vista ampliada, dinámica por banda con sidechain externo y tiempos automáticos, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
+Ecualizador de 24 bandas con curva interactiva, analizador de espectro ajustable y con vista ampliada, dinámica por banda con sidechain externo, tiempos automáticos y dinámica espectral, procesado por banda en estéreo, L, R, Mid o Side, cuatro modos de fase (IIR y fase lineal en tres resoluciones), filtros fieles al analógico también en agudos, deshacer y rehacer, y presets. Formatos VST3, CLAP y AU. La hoja de ruta está en [PLAN.md](PLAN.md) y los cambios de cada versión en [CHANGELOG.md](CHANGELOG.md).
 
 ![esceQ](docs/img/esceq.png)
 
@@ -30,6 +30,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Eliminar una banda | Doble clic en el nodo |
 | Hacer dinámica una banda | Botón "Dynamic" del panel inferior, o clic derecho en el nodo |
 | Que la dinámica elija sola su ataque y su relajación | Interruptor *Auto* bajo la fuente del detector, en el panel inferior (ver abajo) |
+| Bajar solo las frecuencias que molestan dentro de una banda | Interruptor *Spectral*, junto a *Auto* (ver abajo; añade 53 ms de latencia) |
 | Elegir el canal de una banda | Selector ST / L / R / M / S del panel inferior, o clic derecho en el nodo |
 | Ajustar un potenciómetro | Arrastrar; Mayús para ajuste fino; rueda; doble clic o Ctrl/Cmd + clic para el valor por defecto |
 | Escribir un valor | Clic en el número bajo el potenciómetro ("1.2k", "-3", "350 Hz") |
@@ -104,6 +105,8 @@ La forma más rápida de atacar una resonancia que se ve. Con el analizador ence
 
 **Tiempos automáticos:** con el interruptor *Auto* de la dinámica (parámetro `bNN_autotime`, uno por banda), la banda elige sola su ataque y su relajación según su frecuencia: en graves, un ataque de dos periodos para que la ganancia no siga la forma de onda (no distorsiona); en agudos, medio milisegundo para atrapar las sibilantes. La relajación depende de la señal: un golpe aislado se suelta deprisa, y una nota larga se suelta despacio para que no bombee. Encendido, los potenciómetros de ataque y relajación dicen "Auto" y conservan su valor para cuando se apague. Está apagado por defecto y en los proyectos anteriores; los presets lo guardan. Detalles en [docs/dsp/dinamica.md](docs/dsp/dinamica.md).
 
+**Dinámica espectral:** con el interruptor *Spectral* de la dinámica (parámetro `bNN_spectral`, uno por banda), la banda deja de subir y bajar entera: dentro de su zona solo se mueven las frecuencias que pasan del umbral, cada una lo suyo. Sirve para resonancias que cambian de sitio (los armónicos de una voz, las notas que retumban en una guitarra acústica) sin apagar lo que las rodea. Usa los mismos controles de la dinámica y necesita que esté encendida. La curva sombrea bajo la banda la forma de la reducción, y el medidor dice la de la frecuencia que más baja. Mientras alguna banda lo tenga encendido, el plugin añade 53,3 ms de latencia (58 ms a 44,1 kHz), que el host compensa; encender la primera banda espectral, o apagar la última, silencia la salida un momento, como cambiar de modo de fase, así que conviene no automatizarlo. Está apagado por defecto y en los proyectos anteriores; los presets lo guardan. Detalles en [docs/dsp/dinamica-espectral.md](docs/dsp/dinamica-espectral.md).
+
 **Canal:** cada banda actúa en estéreo, solo en el canal izquierdo o el derecho, o solo en Mid (lo que está en el centro) o Side (lo que está a los lados). Lo que la banda no toca pasa intacto. Una banda dinámica escucha ese mismo canal. El nodo de una banda que no es estéreo lleva su letra (L, R, M, S).
 
 **Presets:** vienen cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) como punto de partida. Los tuyos se guardan con "Save as..." como archivos `.esceq` en `%APPDATA%\esceQ\Presets` (Windows), `~/Library/Application Support/esceQ/Presets` (macOS) o `~/.config/esceQ/Presets` (Linux); "Open presets folder" abre esa carpeta. Un punto junto al nombre indica que has modificado el preset. El analizador (modo y ajustes), el rango, el tamaño de la ventana y la escala de notas se guardan con el proyecto, no con el preset.
@@ -133,6 +136,7 @@ Detalles, requisitos y reglas de contribución en [CONTRIBUTING.md](CONTRIBUTING
 - [docs/dsp/ecualizador.md](docs/dsp/ecualizador.md): suavizado, fundidos y analizador.
 - [docs/decisiones/0009-preferencias-deshacer-y-presets.md](docs/decisiones/0009-preferencias-deshacer-y-presets.md): estado guardado, deshacer y presets.
 - [docs/dsp/dinamica.md](docs/dsp/dinamica.md): detector, envolvente y curva de ganancia de las bandas dinámicas.
+- [docs/dsp/dinamica-espectral.md](docs/dsp/dinamica-espectral.md): la dinámica espectral (STFT, detector por frecuencia y máscaras).
 - [docs/decisiones/](docs/decisiones/README.md): registro de decisiones de diseño.
 - [CHANGELOG.md](CHANGELOG.md): cambios por versión.
 
