@@ -119,7 +119,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2 + 24 + 24);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2 + 24 + 24 + 3);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -255,6 +255,13 @@ TEST_CASE("Parametros: formatValue")
     CHECK(formatValue(attack, 150.0f) == "150 ms");
     CHECK(formatValue(parameters()[dynamicParameter(0, DynParam::Release)], 1500.0f) == "1.50 s");
     CHECK(formatValue(parameters()[dynamicParameter(0, DynParam::Source)], 1.0f) == "External");
+
+    const auto& mix = parameters()[kSaturationMix];
+    CHECK(formatValue(mix, 100.0f) == "100%");
+    CHECK(formatValue(mix, 42.4f) == "42%");
+    CHECK(formatValue(mix, 5.5f) == "5.5%");
+    CHECK(formatValue(mix, 0.0f) == "0.0%");
+    CHECK(formatValue(parameters()[kSaturationDrive], 6.0f) == "6.0 dB"); // sin "+": no admite negativos
 }
 
 TEST_CASE("Parametros: parseValue")
@@ -280,6 +287,9 @@ TEST_CASE("Parametros: parseValue")
     CHECK(parseValue(release, "1.5 s") == 1500.0f);
     CHECK(parseValue(release, "2s") == 2000.0f);
     CHECK(parseValue(parameters()[dynamicParameter(0, DynParam::Source)], "external") == 1.0f);
+    CHECK(parseValue(parameters()[kSaturationMix], "50%") == 50.0f);
+    CHECK(parseValue(parameters()[kSaturationMix], "75 %") == 75.0f);
+    CHECK(parseValue(parameters()[kSaturationMode], "warm") == 2.0f);
 
     // El texto que se muestra siempre se puede volver a leer.
     for (const auto& spec : parameters())
@@ -321,6 +331,8 @@ TEST_CASE("Parametros: los valores redondos dan la vuelta exactos por la posicio
     roundTrips(dynamicParameter(0, DynParam::Attack), {0.5f, 1.0f, 3.0f, 5.0f, 12.5f, 150.0f});
     roundTrips(dynamicParameter(0, DynParam::Release), {60.0f, 80.0f, 100.0f, 250.0f, 1500.0f});
     roundTrips(kOutputGain, {5.0f, -2.0f, -7.3125f, 3.0f, -4.0f});
+    roundTrips(kSaturationDrive, {3.0f, 12.0f, 18.0f, 4.5f, 0.5f});
+    roundTrips(kSaturationMix, {50.0f, 25.0f, 75.0f, 33.0f, 1.0f});
 }
 
 TEST_CASE("Parametros: redondear el valor no cambia la posicion ni el orden")
@@ -377,11 +389,10 @@ TEST_CASE("Parametros: tiempos automaticos, uno por banda, tras la compensacion"
     }
 }
 
-TEST_CASE("Parametros: dinamica espectral, uno por banda, los ultimos")
+TEST_CASE("Parametros: dinamica espectral, uno por banda, tras los tiempos automaticos")
 {
-    CHECK(kNumParameters == 388);
     CHECK(spectralParameter(0) == 364);
-    CHECK(spectralParameter(23) == kNumParameters - 1);
+    CHECK(spectralParameter(23) + 1 == kSaturationMode);
     CHECK(parameters()[spectralParameter(0)].id == "b01_spectral");
     CHECK(parameters()[spectralParameter(23)].id == "b24_spectral");
     for (int band = 0; band < kNumBands; ++band)
@@ -393,4 +404,46 @@ TEST_CASE("Parametros: dinamica espectral, uno por banda, los ultimos")
         CHECK(spec.defaultValue == 0.0f); // apagados: lo que hacian los estados anteriores
         CHECK(findParameter(spec.id) == spectralParameter(band));
     }
+}
+
+TEST_CASE("Parametros: saturacion, global, los ultimos")
+{
+    // PLAN.md 5.8: tres parámetros al final de la tabla (388 a 390).
+    CHECK(kNumParameters == 391);
+    CHECK(kSaturationMode == 388);
+    CHECK(kSaturationDrive == 389);
+    CHECK(kSaturationMix == kNumParameters - 1);
+
+    const auto& mode = parameters()[kSaturationMode];
+    CHECK(mode.id == "sat_mode");
+    CHECK(mode.name == "Saturation");
+    CHECK(mode.kind == ParameterKind::Choice);
+    CHECK(mode.choices.size() == 3);
+    CHECK(mode.defaultValue == 0.0f); // Off: lo que hacian los estados anteriores
+    CHECK(formatValue(mode, 0.0f) == "Off");
+    CHECK(formatValue(mode, 1.0f) == "Soft");
+    CHECK(formatValue(mode, 2.0f) == "Warm");
+
+    const auto& drive = parameters()[kSaturationDrive];
+    CHECK(drive.id == "sat_drive");
+    CHECK(drive.name == "Saturation Drive");
+    CHECK(drive.unit == "dB");
+    CHECK(drive.kind == ParameterKind::Continuous);
+    CHECK(drive.scale == ParameterScale::Linear);
+    CHECK(drive.min == 0.0f);
+    CHECK(drive.max == 24.0f);
+    CHECK(drive.defaultValue == 6.0f);
+
+    const auto& mix = parameters()[kSaturationMix];
+    CHECK(mix.id == "sat_mix");
+    CHECK(mix.name == "Saturation Mix");
+    CHECK(mix.unit == "%");
+    CHECK(mix.kind == ParameterKind::Continuous);
+    CHECK(mix.scale == ParameterScale::Linear);
+    CHECK(mix.min == 0.0f);
+    CHECK(mix.max == 100.0f);
+    CHECK(mix.defaultValue == 100.0f);
+
+    for (const auto index : {kSaturationMode, kSaturationDrive, kSaturationMix})
+        CHECK(findParameter(parameters()[index].id) == index);
 }

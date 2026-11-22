@@ -4,6 +4,7 @@
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/equalizer.h"
 #include "esceq/dsp/linear_phase.h"
+#include "esceq/dsp/saturation.h"
 
 #include <array>
 #include <optional>
@@ -21,6 +22,12 @@ dsp::ChannelMode channelModeFromChoice(float choice) noexcept;
 
 /// Modo de fase a partir del valor del parámetro "phase_mode".
 dsp::PhaseMode phaseModeFromChoice(float choice) noexcept;
+
+/// Curva de la saturación a partir del valor del parámetro "sat_mode".
+dsp::SaturationMode saturationModeFromChoice(float choice) noexcept;
+
+/// Ajustes de la saturación: "sat_mode", "sat_drive" y "sat_mix" (de 0 a 100 %, a 0..1).
+dsp::SaturationSettings saturationSettings(const ParameterValues& values) noexcept;
 
 /// Pendiente en dB/oct a partir del valor del parámetro "slope".
 int slopeFromChoice(float choice) noexcept;

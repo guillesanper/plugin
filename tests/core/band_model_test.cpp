@@ -206,3 +206,30 @@ TEST_CASE("Modelo: las bandas llevan el algoritmo de filtro que se pide")
     // Sin decirlo, el de dsp::FilterParams.
     CHECK(bandSettings(values, 2).filter.algorithm == dsp::FilterParams{}.algorithm);
 }
+
+TEST_CASE("Modelo: traduce la saturacion")
+{
+    // PLAN.md 5.8: Off por defecto, con el drive de 6 dB y la mezcla al 100 %.
+    auto values = defaultValues();
+    CHECK(saturationSettings(values) == dsp::SaturationSettings{});
+    CHECK(saturationSettings(values).mode == dsp::SaturationMode::Off);
+    CHECK(saturationSettings(values).driveDb == 6.0);
+    CHECK(saturationSettings(values).mix == 1.0);
+
+    values[kSaturationMode] = 2.0f;
+    values[kSaturationDrive] = 18.0f;
+    values[kSaturationMix] = 25.0f;
+    CHECK(saturationSettings(values) == dsp::SaturationSettings{dsp::SaturationMode::Warm, 18.0, 0.25});
+    CHECK(saturationModeFromChoice(1.0f) == dsp::SaturationMode::Soft);
+
+    // Fuera de rango se sanea, como los demás.
+    values[kSaturationMode] = 7.0f;
+    values[kSaturationDrive] = 40.0f;
+    values[kSaturationMix] = -3.0f;
+    CHECK(saturationSettings(values) == dsp::SaturationSettings{dsp::SaturationMode::Warm, 24.0, 0.0});
+    values[kSaturationMode] = -1.0f;
+    CHECK(saturationSettings(values).mode == dsp::SaturationMode::Off);
+
+    // Las bandas no la ven: es global.
+    CHECK(bandSettings(values, 0) == bandSettings(defaultValues(), 0));
+}

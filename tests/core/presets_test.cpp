@@ -280,3 +280,42 @@ TEST_CASE("Presets: la dinamica espectral va en el preset")
     CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), spectralParameter(5)) ==
           kParametersOutsidePresets.end());
 }
+
+TEST_CASE("Presets: la saturacion va en el preset")
+{
+    // PLAN.md 5.8: es parte del sonido. Un preset la lleva, y uno que no la
+    // lleva (todos los anteriores) la deja en Off, con el drive y la mezcla
+    // por defecto.
+    auto values = defaultValues();
+    values[kSaturationMode] = 2.0f;
+    values[kSaturationDrive] = 12.0f;
+    values[kSaturationMix] = 40.0f;
+    const std::string text = serializePreset(values);
+    CHECK(text.find("sat_mode 2") != std::string::npos);
+    CHECK(text.find("sat_drive 12") != std::string::npos);
+    CHECK(text.find("sat_mix 40") != std::string::npos);
+    CHECK(serializePreset(defaultValues()).find("sat_") == std::string::npos);
+    const auto restored = deserializeState(text);
+    REQUIRE(restored.has_value());
+    CHECK((*restored)[kSaturationMode] == 2.0f);
+    CHECK((*restored)[kSaturationDrive] == 12.0f);
+    CHECK((*restored)[kSaturationMix] == 40.0f);
+
+    const auto preset = loadFactoryPreset("De-esser");
+    REQUIRE(preset.has_value());
+    const auto applied = applyPreset(*preset, values);
+    CHECK(applied[kSaturationMode] == 0.0f);
+    CHECK(applied[kSaturationDrive] == 6.0f);
+    CHECK(applied[kSaturationMix] == 100.0f);
+    // Los de fábrica, publicados antes que ella, la dejan en Off.
+    for (const auto& factory : factoryPresets())
+    {
+        INFO(factory.name);
+        const auto loaded = loadFactoryPreset(factory.name);
+        REQUIRE(loaded.has_value());
+        CHECK((*loaded)[kSaturationMode] == 0.0f);
+    }
+    for (const auto index : {kSaturationMode, kSaturationDrive, kSaturationMix})
+        CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), index) ==
+              kParametersOutsidePresets.end());
+}

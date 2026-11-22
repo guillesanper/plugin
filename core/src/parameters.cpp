@@ -136,6 +136,16 @@ struct Table
                 "Band " + std::to_string(band + 1) + " Spectral",
                 {.kind = Toggle, .min = 0.0f, .max = 1.0f, .defaultValue = 0.0f});
         }
+
+        // Saturación (fase 6): al final, global. Off es el comportamiento de
+        // los estados anteriores; el drive y la mezcla, con Off, no suenan.
+        set(kSaturationMode, "sat_mode", "Saturation",
+            {.kind = Choice, .min = 0.0f, .max = static_cast<float>(kSaturationModeChoices.size() - 1),
+             .defaultValue = 0.0f, .choices = kSaturationModeChoices});
+        set(kSaturationDrive, "sat_drive", "Saturation Drive",
+            {.unit = "dB", .kind = Continuous, .min = 0.0f, .max = 24.0f, .defaultValue = 6.0f});
+        set(kSaturationMix, "sat_mix", "Saturation Mix",
+            {.unit = "%", .kind = Continuous, .min = 0.0f, .max = 100.0f, .defaultValue = 100.0f});
     }
 };
 
@@ -303,6 +313,8 @@ std::string formatValue(const ParameterSpec& spec, float value)
         text += " dB";
         return text;
     }
+    if (spec.unit == "%")
+        return fixed(v, v < 10.0f ? 1 : 0) + "%";
     return fixed(v, 2);
 }
 

@@ -19,6 +19,7 @@ target_sources(esceq_plugin_tests PRIVATE
     presets_test.cpp
     phase_test.cpp
     process_test.cpp
+    saturation_test.cpp
     session_test.cpp
     spectral_test.cpp
     state_test.cpp

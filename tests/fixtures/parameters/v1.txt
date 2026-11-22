@@ -387,3 +387,6 @@ b21_spectral toggle linear 0 1 0
 b22_spectral toggle linear 0 1 0
 b23_spectral toggle linear 0 1 0
 b24_spectral toggle linear 0 1 0
+sat_mode choice linear 0 2 3
+sat_drive continuous linear 0 24 0
+sat_mix continuous linear 0 100 0

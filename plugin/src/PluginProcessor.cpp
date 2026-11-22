@@ -94,7 +94,11 @@ double PluginProcessor::getTailLengthSeconds() const
     for (int band = 0; band < core::kNumBands; ++band)
         spectral = spectral || raw_[core::spectralParameter(band)]->load(std::memory_order_relaxed) >= 0.5f;
     const int spectralLatency = spectral ? dsp::SpectralDynamics::latencySamples(rate) : 0;
-    return static_cast<double>(size.latency() + size.firLength / 2 + spectralLatency) / rate;
+    // Y fuera de Off, la de la saturación (0 en IIR).
+    const bool saturating = core::saturationModeFromChoice(raw_[core::kSaturationMode]->load(
+                                std::memory_order_relaxed)) != dsp::SaturationMode::Off;
+    const int saturationLatency = saturating ? dsp::PhaseEqualizer::saturationLatency(mode, rate) : 0;
+    return static_cast<double>(size.latency() + size.firLength / 2 + spectralLatency + saturationLatency) / rate;
 }
 
 void PluginProcessor::updateTrackProperties(const TrackProperties& properties)
@@ -278,6 +282,7 @@ void PluginProcessor::pushParametersToEngine(bool force) noexcept
         equalizer_.setBand(band, bands[static_cast<std::size_t>(band)]);
     equalizer_.setBypassed(values[core::kBypass] >= 0.5f);
     equalizer_.setPhaseMode(core::phaseModeFromChoice(values[core::kPhaseMode]));
+    equalizer_.setSaturation(core::saturationSettings(values));
 
     // La compensación la calcula el hilo de control (ADR 0015), y solo si
     // está encendida. Al encenderla, lo calculado antes no vale: la ganancia

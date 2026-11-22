@@ -35,6 +35,12 @@ static_assert(static_cast<int>(dsp::PhaseMode::LinearLow) == 1);
 static_assert(static_cast<int>(dsp::PhaseMode::LinearMedium) == 2);
 static_assert(static_cast<int>(dsp::PhaseMode::LinearHigh) == 3);
 
+// Y con el del parámetro "sat_mode".
+static_assert(kSaturationModeChoices.size() == 3);
+static_assert(static_cast<int>(dsp::SaturationMode::Off) == 0);
+static_assert(static_cast<int>(dsp::SaturationMode::Soft) == 1);
+static_assert(static_cast<int>(dsp::SaturationMode::Warm) == 2);
+
 dsp::FilterType filterTypeFromChoice(float choice) noexcept
 {
     const auto& spec = parameters()[bandParameter(0, BandParam::Type)];
@@ -50,6 +56,19 @@ dsp::ChannelMode channelModeFromChoice(float choice) noexcept
 dsp::PhaseMode phaseModeFromChoice(float choice) noexcept
 {
     return static_cast<dsp::PhaseMode>(static_cast<int>(sanitize(parameters()[kPhaseMode], choice)));
+}
+
+dsp::SaturationMode saturationModeFromChoice(float choice) noexcept
+{
+    return static_cast<dsp::SaturationMode>(static_cast<int>(sanitize(parameters()[kSaturationMode], choice)));
+}
+
+dsp::SaturationSettings saturationSettings(const ParameterValues& values) noexcept
+{
+    const auto& specs = parameters();
+    return {saturationModeFromChoice(values[kSaturationMode]),
+            static_cast<double>(sanitize(specs[kSaturationDrive], values[kSaturationDrive])),
+            static_cast<double>(sanitize(specs[kSaturationMix], values[kSaturationMix])) / 100.0};
 }
 
 int slopeFromChoice(float choice) noexcept

@@ -88,7 +88,11 @@ enum ParameterIndex : std::size_t
     kFirstAutoTimingParameter,
     /// Dinámica espectral (fase 6): un interruptor por banda.
     kFirstSpectralParameter = kFirstAutoTimingParameter + static_cast<std::size_t>(kNumBands),
-    kNumParameters = kFirstSpectralParameter + static_cast<std::size_t>(kNumBands),
+    /// Saturación (fase 6), global: tras la dinámica espectral.
+    kSaturationMode = kFirstSpectralParameter + static_cast<std::size_t>(kNumBands),
+    kSaturationDrive,
+    kSaturationMix,
+    kNumParameters,
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
@@ -146,6 +150,9 @@ inline constexpr std::array<std::string_view, 5> kChannelChoices{"Stereo", "Left
 inline constexpr std::array<std::string_view, 4> kPhaseModeChoices{"IIR", "Linear Low", "Linear Medium",
                                                                     "Linear High"};
 
+/// Curvas de la saturación. El índice coincide con dsp::SaturationMode (lo comprueba band_model.cpp).
+inline constexpr std::array<std::string_view, 3> kSaturationModeChoices{"Off", "Soft", "Warm"};
+
 /// Única fuente de verdad de los parámetros del plugin. El procesador, la
 /// interfaz y el estado guardado se construyen a partir de esta tabla.
 ///
@@ -184,7 +191,7 @@ float sanitize(const ParameterSpec& spec, float value) noexcept;
 float toNormalized(const ParameterSpec& spec, float value) noexcept;
 float fromNormalized(const ParameterSpec& spec, float normalized) noexcept;
 
-/// Texto para mostrar, con unidad ("1.20 kHz", "+3.0 dB", "12.0 ms", "Low Cut").
+/// Texto para mostrar, con unidad ("1.20 kHz", "+3.0 dB", "12.0 ms", "100%", "Low Cut").
 std::string formatValue(const ParameterSpec& spec, float value);
 
 /// Interpreta un texto escrito por el usuario ("1.2k", "350 Hz", "-3", "1.5 s", "bell").
