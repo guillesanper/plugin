@@ -5,7 +5,8 @@
 // (ADR 0020). Solo depende de dsp/.
 //
 // Uso: esceq_bench [opciones]
-//   --scenario A,B   campanas, cortes, dinamicas, mezcla (por defecto, todos)
+//   --scenario A,B   campanas, cortes, dinamicas, mezcla, espectral, mezcla-esp
+//                    (por defecto, todos)
 //   --mode A,B       iir, low, medium, high (por defecto, todos)
 //   --rate A,B       frecuencias de muestreo en Hz (por defecto, 48000,192000)
 //   --block A,B      tamaños de bloque del host (por defecto, 256)
@@ -22,7 +23,9 @@
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
-// ocupa una instancia estéreo. Compilar en Release: en Debug no significa nada.
+// ocupa una instancia estéreo; y lo que tarda la llamada más lenta (la
+// mediana entre repeticiones de la más lenta de cada una), frente a lo que
+// dura el bloque. Compilar en Release: en Debug no significa nada.
 // La señal no se apaga nunca, así que no aparecen denormales y no hace falta
 // desactivarlos como hace el procesador.
 //
@@ -32,6 +35,9 @@
 //   dinamicas  24 campanas dinámicas comprimiendo todo el tiempo (umbral −50 dB, rango −12 dB).
 //   mezcla     8 bandas de una mezcla real: 2 cortes de 24 dB/oct, 4 campanas
 //              (2 de ellas dinámicas) y un shelf de agudos.
+//   espectral  24 campanas espectrales (las de "24 bandas" de --spectral, con
+//              `dynamics.spectral`): L/R y M/S, 4 escuchando el sidechain.
+//   mezcla-esp la mezcla, con sus 2 campanas dinámicas espectrales.
 //
 // Con --match, dos objetivos en la rejilla de la sesión (192 puntos), con la
 // referencia igual a la pista por unas bandas conocidas, al 100 %:
@@ -76,7 +82,7 @@ using Clock = std::chrono::steady_clock;
 
 struct Options
 {
-    std::vector<std::string> scenarios{"campanas", "cortes", "dinamicas", "mezcla"};
+    std::vector<std::string> scenarios{"campanas", "cortes", "dinamicas", "mezcla", "espectral", "mezcla-esp"};
     std::vector<std::string> modes{"iir", "low", "medium", "high"};
     std::vector<double> rates{48000.0, 192000.0};
     std::vector<int> blocks{256};
@@ -206,9 +212,28 @@ BandSettings cut(FilterType type, double frequencyHz, int slope, FilterAlgorithm
     return band;
 }
 
+std::vector<BandSettings> spectralBands(int count, bool resting);
+
 /// Las bandas del escenario (vacío si no existe).
 std::vector<BandSettings> scenarioBands(std::string_view name, FilterAlgorithm algorithm)
 {
+    if (name == "espectral")
+    {
+        auto bands = spectralBands(esceq::dsp::kMaxBands, false);
+        for (BandSettings& band : bands)
+        {
+            band.filter.algorithm = algorithm;
+            band.dynamics.spectral = true;
+        }
+        return bands;
+    }
+    if (name == "mezcla-esp")
+    {
+        auto bands = scenarioBands("mezcla", algorithm);
+        for (BandSettings& band : bands)
+            band.dynamics.spectral = band.dynamics.enabled;
+        return bands;
+    }
     // De 30 Hz a 16 kHz, repartidas en escala logarítmica.
     auto spread = [](int i) { return 30.0 * std::pow(16000.0 / 30.0, (i + 0.5) / esceq::dsp::kMaxBands); };
     if (name == "mezcla")
@@ -267,16 +292,25 @@ double median(std::vector<double> values)
     return values[values.size() / 2];
 }
 
-/// % de un núcleo de cada repetición, de menor a mayor.
-std::vector<double> measureEqualizer(const std::vector<BandSettings>& bands, PhaseMode mode, double sampleRate,
-                                     int block, const Options& options)
+struct EqualizerMeasure
+{
+    std::vector<double> loads; ///< % de un núcleo de cada repetición, de menor a mayor.
+    double slowestCallMs = 0.0; ///< Mediana entre repeticiones de la llamada más lenta de cada una.
+};
+
+EqualizerMeasure measureEqualizer(const std::vector<BandSettings>& bands, PhaseMode mode, double sampleRate,
+                                  int block, const Options& options)
 {
     const int length = static_cast<int>(options.seconds * sampleRate);
     const std::vector<float> left = noise(length, 0x9E3779B97F4A7C15ull);
     const std::vector<float> right = noise(length, 0xD1B54A32D192ED03ull);
     std::vector<float> ioLeft(left.size()), ioRight(right.size());
+    // El sidechain, solo si alguna banda lo escucha.
+    const bool external = std::ranges::any_of(bands, [](const BandSettings& b) { return b.dynamics.external; });
+    const std::vector<float> key = external ? noise(length, 0x94D049BB133111EBull) : std::vector<float>{};
 
     std::vector<double> loads;
+    std::vector<double> slowest;
     for (int r = 0; r < options.repeat; ++r)
     {
         esceq::dsp::PhaseEqualizer equalizer;
@@ -288,12 +322,18 @@ std::vector<double> measureEqualizer(const std::vector<BandSettings>& bands, Pha
         // Calentamiento, hasta que el modo está activo y los fundidos han
         // acabado. El diseño (el hilo de control en el plugin) se hace aquí y
         // no se mide.
-        auto run = [&](int from, int to)
+        double slowestCall = 0.0;
+        auto run = [&](int from, int to, bool timeCalls = false)
         {
             for (int position = from; position + block <= to; position += block)
             {
                 float* io[] = {ioLeft.data() + position, ioRight.data() + position};
-                equalizer.process(io, 2, block);
+                const float* sidechain[] = {key.data() + position, key.data() + position};
+                const auto callStart = timeCalls ? Clock::now() : Clock::time_point{};
+                equalizer.process(io, 2, block, external ? sidechain : nullptr, external ? 2 : 0);
+                if (timeCalls)
+                    slowestCall =
+                        std::max(slowestCall, std::chrono::duration<double>(Clock::now() - callStart).count());
             }
         };
         std::ranges::copy(left, ioLeft.begin());
@@ -313,14 +353,21 @@ std::vector<double> measureEqualizer(const std::vector<BandSettings>& bands, Pha
         run(0, length);
         const double elapsed = std::chrono::duration<double>(Clock::now() - start).count();
         loads.push_back(100.0 * elapsed * sampleRate / static_cast<double>(length - length % block));
+
+        // La llamada más lenta, en otra pasada: medir cada llamada cuesta.
+        std::ranges::copy(left, ioLeft.begin());
+        std::ranges::copy(right, ioRight.begin());
+        run(0, length, true);
+        slowest.push_back(1.0e3 * slowestCall);
     }
     std::ranges::sort(loads);
-    return loads;
+    return {loads, median(slowest)};
 }
 
 void runEqualizer(const Options& options)
 {
-    std::printf("%-10s %-7s %7s %6s  %% de un núcleo: mediana (mín.–máx.)\n", "escenario", "modo", "Hz", "bloque");
+    std::printf("%-10s %-7s %7s %6s  %% de un núcleo: mediana (mín.–máx.)   llamada más lenta, ms (bloque)\n",
+                "escenario", "modo", "Hz", "bloque");
     for (const std::string& scenario : options.scenarios)
     {
         const std::vector<BandSettings> bands = scenarioBands(scenario, options.algorithm);
@@ -346,9 +393,11 @@ void runEqualizer(const Options& options)
                                      rate);
                         continue;
                     }
-                    const std::vector<double> loads = measureEqualizer(bands, mode, rate, block, options);
-                    std::printf("%-10s %-7s %7.0f %6d  %6.2f (%.2f–%.2f)\n", scenario.c_str(), modeName.c_str(), rate,
-                                block, median(loads), loads.front(), loads.back());
+                    const EqualizerMeasure measure = measureEqualizer(bands, mode, rate, block, options);
+                    const std::vector<double>& loads = measure.loads;
+                    std::printf("%-10s %-7s %7.0f %6d  %6.2f (%.2f–%.2f)   %.3f (%.3f)\n", scenario.c_str(),
+                                modeName.c_str(), rate, block, median(loads), loads.front(), loads.back(),
+                                measure.slowestCallMs, 1.0e3 * block / rate);
                     std::fflush(stdout);
                 }
         }
