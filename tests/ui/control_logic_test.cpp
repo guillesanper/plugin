@@ -245,6 +245,61 @@ TEST_CASE("Controles: ataque y relajacion con los tiempos automaticos")
     CHECK(autoTimingTooltip(80.0) == "Auto timing \xC2\xB7 attack 25.0 ms, release 100 ms (1.00 s after long notes)");
 }
 
+TEST_CASE("Controles: el interruptor de la dinamica espectral")
+{
+    dsp::BandSettings band{true, {dsp::FilterType::Bell, 1000.0, 0.0, 1.0}, {true, -20.0, -6.0, 0.0, 5.0, 100.0}};
+
+    // Solo se puede tocar con la dinamica encendida y en un tipo que la admite.
+    CHECK(spectralSwitchEnabled(band));
+    for (const auto type : {dsp::FilterType::LowShelf, dsp::FilterType::HighShelf, dsp::FilterType::Tilt})
+    {
+        band.filter.type = type;
+        CHECK(spectralSwitchEnabled(band));
+    }
+    for (const auto type : {dsp::FilterType::LowCut, dsp::FilterType::HighCut, dsp::FilterType::Notch,
+                            dsp::FilterType::BandPass})
+    {
+        band.filter.type = type;
+        CHECK_FALSE(spectralSwitchEnabled(band));
+    }
+    band.filter.type = dsp::FilterType::Bell;
+    band.dynamics.enabled = false;
+    CHECK_FALSE(spectralSwitchEnabled(band));
+
+    // La latencia, la de dsp::SpectralDynamics (N + N/4): los mismos ms a 48, 96 y 192 kHz.
+    CHECK_THAT(spectralLatencyMs(48000.0), WithinAbs(2560.0 / 48.0, 1e-9));
+    CHECK_THAT(spectralLatencyMs(96000.0), WithinAbs(2560.0 / 48.0, 1e-9));
+    CHECK_THAT(spectralLatencyMs(192000.0), WithinAbs(2560.0 / 48.0, 1e-9));
+    CHECK_THAT(spectralLatencyMs(44100.0), WithinAbs(2560.0 / 44.1, 1e-9));
+    CHECK(spectralLatencyMs(0.0) == 0.0);
+}
+
+TEST_CASE("Controles: la ayuda de la dinamica espectral dice la latencia y el hueco")
+{
+    dsp::BandSettings band{true, {dsp::FilterType::Bell, 1000.0, 0.0, 1.0}, {true, -20.0, -6.0, 0.0, 5.0, 100.0}};
+    const std::string tail = " \xC2\xB7 only the frequencies above the threshold move, not the whole band. Turning on "
+                             "the first spectral band, or off the last one, changes the latency and leaves a short "
+                             "gap, also when automated";
+
+    CHECK(spectralTooltip(band, 48000.0) == "Spectral \xC2\xB7 adds 53.3 ms latency" + tail);
+    CHECK(spectralTooltip(band, 44100.0) == "Spectral \xC2\xB7 adds 58.0 ms latency" + tail);
+    CHECK(spectralTooltip(band, 192000.0) == "Spectral \xC2\xB7 adds 53.3 ms latency" + tail);
+
+    // Encendido, pero sin dinamica (o en un tipo sin ella): la latencia sigue y se dice.
+    band.dynamics.spectral = true;
+    CHECK(spectralTooltip(band, 48000.0) == "Spectral \xC2\xB7 adds 53.3 ms latency" + tail);
+    band.dynamics.enabled = false;
+    const std::string off = "Spectral \xC2\xB7 adds 53.3 ms latency, also with dynamics off: turn dynamics on to "
+                            "switch it off" + tail;
+    CHECK(spectralTooltip(band, 48000.0) == off);
+    band.dynamics.enabled = true;
+    band.filter.type = dsp::FilterType::Notch;
+    CHECK(spectralTooltip(band, 48000.0) == off);
+    // Apagado y desactivado: nada que avisar.
+    band.dynamics.spectral = false;
+    CHECK(spectralTooltip(band, 48000.0) == "Spectral \xC2\xB7 adds 53.3 ms latency" + tail);
+}
+
 TEST_CASE("Controles: texto del boton de la compensacion automatica")
 {
     CHECK(autoGainLabel(false, -2.3) == "Auto");

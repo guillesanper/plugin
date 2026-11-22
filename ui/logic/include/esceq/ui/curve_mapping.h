@@ -92,7 +92,8 @@ struct NodeReadout
     /// Solo con detalle y en los tipos con dinámica: "Dynamics off", o sus
     /// ajustes ("Thr -20.0 dB", "Range -6.0 dB", "Att 5.00 ms", "Rel 80.0 ms";
     /// "Auto times" en lugar de los tiempos si son automáticos, y "Sidechain"
-    /// si el detector escucha la entrada externa).
+    /// si el detector escucha la entrada externa), y "Spectral" detrás si la
+    /// banda tiene la dinámica espectral, aunque la dinámica esté apagada.
     std::vector<std::string> dynamics;
 };
 
@@ -114,7 +115,10 @@ bool onGainScale(Rect area, Point p) noexcept;
 /// Ajustes de la banda tal y como suenan ahora, para dibujar su curva: los
 /// que recibe el procesador (core::bandSettings con el algoritmo de filtro de
 /// la instancia) y, si la banda es dinámica, con la ganancia dinámica
-/// `dynamicGainDb` sumada a la estática.
+/// `dynamicGainDb` sumada a la estática. En una banda con dinámica
+/// espectral, no: su ganancia dinámica es la del bin que más cambia, no la de
+/// toda la banda, y la curva dibuja aparte la forma de su máscara
+/// (esceq/ui/spectral_mask.h).
 dsp::BandSettings soundingBandSettings(const core::ParameterValues& values, int band, dsp::FilterAlgorithm algorithm,
                                        double dynamicGainDb) noexcept;
 

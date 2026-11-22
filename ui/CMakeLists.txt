@@ -15,6 +15,7 @@ add_library(esceq_ui_logic STATIC
     logic/src/notes.cpp
     logic/src/options_menu.cpp
     logic/src/session_overlay.cpp
+    logic/src/spectral_mask.cpp
     logic/src/spectrum_peaks.cpp)
 
 # Quien use la biblioteca necesita C++20 para sus cabeceras.

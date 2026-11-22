@@ -158,6 +158,7 @@ TEST_CASE("Disposicion: el panel de banda no solapa controles ni corta textos en
                                     {"fuente", panel.source},
                                     {"aviso", panel.sourceWarning},
                                     {"tiempos automaticos", panel.autoTiming},
+                                    {"espectral", panel.spectral},
                                     {"medidor", panel.dynamicsMeter}};
         for (std::size_t i = 0; i < panel.dynamicKnobs.size(); ++i)
             dynamics.emplace_back("celda dinamica " + std::to_string(i), panel.dynamicKnobs[i]);
@@ -190,7 +191,12 @@ TEST_CASE("Disposicion: el panel de banda no solapa controles ni corta textos en
         CHECK(panel.source.width >= 96.0f);
         // El interruptor de los tiempos automáticos, entero, con su texto ("Auto").
         CHECK(panel.autoTiming.height == 24.0f);
-        CHECK(panel.autoTiming.width >= 80.0f);
+        CHECK(panel.autoTiming.width >= 62.0f); // 28 del interruptor, 8 de separacion y 26 de "Auto"
+        // A su derecha, en la misma fila, el de la dinamica espectral ("Spectral", 47 px).
+        CHECK(panel.spectral.height == 24.0f);
+        CHECK(panel.spectral.y == panel.autoTiming.y);
+        CHECK(panel.spectral.x >= panel.autoTiming.x + panel.autoTiming.width + 8.0f);
+        CHECK(panel.spectral.width >= 83.0f);
     }
 }
 

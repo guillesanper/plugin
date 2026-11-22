@@ -111,6 +111,7 @@ struct PanelLayout
     Rect source;
     Rect sourceWarning;
     Rect autoTiming; ///< Interruptor de los tiempos automáticos ("Auto").
+    Rect spectral;   ///< Interruptor de la dinámica espectral ("Spectral"), a su derecha.
     std::array<Rect, kNumDynamicKnobs> dynamicKnobs;
     Rect dynamicsMeter;
 };

@@ -32,6 +32,7 @@ add_executable(esceq_tests
     core/parameters_test.cpp
     core/presets_test.cpp
     core/release_contract_test.cpp
+    core/spectral_mask_test.cpp
     core/spectrum_session_test.cpp
     core/state_test.cpp
     ui/control_logic_test.cpp
@@ -42,6 +43,7 @@ add_executable(esceq_tests
     ui/notes_test.cpp
     ui/options_menu_test.cpp
     ui/session_overlay_test.cpp
+    ui/spectral_mask_test.cpp
     ui/spectrum_peaks_test.cpp)
 
 target_compile_definitions(esceq_tests PRIVATE

@@ -10,6 +10,7 @@ add_library(esceq_core STATIC
     src/match.cpp
     src/parameters.cpp
     src/presets.cpp
+    src/spectral_mask.cpp
     src/spectrum_session.cpp
     src/state.cpp)
 

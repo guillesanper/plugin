@@ -23,7 +23,11 @@ constexpr float kControlHeight = 24.0f;
 constexpr float kIconButton = 28.0f;
 
 constexpr float kBandCardWidth = 180.0f;
-constexpr float kDynamicsSideWidth = 104.0f;
+// La columna lateral de la dinámica: el interruptor, la fuente y, en la
+// última fila, Auto y Spectral juntos ("Spectral" mide 47 px, más los 36 del
+// interruptor).
+constexpr float kDynamicsSideWidth = 156.0f;
+constexpr float kAutoTimingWidth = 64.0f;
 constexpr float kDynamicsMeterWidth = 28.0f;
 constexpr float kGroupTitleHeight = 14.0f;
 
@@ -242,15 +246,19 @@ PanelLayout panelLayout(Rect bounds) noexcept
         takeRight(inner, kS2);
 
         layout.dynamicsTitle = {title.x, title.y, kDynamicsSideWidth, title.height};
-        // Interruptor, fuente con su aviso debajo y tiempos automáticos: con
-        // la altura del panel (168 px) caben con 2 px de sobra.
+        // Interruptor, fuente con su aviso debajo y, en la última fila, los
+        // tiempos automáticos y la dinámica espectral: con la altura del panel
+        // (168 px) caben con 2 px de sobra.
         takeTop(side, kS2);
         layout.dynamicsEnabled = takeTop(side, kControlHeight);
         takeTop(side, kS1);
         layout.source = takeTop(side, kControlHeight);
         layout.sourceWarning = takeTop(side, 16.0f);
         takeTop(side, kS1);
-        layout.autoTiming = takeTop(side, kControlHeight);
+        Rect toggles = takeTop(side, kControlHeight);
+        layout.autoTiming = takeLeft(toggles, kAutoTimingWidth);
+        takeLeft(toggles, kS2);
+        layout.spectral = toggles;
 
         const float dynamicCell = inner.width / static_cast<float>(kNumDynamicKnobs);
         for (std::size_t i = 0; i < layout.dynamicKnobs.size(); ++i)

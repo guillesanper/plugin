@@ -3,6 +3,7 @@
 
 #include "esceq/core/parameters.h"
 #include "esceq/core/state.h"
+#include "esceq/dsp/equalizer.h"
 
 #include <optional>
 #include <string>
@@ -95,5 +96,21 @@ std::string_view dynamicTimeValueText(bool autoTiming) noexcept;
 /// corresponden a la frecuencia de la banda (dsp::autoEnvelopeTimes):
 /// "Auto timing · attack 2.00 ms, release 20.0 ms (200 ms after long notes)".
 std::string autoTimingTooltip(double frequencyHz);
+
+/// Si el interruptor de la dinámica espectral de una banda se puede tocar:
+/// solo con la dinámica encendida y en un tipo que la admite. Desactivado,
+/// sigue mostrando su estado: encendido, la latencia sigue (ADR 0025).
+bool spectralSwitchEnabled(const dsp::BandSettings& settings) noexcept;
+
+/// Latencia que añade la dinámica espectral a `sampleRate`, en milisegundos
+/// (dsp::SpectralDynamics::latencySamples(): 53.3 ms a 48 kHz).
+double spectralLatencyMs(double sampleRate) noexcept;
+
+/// Texto de ayuda del interruptor de la dinámica espectral, con la latencia
+/// a la frecuencia de muestreo actual: "Spectral · adds 53.3 ms latency ·
+/// ...", qué hace y que encender la primera banda espectral, o apagar la
+/// última, deja un hueco (también automatizándolo). Encendido pero
+/// desactivado (`settings` sin dinámica), avisa de que la latencia sigue.
+std::string spectralTooltip(const dsp::BandSettings& settings, double sampleRate);
 
 } // namespace esceq::ui

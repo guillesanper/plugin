@@ -366,6 +366,12 @@ TEST_CASE("Vista: la curva de una banda dinamica suma la ganancia dinamica")
     CHECK(dynamic.filter.gainDb == -3.0);
     CHECK(dynamic.filter.algorithm == kAlgorithm);
 
+    // Con la dinamica espectral, no: la ganancia dinamica es la del bin que
+    // mas cambia, y la mascara se dibuja aparte.
+    values[core::spectralParameter(1)] = 1.0f;
+    CHECK(soundingBandSettings(values, 1, kAlgorithm, -5.0).filter.gainDb == 2.0);
+    values[core::spectralParameter(1)] = 0.0f;
+
     // En un tipo sin ganancia (un corte) la dinamica no actua.
     values[core::bandParameter(1, BandParam::Type)] = 3.0f;
     REQUIRE(core::bandSettings(values, 1).filter.type == dsp::FilterType::LowCut);
@@ -419,6 +425,16 @@ TEST_CASE("Vista: en la vista ampliada, la etiqueta dice tambien el canal y la d
     readout = nodeReadout(values, 2, std::nullopt, true);
     CHECK(readout.title == "Band 3 \xC2\xB7 Bell \xC2\xB7 Mid");
     CHECK(readout.dynamics == std::vector<std::string>{"Thr -20.0 dB", "Range -6.0 dB", "Auto times", "Sidechain"});
+
+    // Con la dinamica espectral, al final; con la dinamica apagada tambien
+    // (el interruptor deja la latencia, ADR 0025).
+    values[core::spectralParameter(2)] = 1.0f;
+    CHECK(nodeReadout(values, 2, std::nullopt, true).dynamics ==
+          std::vector<std::string>{"Thr -20.0 dB", "Range -6.0 dB", "Auto times", "Sidechain", "Spectral"});
+    dyn(2, core::DynParam::Enabled, 0.0f);
+    CHECK(nodeReadout(values, 2, std::nullopt, true).dynamics == std::vector<std::string>{"Dynamics off", "Spectral"});
+    dyn(2, core::DynParam::Enabled, 1.0f);
+    values[core::spectralParameter(2)] = 0.0f;
 
     // Un tipo sin dinamica (corte) no dice nada de ella.
     values[core::bandParameter(0, core::BandParam::Type)] = 3.0f;

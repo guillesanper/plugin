@@ -142,6 +142,9 @@ NodeReadout nodeReadout(const core::ParameterValues& values, int band, std::opti
             if (values[core::dynamicParameter(band, core::DynParam::Source)] >= 0.5f)
                 out.dynamics.emplace_back("Sidechain");
         }
+        // Con la dinámica apagada también: el interruptor deja la latencia (ADR 0025).
+        if (values[core::spectralParameter(band)] >= 0.5f)
+            out.dynamics.emplace_back("Spectral");
     }
     return out;
 }
@@ -156,7 +159,7 @@ dsp::BandSettings soundingBandSettings(const core::ParameterValues& values, int 
                                        double dynamicGainDb) noexcept
 {
     auto settings = core::bandSettings(values, band, algorithm);
-    if (settings.dynamics.enabled && core::usesDynamics(settings.filter.type))
+    if (settings.dynamics.enabled && !settings.dynamics.spectral && core::usesDynamics(settings.filter.type))
         settings.filter.gainDb += dynamicGainDb;
     return settings;
 }

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/control_logic.h"
 
+#include "esceq/core/band_model.h"
 #include "esceq/dsp/dynamics.h"
+#include "esceq/dsp/spectral_dynamics.h"
 #include "esceq/ui/notes.h"
 
 #include <algorithm>
@@ -141,6 +143,29 @@ std::string autoTimingTooltip(double frequencyHz)
     return "Auto timing \xC2\xB7 attack " + core::formatValue(attack, static_cast<float>(times.attackMs)) +
            ", release " + core::formatValue(release, static_cast<float>(times.releaseMs)) + " (" +
            core::formatValue(release, static_cast<float>(times.slowReleaseMs)) + " after long notes)";
+}
+
+bool spectralSwitchEnabled(const dsp::BandSettings& settings) noexcept
+{
+    return settings.dynamics.enabled && core::usesDynamics(settings.filter.type);
+}
+
+double spectralLatencyMs(double sampleRate) noexcept
+{
+    if (!(sampleRate > 0.0))
+        return 0.0;
+    return 1000.0 * dsp::SpectralDynamics::latencySamples(sampleRate) / sampleRate;
+}
+
+std::string spectralTooltip(const dsp::BandSettings& settings, double sampleRate)
+{
+    char latency[64];
+    std::snprintf(latency, sizeof latency, "Spectral \xC2\xB7 adds %.1f ms latency", spectralLatencyMs(sampleRate));
+    std::string text = latency;
+    if (settings.dynamics.spectral && !spectralSwitchEnabled(settings))
+        text += ", also with dynamics off: turn dynamics on to switch it off";
+    return text + " \xC2\xB7 only the frequencies above the threshold move, not the whole band. Turning on the first "
+                  "spectral band, or off the last one, changes the latency and leaves a short gap, also when automated";
 }
 
 } // namespace esceq::ui
