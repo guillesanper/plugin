@@ -19,6 +19,9 @@ bool sameStaticPart(const BandSettings& a, const BandSettings& b) noexcept
     return a.enabled == b.enabled && a.filter == b.filter && a.channel == b.channel;
 }
 
+/// Tramo más largo que procesa de una vez la dinámica espectral (sus búferes).
+constexpr int kSpectralChunk = 512;
+
 float finiteOrZero(float sample) noexcept
 {
     return std::isfinite(sample) ? sample : 0.0f;
@@ -116,8 +119,40 @@ struct PhaseEqualizer::LinearPath
     std::array<std::vector<float>, kMaxChannels> input, filtered, delayed, sidechain;
 };
 
-PhaseEqualizer::PhaseEqualizer()
+/// La dinámica espectral, tras el ecualizador: el motor, la señal seca
+/// retrasada como él (para el bypass) y la entrada del ecualizador en IIR
+/// (lo que escuchan sus detectores).
+struct PhaseEqualizer::SpectralPath
 {
+    SpectralPath() : dry{DelayLine(0), DelayLine(0)} {}
+
+    void prepare(double sampleRate)
+    {
+        engine.prepare(sampleRate);
+        for (auto& line : dry)
+            line = DelayLine(engine.latency());
+        for (auto* group : {&detector, &delayed})
+            for (auto& buffer : *group)
+                buffer.assign(static_cast<std::size_t>(kSpectralChunk), 0.0f);
+    }
+
+    void reset(bool bypassed) noexcept
+    {
+        engine.reset();
+        for (auto& line : dry)
+            line.reset();
+        wet = bypassed ? 0.0f : 1.0f;
+    }
+
+    SpectralDynamics engine;
+    std::array<DelayLine, kMaxChannels> dry;
+    std::array<std::vector<float>, kMaxChannels> detector, delayed;
+    float wet = 1.0f; ///< Mezcla del bypass.
+};
+
+PhaseEqualizer::PhaseEqualizer() : spectral_(std::make_unique<SpectralPath>())
+{
+    spectral_->prepare(sampleRate_);
     publishRequest();
 }
 
@@ -129,12 +164,16 @@ void PhaseEqualizer::prepare(double sampleRate, int numChannels)
     numChannels_ = std::clamp(numChannels, 1, kMaxChannels);
     fadeLength_ = std::max(1, static_cast<int>(std::lround(kTransitionSeconds * sampleRate_)));
     iir_.prepare(sampleRate_);
+    spectral_->prepare(sampleRate_);
 
     // Lo de antes era para otra frecuencia de muestreo. No es tiempo real:
     // se puede destruir aquí.
     path_.reset();
     incoming_.reset();
     activeMode_ = PhaseMode::Iir;
+    activeSpectral_ = false;
+    for (int index = 0; index < kMaxBands; ++index)
+        routeBand(index);
     latency_.store(0, std::memory_order_relaxed);
     configureIir();
     stage_ = Stage::Steady;
@@ -168,12 +207,42 @@ void PhaseEqualizer::setBand(int index, const BandSettings& settings) noexcept E
         return;
     const bool firChanged = !sameStaticPart(band, next);
     band = next;
-    iir_.setBand(index, next);
+    routeBand(index);
+    requestedSpectral_ =
+        std::any_of(bands_.begin(), bands_.end(), [](const BandSettings& b) { return b.dynamics.spectral; });
     if (firChanged)
     {
         ++generation_;
         publishRequest();
     }
+}
+
+void PhaseEqualizer::routeBand(int index) noexcept
+{
+    // Sin dinámica espectral, el Equalizer recibe la banda tal cual (con el
+    // campo spectral, que no mira, a false) y el motor, la banda sin dinámica.
+    const BandSettings& band = bands_[static_cast<std::size_t>(index)];
+    BandSettings normal = band;
+    normal.dynamics.spectral = false;
+    BandSettings masked = normal;
+    if (activeSpectral_ && band.dynamics.spectral)
+        normal.dynamics.enabled = false;
+    else
+        masked.dynamics.enabled = false;
+    iir_.setBand(index, normal);
+    spectral_->engine.setBand(index, masked);
+}
+
+double PhaseEqualizer::dynamicGainDb(int index) const noexcept
+{
+    if (activeSpectral_ && spectral_->engine.isActive(index))
+        return spectral_->engine.gainDb(index);
+    return iir_.dynamicGainDb(index);
+}
+
+const SpectralDynamics& PhaseEqualizer::spectralDynamics() const noexcept
+{
+    return spectral_->engine;
 }
 
 void PhaseEqualizer::setBypassed(bool bypassed) noexcept ESCEQ_NONBLOCKING
@@ -219,11 +288,26 @@ void PhaseEqualizer::reset() noexcept ESCEQ_NONBLOCKING
         path_->reset();
         path_->wet = bypassed_ ? 0.0f : 1.0f;
     }
+    resetSpectral();
     fresh_ = true;
+}
+
+void PhaseEqualizer::resetSpectral() noexcept
+{
+    // Sin dinámica espectral, su memoria no se usa.
+    if (activeSpectral_)
+        spectral_->reset(bypassed_);
+}
+
+bool PhaseEqualizer::switchPending() const noexcept
+{
+    return activeMode_ != requestedMode_ || activeSpectral_ != requestedSpectral_;
 }
 
 bool PhaseEqualizer::targetReady() const noexcept
 {
+    if (activeMode_ == requestedMode_)
+        return true; // solo cambia la dinámica espectral
     if (isLinearPhase(requestedMode_))
         return incoming_ != nullptr;
     // A IIR: hay que poder devolver el camino lineal.
@@ -232,16 +316,29 @@ bool PhaseEqualizer::targetReady() const noexcept
 
 void PhaseEqualizer::switchMode() noexcept
 {
-    paths_.retire(std::move(path_));
-    path_ = std::move(incoming_);
-    activeMode_ = path_ != nullptr ? path_->mode : PhaseMode::Iir;
-    latency_.store(path_ != nullptr ? path_->size.latency() : 0, std::memory_order_relaxed);
-    configureIir();
-    if (path_ != nullptr)
+    if (activeMode_ != requestedMode_)
     {
-        path_->reset();
-        path_->wet = bypassed_ ? 0.0f : 1.0f;
+        paths_.retire(std::move(path_));
+        path_ = std::move(incoming_);
+        activeMode_ = path_ != nullptr ? path_->mode : PhaseMode::Iir;
+        configureIir();
+        if (path_ != nullptr)
+        {
+            path_->reset();
+            path_->wet = bypassed_ ? 0.0f : 1.0f;
+        }
     }
+    if (activeSpectral_ != requestedSpectral_)
+    {
+        // La dinámica de las bandas espectrales pasa del Equalizer a la máscara, o al revés.
+        activeSpectral_ = requestedSpectral_;
+        for (int index = 0; index < kMaxBands; ++index)
+            routeBand(index);
+    }
+    // Lo que tuviera dentro saldría tras el silencio: se empieza de cero.
+    resetSpectral();
+    const int linear = path_ != nullptr ? path_->size.latency() : 0;
+    latency_.store(linear + (activeSpectral_ ? spectral_->engine.latency() : 0), std::memory_order_relaxed);
 }
 
 void PhaseEqualizer::discardPath(std::unique_ptr<LinearPath> path) noexcept
@@ -316,7 +413,7 @@ void PhaseEqualizer::update() noexcept ESCEQ_NONBLOCKING
     takePaths();
     takeKernels();
     // Sin audio de por medio, el modo pedido entra sin transición.
-    if (fresh_ && activeMode_ != requestedMode_ && targetReady())
+    if (fresh_ && switchPending() && targetReady())
         switchMode();
 }
 
@@ -329,15 +426,15 @@ void PhaseEqualizer::beginTransitionIfNeeded() noexcept
         switch (stage_)
         {
         case Stage::Steady:
-            if (activeMode_ == requestedMode_ || !targetReady())
+            if (!switchPending() || !targetReady())
                 return;
             stage_ = Stage::FadingOut;
             stageRemaining_ = fadeLength_;
             return;
         case Stage::FadingOut:
-            if (activeMode_ == requestedMode_)
+            if (!switchPending())
             {
-                // Se ha vuelto a pedir el modo que suena: se deshace la bajada.
+                // Se ha vuelto a pedir lo que suena: se deshace la bajada.
                 stage_ = Stage::FadingIn;
                 stageRemaining_ =
                     static_cast<int>(std::lround((1.0f - transitionGain_) * static_cast<float>(fadeLength_)));
@@ -373,6 +470,8 @@ int PhaseEqualizer::segmentLength(int available) const noexcept
         length = std::min(length, stageRemaining_);
     if (path_ != nullptr)
         length = std::min(length, path_->convolver.samplesUntilBlock());
+    else if (activeSpectral_)
+        length = std::min(length, kSpectralChunk); // la copia de la entrada para los detectores
     return length;
 }
 
@@ -426,7 +525,7 @@ void PhaseEqualizer::process(float* const* channels, int numChannels, int numSam
     beginTransitionIfNeeded();
 
     // Lo normal en IIR: el IIR, sin nada más.
-    if (stage_ == Stage::Steady && path_ == nullptr)
+    if (stage_ == Stage::Steady && path_ == nullptr && !activeSpectral_)
     {
         iir_.process(channels, usedChannels, numSamples, sidechain, numSidechainChannels);
         return;
@@ -443,10 +542,34 @@ void PhaseEqualizer::process(float* const* channels, int numChannels, int numSam
         for (int ch = 0; ch < scChannels; ++ch)
             sc[static_cast<std::size_t>(ch)] = sidechain[ch] + position;
 
+        const float* const* side = scChannels > 0 ? sc.data() : nullptr;
+        // Lo que escuchan los detectores de la dinámica espectral: la entrada
+        // del ecualizador y el sidechain, retrasados como el audio.
+        std::array<const float*, kMaxChannels> detector{};
+        std::array<const float*, kMaxChannels> detectorSide{};
         if (path_ != nullptr)
-            renderLinear(io.data(), usedChannels, length, scChannels > 0 ? sc.data() : nullptr, scChannels);
+        {
+            renderLinear(io.data(), usedChannels, length, side, scChannels);
+            for (std::size_t c = 0; c < kMaxChannels; ++c)
+            {
+                detector[c] = path_->delayed[c].data();
+                detectorSide[c] = path_->sidechain[c].data();
+            }
+            side = scChannels > 0 ? detectorSide.data() : nullptr;
+        }
         else
-            iir_.process(io.data(), usedChannels, length, scChannels > 0 ? sc.data() : nullptr, scChannels);
+        {
+            if (activeSpectral_)
+                for (int ch = 0; ch < usedChannels; ++ch)
+                {
+                    const auto c = static_cast<std::size_t>(ch);
+                    std::copy_n(io[c], length, spectral_->detector[c].data());
+                    detector[c] = spectral_->detector[c].data();
+                }
+            iir_.process(io.data(), usedChannels, length, side, scChannels);
+        }
+        if (activeSpectral_)
+            renderSpectral(io.data(), usedChannels, length, side, scChannels, detector.data());
 
         applyTransition(io.data(), usedChannels, length);
         position += length;
@@ -535,9 +658,55 @@ void PhaseEqualizer::renderLinear(float* const* io, int numChannels, int length,
     }
 }
 
+void PhaseEqualizer::renderSpectral(float* const* io, int numChannels, int length, const float* const* sidechain,
+                                    int numSidechainChannels, const float* const* detectorInput) noexcept
+{
+    SpectralPath& stage = *spectral_;
+    const float wetTarget = bypassed_ ? 0.0f : 1.0f;
+    const float step = 1.0f / static_cast<float>(fadeLength_);
+    std::array<float*, kMaxChannels> out{};
+    std::array<const float*, kMaxChannels> side{};
+    std::array<const float*, kMaxChannels> detector{};
+    for (int offset = 0; offset < length;)
+    {
+        const int count = std::min(length - offset, kSpectralChunk);
+        for (int ch = 0; ch < numChannels; ++ch)
+        {
+            const auto c = static_cast<std::size_t>(ch);
+            out[c] = io[ch] + offset;
+            detector[c] = detectorInput[ch] + offset;
+            // La señal seca, retrasada como la máscara, para el bypass.
+            stage.dry[c].process(out[c], stage.delayed[c].data(), count);
+        }
+        for (int ch = 0; ch < numSidechainChannels; ++ch)
+            side[static_cast<std::size_t>(ch)] = sidechain[ch] + offset;
+        stage.engine.process(out.data(), numChannels, count, sidechain != nullptr ? side.data() : nullptr,
+                             numSidechainChannels, detector.data());
+
+        // Bypass: fundido con la señal seca retrasada, para que la latencia no cambie.
+        if (stage.wet != wetTarget || wetTarget == 0.0f)
+            for (int i = 0; i < count; ++i)
+            {
+                if (stage.wet != wetTarget)
+                    stage.wet = wetTarget > stage.wet ? std::min(wetTarget, stage.wet + step)
+                                                      : std::max(wetTarget, stage.wet - step);
+                for (int ch = 0; ch < numChannels; ++ch)
+                {
+                    const auto c = static_cast<std::size_t>(ch);
+                    const float dry = stage.delayed[c][static_cast<std::size_t>(i)];
+                    const float wet = out[c][i];
+                    out[c][i] = stage.wet == 1.0f ? wet : stage.wet == 0.0f ? dry : dry + stage.wet * (wet - dry);
+                }
+            }
+        offset += count;
+    }
+}
+
 bool PhaseEqualizer::isSettled() const noexcept
 {
-    if (stage_ != Stage::Steady || activeMode_ != requestedMode_ || !iir_.isSettled())
+    if (stage_ != Stage::Steady || switchPending() || !iir_.isSettled())
+        return false;
+    if (activeSpectral_ && spectral_->wet != (bypassed_ ? 0.0f : 1.0f))
         return false;
     if (path_ == nullptr)
         return true;

@@ -40,6 +40,10 @@ struct DynamicSettings
     /// true: ataque y relajación salen de la frecuencia de la banda
     /// (autoEnvelopeTimes()) y `attackMs` y `releaseMs` no se usan.
     bool autoTiming = false;
+    /// true: dinámica espectral (PLAN.md 5.7, ADR 0024). En PhaseEqualizer, la
+    /// parte dinámica de la banda la hace la máscara de SpectralDynamics, bin a
+    /// bin, y no el Equalizer. Equalizer y SpectralDynamics no miran este campo.
+    bool spectral = false;
 
     friend bool operator==(const DynamicSettings&, const DynamicSettings&) = default;
 };

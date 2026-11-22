@@ -5,6 +5,7 @@
 #include "esceq/dsp/handoff.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/realtime.h"
+#include "esceq/dsp/spectral_dynamics.h"
 
 #include <array>
 #include <atomic>
@@ -22,6 +23,14 @@ namespace esceq::dsp
 ///    va en un FIR de fase lineal (convolución particionada) y la dinámica,
 ///    en el Equalizer en modo solo dinámica, que no hace nada mientras la
 ///    dinámica no actúa. Latencia: latencySamples(mode, sampleRate).
+///
+/// Dinámica espectral (PLAN.md 5.7, ADR 0024): mientras alguna banda tenga
+/// `dynamics.spectral`, después del IIR o del FIR suena un SpectralDynamics,
+/// con el detector escuchando la entrada (y el sidechain) retrasada como el
+/// audio. En las bandas espectrales, la máscara sustituye a la parte dinámica
+/// del Equalizer; la estática sigue igual. La latencia del modo crece en
+/// SpectralDynamics::latencySamples(). Sin ninguna banda espectral, todo es
+/// bit a bit como si no existiera.
 ///
 /// Dos hilos:
 ///  - El hilo de audio llama a todo lo que está marcado como seguro en tiempo
@@ -41,14 +50,20 @@ namespace esceq::dsp
 ///    modo, se espera a que el modo nuevo tenga su latencia de audio dentro,
 ///    y la salida vuelve a subir en kTransitionSeconds. latencySamples()
 ///    cambia en el momento del cambio.
-///  - Bypass en fase lineal: fundido con la señal seca retrasada, para que
-///    la latencia no cambie.
+///  - Primera banda espectral encendida, o última apagada: como el cambio de
+///    modo (silencio, cambio, la latencia nueva en silencio y subida). Las
+///    demás bandas espectrales se encienden y se apagan sin cambiar la
+///    latencia: la dinámica normal de la banda se funde (Equalizer) y la
+///    máscara entra en la trama siguiente.
+///  - Bypass en fase lineal o con dinámica espectral: fundido con la señal
+///    seca retrasada, para que la latencia no cambie.
 ///
 /// Garantías (además de las de Equalizer en IIR):
 ///  - Con parámetros constantes, el resultado no depende de cómo se trocee el
 ///    audio en bloques.
-///  - En fase lineal, con todas las bandas desactivadas (o sin efecto) y con
-///    el bypass completo, la salida es la entrada retrasada, bit a bit.
+///  - En fase lineal, con todas las bandas desactivadas (o sin efecto) y sin
+///    dinámica espectral, y con el bypass completo en cualquier modo, la
+///    salida es la entrada retrasada, bit a bit.
 ///  - Las muestras no finitas de la entrada y del sidechain cuentan como
 ///    silencio en fase lineal (no se quedan en la memoria del FIR).
 ///  - No es segura entre hilos salvo lo dicho: un hilo de audio y un hilo de diseño.
@@ -95,14 +110,24 @@ public:
     /// Modo que suena ahora mismo (puede ir por detrás del pedido).
     PhaseMode activePhaseMode() const noexcept { return activeMode_; }
 
-    /// Latencia en muestras del modo que suena. Se puede leer desde cualquier hilo.
+    /// Latencia en muestras de lo que suena (el modo y, si la hay, la dinámica
+    /// espectral). Se puede leer desde cualquier hilo.
     int latencySamples() const noexcept { return latency_.load(std::memory_order_relaxed); }
+
+    /// true si alguna banda pide la dinámica espectral (`dynamics.spectral`).
+    bool spectralRequested() const noexcept { return requestedSpectral_; }
+    /// true si suena la dinámica espectral (puede ir por detrás de lo pedido).
+    bool spectralActive() const noexcept { return activeSpectral_; }
+    /// El motor de la dinámica espectral, para leer sus máscaras (en el hilo de audio).
+    const SpectralDynamics& spectralDynamics() const noexcept;
 
     /// Ajustes objetivo de la banda (los últimos recibidos, saneados).
     const BandSettings& target(int index) const noexcept;
 
-    /// Ganancia dinámica que se aplica ahora mismo a la banda, en dB.
-    double dynamicGainDb(int index) const noexcept { return iir_.dynamicGainDb(index); }
+    /// Ganancia dinámica que se aplica ahora mismo a la banda, en dB. En una
+    /// banda espectral que suena, la del bin que más cambia
+    /// (SpectralDynamics::gainDb()).
+    double dynamicGainDb(int index) const noexcept;
 
     /// true si suena el modo pedido, con el FIR de los últimos ajustes, sin
     /// fundidos ni suavizados en curso.
@@ -118,6 +143,7 @@ public:
 private:
     struct Kernel;
     struct LinearPath;
+    struct SpectralPath;
 
     /// Lo que el hilo de audio pide diseñar.
     struct DesignRequest
@@ -139,10 +165,17 @@ private:
     };
 
     void publishRequest() noexcept;
+    /// Pasa los ajustes de la banda al Equalizer y a la dinámica espectral,
+    /// según suene o no la dinámica espectral.
+    void routeBand(int index) noexcept;
+    /// Lo que suena no es lo pedido (el modo o la dinámica espectral).
+    bool switchPending() const noexcept;
     bool targetReady() const noexcept;
     void beginTransitionIfNeeded() noexcept;
-    /// Pasa al modo pedido: retira lo anterior e instala lo nuevo.
+    /// Pasa al modo pedido y a la dinámica espectral pedida: retira lo
+    /// anterior e instala lo nuevo.
     void switchMode() noexcept;
+    void resetSpectral() noexcept;
     void configureIir() noexcept;
     void takeKernels() noexcept;
     void takePaths() noexcept;
@@ -150,6 +183,9 @@ private:
     void discardPath(std::unique_ptr<LinearPath> path) noexcept;
     void renderLinear(float* const* io, int numChannels, int length, const float* const* sidechain,
                       int numSidechainChannels) noexcept;
+    /// La dinámica espectral sobre la salida del ecualizador, con su bypass.
+    void renderSpectral(float* const* io, int numChannels, int length, const float* const* sidechain,
+                        int numSidechainChannels, const float* const* detectorInput) noexcept;
     /// Muestras que se pueden procesar seguidas sin cambiar de etapa ni de bloque.
     int segmentLength(int available) const noexcept;
     void applyTransition(float* const* io, int numChannels, int length) noexcept;
@@ -159,6 +195,9 @@ private:
     std::array<BandSettings, kMaxBands> bands_{};
     PhaseMode requestedMode_ = PhaseMode::Iir;
     PhaseMode activeMode_ = PhaseMode::Iir;
+    bool requestedSpectral_ = false;
+    bool activeSpectral_ = false;
+    std::unique_ptr<SpectralPath> spectral_; ///< Siempre existe; su memoria se reserva en prepare().
     double sampleRate_ = 48000.0;
     int numChannels_ = 2;
     bool bypassed_ = false;
