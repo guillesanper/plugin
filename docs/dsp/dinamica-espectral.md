@@ -1,8 +1,8 @@
 # Dinámica espectral
 
-Cómo funciona el motor de la dinámica espectral de esceQ: una variante de la banda dinámica que, dentro de su zona, baja o sube **solo las frecuencias que pasan del umbral**. Código en `dsp/include/esceq/dsp/spectral_dynamics.h` (`dsp::SpectralDynamics`). Las decisiones y sus motivos están en la [ADR 0024](../decisiones/0024-dinamica-espectral.md), y el comportamiento que verá el usuario, en la sección 5.7 del [plan](../../PLAN.md).
+Cómo funciona la dinámica espectral de esceQ: una variante de la banda dinámica que, dentro de su zona, baja o sube **solo las frecuencias que pasan del umbral**. Código en `dsp/include/esceq/dsp/spectral_dynamics.h` (`dsp::SpectralDynamics`, el motor) y `dsp/include/esceq/dsp/phase_equalizer.h` (su integración en el ecualizador). Las decisiones y sus motivos están en las ADR [0024](../decisiones/0024-dinamica-espectral.md) y [0025](../decisiones/0025-dinamica-espectral-en-el-procesador.md), y el comportamiento que verá el usuario, en la sección 5.7 del [plan](../../PLAN.md).
 
-Estado: el motor está hecho (bloque 6.4) y probado por separado. Todavía no suena en el plugin: lo integra en `dsp::PhaseEqualizer`, con el parámetro `bNN_spectral`, el bloque 6.5.
+Estado: el motor (bloque 6.4) y su integración en `dsp::PhaseEqualizer`, con el parámetro `bNN_spectral` (bloque 6.5), están hechos: suena en el plugin en los cuatro modos de fase. Falta la interfaz (bloque 6.6): hasta entonces se enciende desde la automatización del host.
 
 ## Cadena
 
@@ -28,8 +28,22 @@ Como las dos señales son reales, cada una se separa de la transformada conjunta
 
 - **N = 2048 puntos** hasta 50 kHz, 4096 hasta 100 kHz y 8192 hasta 200 kHz (`sampleRateFactor`, el mismo escalado que la fase lineal): bins de 23,4 Hz a 48 kHz y 21,5 Hz a 44,1, y la misma resolución en hercios y en milisegundos a 96 y 192 kHz.
 - **Salto de N/4** (10,7 ms a 48 kHz, 11,6 a 44,1) y **ventana raíz de Hann periódica** en el análisis y en la síntesis. Con un solapamiento del 75 %, la suma de los cuadrados es 2 en todas las muestras, así que la síntesis multiplica por `1/(2N)` y, sin modificar el espectro, la salida es la entrada retrasada.
-- **Latencia: N muestras** (42,7 ms a 48 kHz, 46,4 a 44,1). Cada trama se calcula cuando llega su última muestra y su salida se suma a las N muestras siguientes del anillo de salida. Sacarla un salto antes (N − N/4) dejaría fuera la última trama de cada muestra: en el primer cuarto de cada ventana la suma de los cuadrados se quedaría en 1,5, con un rizado de hasta 2,5 dB (un error de −12 dB). No se hace.
+- **Latencia: N + N/4 muestras** (2560: 53,3 ms a 48 kHz, 58,0 a 44,1). Cada trama empieza cuando llega su última muestra, se calcula durante el salto siguiente (ver «Cálculo repartido») y su salida se suma a sus N muestras en el anillo de salida, que se lee N + N/4 por detrás. Sin repartir, bastaría con N (lo que tenía el bloque 6.4); con menos de N (N − N/4, por ejemplo) quedaría fuera la última trama de cada muestra: en el primer cuarto de cada ventana la suma de los cuadrados se quedaría en 1,5, con un rizado de hasta 2,5 dB (un error de −12 dB).
 - **Por debajo del umbral, o sin bandas**, la salida es la entrada retrasada con el error de redondeo de las FFT en float: −139 dB en L y −129 dB en R (la parte imaginaria), de 44,1 a 192 kHz.
+
+## Cálculo repartido
+
+Calcular una trama entera de una vez, en la llamada que completa un salto, deja picos de CPU: con 24 bandas a 48 kHz esa llamada tardaba 0,42–0,53 ms, y a 192 kHz 1,8–1,9 ms, más que un bloque de 256 muestras (1,33 ms). Por eso ([ADR 0025](../decisiones/0025-dinamica-espectral-en-el-procesador.md)) la trama se calcula en pasos, en este orden:
+
+1. La señal: ventana y FFT.
+2. Cada fuente del detector que haga falta (la entrada y el sidechain): ventana, FFT y niveles de 1/6 de octava.
+3. Cada banda activa: envolvente, curva y suma a la máscara.
+4. Cada una de las cuatro máscaras (L, R, M y S), de dB a lineal: un `pow` por bin, lo más caro de la síntesis.
+5. La síntesis: aplicar las máscaras, la FFT inversa y la suma solapada.
+
+Con 24 bandas y las dos fuentes son 32 pasos. Al empezar la trama se fijan los ajustes con los que se calcula (los de las bandas, el número de canales y el de cada fuente) y los pasos; durante el salto siguiente, cada llamada hace los que le tocan por la parte del salto que ha llegado, `⌈pasos · muestras del salto / salto⌉` en total, y la que lo completa termina la trama antes de empezar la siguiente. Para que la trama no se sobrescriba mientras tanto, los anillos de la señal, de las fuentes y de la salida son de 2N muestras.
+
+El resultado es bit a bit el del cálculo de una vez retrasado un salto (comparado con el motor del bloque 6.4 con 24 bandas, bloques de 1, 64 y 4096 muestras a 48 kHz y de 333 a 96 kHz, y con una banda apagada a mitad del audio), y sigue sin depender del tamaño de bloque. Un cambio de ajustes actúa en la primera trama que empieza después, como antes.
 
 ## Detector
 
@@ -54,9 +68,21 @@ Sumar la energía de 1/6 de octava es el suavizado en frecuencia contra el ruido
 
 El motor no tiene fundidos propios: un cambio de ajustes actúa en la trama siguiente, y el solapamiento de las tramas lo funde en N muestras (cada muestra de salida es la suma de cuatro tramas ponderadas por la ventana). Al encenderse una banda, sus envolventes empiezan en cero y la reducción crece con el ataque. Medido con un tono de 200 Hz reducido 12 dB: encender la banda, llevar el umbral de −30 a 0 dB de golpe y apagarla dejan los agudos espurios (por encima de 8 kHz) en **−122 dB**, cuando el límite de los tests de la banda dinámica es −60 dB.
 
-El cambio de latencia al encender la primera banda espectral, con su fundido a silencio, es cosa de `PhaseEqualizer` (bloque 6.5).
+El cambio de latencia al encender la primera banda espectral, con su fundido a silencio, es cosa de `PhaseEqualizer` (ver «En el ecualizador»).
 
 Valores no finitos: si una trama de la señal tiene un NaN o un infinito, no suena (su parte de la salida se queda a cero) y las demás sí, así que la salida baja alrededor del valor malo durante algo menos de 2N muestras (las cuatro tramas que lo contienen) y vuelve sola. Si lo tiene una fuente del detector, se escucha silencio en esa trama y las envolventes de las bandas que la escuchan vuelven a cero.
+
+## En el ecualizador
+
+`dsp::PhaseEqualizer` lleva un `SpectralDynamics`, con la memoria reservada en `prepare()`, y lo hace sonar mientras alguna banda tenga `dynamics.spectral` (el interruptor `bNN_spectral`, que `core/band_model` traduce), en los cuatro modos de fase ([fase-lineal.md](fase-lineal.md)):
+
+- **Qué hace cada banda.** Mientras suena la dinámica espectral, una banda espectral llega al `Equalizer` sin dinámica (su parte estática sigue en el IIR o en el FIR) y al motor con ella; las demás, al revés. Sin ninguna banda espectral, el `Equalizer` recibe exactamente lo de antes y el motor no se llama.
+- **Dónde.** Tras el IIR o el FIR, sobre su salida. Su detector escucha la entrada del ecualizador y el sidechain retrasados como el audio: en IIR, tal cual (una copia de la entrada antes del IIR, en tramos de hasta 512 muestras); en fase lineal, los retardos que ya tiene el camino del FIR para los detectores de la dinámica.
+- **Latencia.** La del modo más `N + N/4`. Cambia solo con el interruptor: al encender la primera banda espectral, o al apagar la última, como el cambio de modo (fundido a silencio en 10 ms, el cambio, silencio mientras se llena la latencia nueva y fundido de entrada; el motor empieza de cero); el hilo de control avisa al host ([ADR 0021](../decisiones/0021-aviso-de-latencia-sin-temporizador.md)). Apagar la banda, su dinámica o poner el rango a 0 no la cambia. Las demás bandas espectrales entran y salen sin hueco: la dinámica normal se funde en el `Equalizer` y la máscara entra en la trama siguiente.
+- **Bypass.** Fundido de 10 ms con la señal seca retrasada lo que la máscara (y el FIR, en fase lineal): la latencia no cambia, y con el bypass completo la salida es la entrada retrasada, bit a bit.
+- **Medidor.** `PhaseEqualizer::dynamicGainDb(banda)`, que el procesador publica en sus 24 atómicos, es en una banda espectral el `gainDb()` del motor (el bin que más cambia). `spectralDynamics()` da el motor, para que la interfaz lea las máscaras (bloque 6.6).
+
+Con todos los interruptores apagados, `PhaseEqualizer` es bit a bit el de antes de la dinámica espectral: comparado con el código del bloque 6.4 (sin integrar), con 6 bandas (dinámicas, con sidechain y en los cinco canales), bloques de 1, 77 y 512 muestras, un bypass a mitad y los cuatro modos, las salidas y las latencias son idénticas.
 
 ## Medidas
 
@@ -111,14 +137,51 @@ Ráfagas a −6 dBFS sobre un tono de prueba débil de la misma frecuencia, medi
 | Las 24 en reposo (por debajo del umbral) | 1,4–1,6 (1,3) | 1,6–1,8 (1,5) | 3,8 (3,0) | 7,1–8,8 (6,7) |
 
 - El criterio de la sección 5.7 (menos del 5 % con 24 bandas a 48 kHz) se cumple. Lo que no se cumple es que con una banda cueste "casi lo mismo": las FFT son algo más del 1 %, y con 24 bandas manda el cálculo de cada bin de cada banda (envolvente, curva y suma a la máscara, unos 13 ns por bin y banda con GCC). La primera versión, con `log10` en double y ramas, costaba del 5,1 al 5,3 %; con la curva en float, el logaritmo propio y los bucles sin ramas, el 3,9–4,2 %. GCC no vectoriza dos de los bucles y Clang sí (de ahí la diferencia).
-- **El coste llega a golpes.** Toda una trama se calcula en la llamada que completa un salto: 0,13 ms con una banda y 0,46 ms con 24 a 48 kHz; 0,6 y 2,3–2,6 ms a 192 kHz. Con bloques pequeños, esa llamada dura mucho más que las demás: a 192 kHz con 32 muestras (0,17 ms de audio), 2,5 ms. Repartirlo entre las llamadas de un salto costaría un salto más de latencia (N + N/4, 53 ms a 48 kHz); se decide al integrarlo (bloque 6.5), con el plugin en un host.
+- **El coste llegaba a golpes** (bloque 6.4): toda una trama se calculaba en la llamada que completa un salto, 0,13 ms con una banda y 0,46 ms con 24 a 48 kHz, y 0,6 y 2,3–2,6 ms a 192 kHz. El bloque 6.5 la reparte en el salto siguiente (ver «Cálculo repartido» y abajo). Repartir no cambia el coste medio: medidos ahora en la misma máquina, el motor del 6.4 y el repartido cuestan lo mismo con 24 bandas a 48 kHz (3,1–3,3 % y 3,1–3,2 %). La máquina también varía: con 24 bandas a 48 kHz el motor da hoy el 3,2 % y no el 3,9–4,2 % de la tabla.
+
+#### Con el ecualizador
+
+`esceq_bench --scenario espectral,mezcla-esp,mezcla` mide `PhaseEqualizer`, lo que llama el procesador, con bloques de 64 y de 512 muestras (mediana de 7 medidas, GCC 13, % de un núcleo). "espectral" son las 24 bandas de arriba con `dynamics.spectral` (con sus campanas de 0 dB en el IIR o en el FIR); "mezcla-esp", la mezcla de 8 bandas con sus 2 bandas dinámicas espectrales:
+
+| Escenario | Modo | 44,1 kHz | 48 kHz | 96 kHz | 192 kHz |
+|---|---|---|---|---|---|
+| 24 espectrales | IIR | 3,5–3,6 | 3,7–3,9 | 7,7–7,9 | 15,8–16,2 |
+| 24 espectrales | Low, Medium y High | 3,1–3,5 | 3,4–3,7 | 7,0–7,2 | 14,5–15,3 |
+| Mezcla, 2 espectrales | los cuatro | 1,0–1,1 | 1,1–1,2 | 2,3–2,7 | 5,0–6,0 |
+| Mezcla, sin espectrales (referencia) | los cuatro | 0,6–0,8 | 0,6–0,9 | 1,2–1,9 | 2,0–3,2 |
+
+El criterio de la sección 5.7 (menos del 5 % con 24 bandas espectrales a 48 kHz) se cumple también con el ecualizador. En IIR cuesta algo más que en fase lineal porque las 24 campanas de 0 dB pasan por el IIR, y en fase lineal van en el FIR, que es la identidad. En la mezcla, pasar sus 2 bandas dinámicas a espectrales cuesta de 0,3 a 0,5 puntos más a 48 kHz: las FFT y las dos bandas del motor, menos la dinámica que dejan de hacer en el IIR.
+
+#### La llamada más lenta
+
+Lo que importa con bloques pequeños es lo que tarda la llamada más lenta frente a lo que dura el bloque. Con el cálculo repartido, cada paso tarda (24 bandas, mediana):
+
+| Paso | 48 kHz | 192 kHz |
+|---|---|---|
+| La señal (ventana y FFT) | 16 µs | 81 µs |
+| Una fuente del detector | 24–27 µs | 115–127 µs |
+| Una banda | 8–9 µs | 31–35 µs |
+| Una máscara, de dB a lineal | 10 µs | 41 µs |
+| La síntesis | 19 µs | 97 µs |
+
+La síntesis con la conversión de las máscaras dentro tardaba 62 y 266 µs: por eso la conversión va en cuatro pasos aparte. Medido llamada a llamada con `PhaseEqualizer` y las 24 bandas espectrales en IIR (4 s de audio):
+
+| Frecuencia y bloque | Dura el bloque | Llamada: p99,9 / la más lenta | Antes, de una vez |
+|---|---|---|---|
+| 48 kHz, 32 muestras | 0,67 ms | 0,07 / 0,08 ms | 0,42–0,53 ms |
+| 96 kHz, 32 muestras | 0,33 ms | 0,21 / 0,56 ms (4 de 9000 llamadas, más que el bloque) | |
+| 192 kHz, 64 muestras | 0,33 ms | 0,16 / 0,17 ms | 1,8–1,9 ms (con bloques de 256) |
+| 192 kHz, 32 muestras | 0,17 ms | 0,19 / 0,36 ms (27 de 18000, más que el bloque) | |
+
+Con bloques de 64 muestras o más a 192 kHz (y de 32 o más a 48 kHz), ninguna llamada pasa de la duración del bloque. A 192 kHz con bloques de 32, el análisis de una fuente (127 µs) ya ocupa tres cuartos del bloque; repartir más fino habría que hacerlo dentro de una FFT. La columna «llamada más lenta» de `esceq_bench` es la mediana de la más lenta de cada repetición y recoge también las interrupciones del sistema: en esta máquina, ruidosa, da de 0,1 a 1 ms en todos los escenarios, también en los que no tienen dinámica espectral.
 
 ## Verificación
 
 `tests/dsp/spectral_dynamics_test.cpp` comprueba:
 
-- Tamaños y latencia a 44,1, 48, 88,2, 96, 176,4 y 192 kHz, y qué bandas actúan (encendidas, con la dinámica y rango, y en campanas, shelves y tilt).
-- Por debajo del umbral, con bandas en los cuatro dominios y sin ninguna, la salida es la entrada retrasada N muestras con un error menor de −90 dB, de 44,1 a 192 kHz y en mono.
+- Tamaños y latencia (N + N/4) a 44,1, 48, 88,2, 96, 176,4 y 192 kHz, y qué bandas actúan (encendidas, con la dinámica y rango, y en campanas, shelves y tilt).
+- El cálculo repartido: con 24 bandas, bloques de 1 a 4096 muestras y saltos de 512, ninguna llamada hace más de `⌈32 · bloque / 512⌉` pasos (2 con bloques de 32), y todas las tramas se terminan. Se cuentan pasos (`stepsProcessed()`), no tiempos.
+- Por debajo del umbral, con bandas en los cuatro dominios y sin ninguna, la salida es la entrada retrasada la latencia con un error menor de −90 dB, de 44,1 a 192 kHz y en mono.
 - Selectividad (la tabla de arriba), el rango positivo (sube 4 dB ± 0,5), el medidor y la forma de la máscara en el bin del tono.
 - La forma del detector: en una campana, la ganancia a una octava del centro es la de su paso banda; en tilt, la misma en todo el espectro; en un shelf de graves, todo por debajo y casi nada a 8 kHz.
 - Canales: Left solo baja L; un tono solo en L no mueve una banda Right; un tono centrado lo baja Mid y no Side; Side baja la diferencia y deja la suma; Stereo enlaza los dos canales; en mono, Right y Side no hacen nada.
@@ -129,11 +192,14 @@ Ráfagas a −6 dBFS sobre un tono de prueba débil de la misma frecuencia, medi
 - Un NaN o un infinito en la señal o en el sidechain no la estropea, y `reset()` vuelve a empezar de cero.
 - El job `rtsan` del CI pasa todos estos tests con RealtimeSanitizer: `process`, `setBand` y `reset` no asignan ni bloquean.
 
+La integración la comprueban `tests/dsp/phase_equalizer_test.cpp` (sin bandas espectrales, la latencia y el sonido de siempre en los cuatro modos; la latencia sumada a la del modo y medida con un impulso a 44,1, 48, 96 y 192 kHz, en estéreo y en mono; la máscara en lugar de la dinámica de la banda, con su medidor; sin chasquidos ni huecos al encender y apagar la primera banda y las demás; bloques de 1 a 4096 muestras, bit a bit; el bypass; y, en fase lineal, el detector retrasado, bit a bit contra el motor solo), `tests/plugin/spectral_test.cpp` (la latencia que conoce el host es la medida en los cuatro modos y a 44,1, 48, 96 y 192 kHz, su aviso al encender la primera banda, sin chasquidos, el interruptor en el audio y en el medidor, y la cola) y `tests/plugin/phase_test.cpp` (apagada, la latencia y el sonido de antes en los cuatro modos). En `core`, el parámetro: su posición, su valor por defecto, su traducción, los presets y los estados anteriores.
+
 ## Limitaciones conocidas
 
-- En graves (por debajo de unos 200 Hz), 23 Hz de resolución no separan armónicos cercanos, y el tono baja hasta 0,7 dB menos que el rango: es el precio de 42,7 ms (ADR 0024).
+- En graves (por debajo de unos 200 Hz), 23 Hz de resolución no separan armónicos cercanos, y el tono baja hasta 0,7 dB menos que el rango: es el precio de una ventana de 42,7 ms (ADR 0024).
+- Latencia de 53,3 ms a 48 kHz (58 a 44,1), sumada a la del modo, mientras alguna banda tenga el interruptor encendido, aunque no actúe (ADR 0025). Encender la primera, o apagar la última, deja un hueco breve mientras el host recalcula la compensación.
 - Anticipación de hasta media ventana: la reducción empieza hasta 22 ms antes del sonido que la provoca, y la salida de un corte brusco se reparte unos milisegundos.
-- El coste se concentra en una llamada de cada salto (ver «Coste»).
+- A 192 kHz con bloques de 32 muestras, algunas llamadas tardan más que el bloque (ver «La llamada más lenta»).
 
 ## Referencias
 

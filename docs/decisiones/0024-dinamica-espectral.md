@@ -1,6 +1,6 @@
 # 0024. Dinámica espectral: una STFT compartida tras el ecualizador, máscara por bin con los controles de la banda, y latencia solo mientras se use
 
-**Estado:** Aceptada (noviembre de 2026), con las medidas del bloque 6.4 del [plan](../../PLAN.md). Lo que esas medidas han cambiado de la propuesta está en «Cambios al aceptarla», al final, y ya está recogido en la decisión.
+**Estado:** Aceptada (noviembre de 2026), con las medidas del bloque 6.4 del [plan](../../PLAN.md). Lo que esas medidas han cambiado de la propuesta está en «Cambios al aceptarla», al final, y ya está recogido en la decisión. La latencia (N muestras, decisión 5 y «Cambios al aceptarla») la cambia la [ADR 0025](0025-dinamica-espectral-en-el-procesador.md): N + N/4, con el cálculo de cada trama repartido en el salto siguiente.
 
 ## Contexto
 

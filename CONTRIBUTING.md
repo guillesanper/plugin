@@ -74,7 +74,7 @@ Los menús y los diálogos son ventanas aparte y no salen en esas capturas. Para
 
 ## Medir el coste del hilo de audio
 
-`tools/bench` mide cuánto tarda `dsp::PhaseEqualizer` con cuatro escenarios fijos (24 campanas, 24 cortes de 96 dB/oct, 24 campanas dinámicas comprimiendo y una mezcla de 8 bandas) en los cuatro modos de fase, en % de un núcleo para una instancia estéreo. Solo depende de `dsp/`, así que también se compila sin JUCE:
+`tools/bench` mide cuánto tarda `dsp::PhaseEqualizer` con seis escenarios fijos (24 campanas, 24 cortes de 96 dB/oct, 24 campanas dinámicas comprimiendo, una mezcla de 8 bandas, 24 campanas espectrales y la mezcla con sus 2 bandas dinámicas espectrales) en los cuatro modos de fase, en % de un núcleo para una instancia estéreo, y lo que tarda la llamada más lenta frente a lo que dura el bloque (con ruido del sistema: repite y da rangos). Solo depende de `dsp/`, así que también se compila sin JUCE:
 
 ```
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DESCEQ_BUILD_TOOLS=ON

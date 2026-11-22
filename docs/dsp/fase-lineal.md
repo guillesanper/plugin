@@ -102,15 +102,25 @@ La ganancia de una banda dinámica cambia muestra a muestra; un FIR no se puede 
   Mientras la dinámica actúa, esa banda añade el desfase de un IIR solo en la medida en que la ganancia se separa de la estática. Las bandas sin dinámica no pasan por el IIR.
 - **Los detectores** escuchan la entrada del ecualizador retrasada la latencia, y el **sidechain** se retrasa igual. La ganancia dinámica es la misma que en IIR, muestra a muestra, solo que llega con la latencia (lo comprueba un test bit a bit).
 
+## Dinámica espectral
+
+Mientras alguna banda tenga `dynamics.spectral` (el parámetro `bNN_spectral`), después del IIR o del FIR suena `dsp::SpectralDynamics` ([dinamica-espectral.md](dinamica-espectral.md), ADR [0024](../decisiones/0024-dinamica-espectral.md) y [0025](../decisiones/0025-dinamica-espectral-en-el-procesador.md)), en los cuatro modos:
+
+- En las bandas espectrales, **la máscara sustituye a la parte dinámica**: el `Equalizer` (el IIR, o el de solo dinámica en fase lineal) recibe la banda sin dinámica, y la parte estática sigue en el IIR o en el FIR. Las demás bandas dinámicas no cambian.
+- **El detector** de la máscara escucha la entrada del ecualizador, y el sidechain, retrasados como el audio: en IIR, sin retrasar; en fase lineal, los mismos retardos que usan los detectores de la dinámica (lo comprueba un test bit a bit contra el motor solo).
+- **Latencia**: la del modo más la de la STFT, `N + N/4` (2560 muestras a 44,1 y 48 kHz, 5120 a 96 y 10240 a 192: 53,3 ms a 48 kHz y 58 ms a 44,1). En IIR, de 0 a 53,3 ms; en Low, de 26,7 a 80 ms; en Medium, de 96 a 149,3 ms; en High, de 362,7 a 416 ms.
+- **Sin ninguna banda espectral**, `PhaseEqualizer` hace exactamente lo de antes: el mismo camino, el mismo sonido bit a bit y la misma latencia en los cuatro modos (comparado con el código anterior: ver [dinamica-espectral.md](dinamica-espectral.md)).
+
 ## Cambios con el audio en marcha
 
 | Cambio | Qué pasa |
 |---|---|
 | Ajustes de las bandas en fase lineal | El hilo de diseño calcula el FIR nuevo (de 0,2 a 13 ms) y lo entrega; en el bloque de convolución siguiente se hace un **fundido de un bloque** (de 5 a 21 ms) entre la salida con el FIR anterior y con el nuevo. Mientras se diseña, suena el anterior. |
 | Modo de fase | Mientras se prepara el modo nuevo, suena el anterior. Después: **fundido a silencio** en 10 ms, cambio, silencio mientras el modo nuevo llena su latencia, y **fundido de entrada** en 10 ms. La latencia que se comunica al host cambia en el momento del cambio. |
-| Bypass en fase lineal | Fundido de 10 ms con la señal seca **retrasada**: la latencia no cambia con el bypass, y con el bypass completo la salida es la entrada retrasada, bit a bit. |
+| Primera banda espectral encendida, o última apagada | Como el cambio de modo: fundido a silencio en 10 ms, cambio, silencio mientras se llena la latencia nueva y fundido de entrada. Encender o apagar las demás no cambia la latencia ni deja hueco. |
+| Bypass en fase lineal o con dinámica espectral | Fundido de 10 ms con la señal seca **retrasada**: la latencia no cambia con el bypass, y con el bypass completo la salida es la entrada retrasada, bit a bit. |
 
-Cambiar de modo deja un hueco: no se puede pasar sin él de una latencia a otra. El host recalcula su compensación de retardo; mientras tanto la pista puede quedar desalineada un momento respecto a las demás. Por eso el modo de fase es un ajuste "de sesión": no se automatiza con normalidad y los presets no lo cambian.
+Cambiar de modo, o encender la primera banda espectral, deja un hueco: no se puede pasar sin él de una latencia a otra. El host recalcula su compensación de retardo; mientras tanto la pista puede quedar desalineada un momento respecto a las demás. Por eso el modo de fase es un ajuste "de sesión": no se automatiza con normalidad y los presets no lo cambian.
 
 ## Hilos
 
@@ -156,7 +166,9 @@ El producto por las particiones ya lo vectoriza el compilador; la FFT directa y 
 - `tests/dsp/phase_equalizer_test.cpp`: IIR bit a bit igual que el `Equalizer`; retardo bit a bit sin bandas; respuesta simétrica con la magnitud de las bandas; independencia del tamaño de bloque; bypass; sin chasquidos al mover bandas y al cambiar de modo; lo diseñado para un modo que ya no se pide se descarta; canales; dinámica y sidechain retrasados con la misma ganancia que en IIR; NaN en la entrada; cambio de frecuencia de muestreo; mono.
 - `tests/dsp/dynamics_test.cpp`: el modo solo dinámica con la parte estática aparte suena como la banda entera, también con modulación rápida.
 - `tests/dsp/handoff_test.cpp` y `tests/core/phase_design_thread_test.cpp`: el intercambio entre hilos, también con dos hilos a la vez (para ejecutarlos con ThreadSanitizer, ver [DEV.md](../../DEV.md)).
-- `tests/plugin/phase_test.cpp`: latencia comunicada al host, cola, render sin tiempo real, bypass y estado guardado.
+- `tests/dsp/phase_equalizer_test.cpp`, la dinámica espectral: sin bandas espectrales, la latencia y el sonido de siempre en los cuatro modos; su latencia sumada a la del modo y medida con un impulso a 44,1, 48, 96 y 192 kHz, en estéreo y en mono; la máscara en lugar de la dinámica de la banda; sin chasquidos ni huecos al encender y apagar la primera y las demás; independencia del tamaño de bloque; bypass; el detector retrasado en fase lineal.
+- `tests/plugin/phase_test.cpp`: latencia comunicada al host, cola, render sin tiempo real, bypass y estado guardado; y, sin dinámica espectral, la latencia y el sonido de antes en los cuatro modos.
+- `tests/plugin/spectral_test.cpp`: con dinámica espectral, la latencia comunicada es la medida en los cuatro modos y a 44,1, 48, 96 y 192 kHz, el aviso al host al encender la primera banda, sin chasquidos, y el interruptor llegando al audio y al medidor.
 
 Se comprobó que los tests detectan los fallos: quitando el fundido entre núcleos, los fundidos al cambiar de modo, la espera de la latencia, el retraso del detector, el del sidechain o el de la señal seca del bypass, la petición de un FIR nuevo al descartar un camino, o la parte estática del modo solo dinámica, falla al menos un test.
 
