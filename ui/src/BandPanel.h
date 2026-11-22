@@ -19,10 +19,12 @@ namespace esceq::ui {
 /// Panel de la banda seleccionada, en tres tarjetas:
 ///  - Banda: color y número, activación, tipo, pendiente y canal.
 ///  - EQ: frecuencia, ganancia y Q.
-///  - Dinámica: activación, fuente del detector, tiempos automáticos, umbral,
-///    rango, ataque, relajación y rodilla, y un medidor de la ganancia
-///    dinámica. Con los tiempos automáticos, ataque y relajación se atenúan
-///    y dicen "Auto".
+///  - Dinámica: activación, fuente del detector, tiempos automáticos,
+///    dinámica espectral, umbral, rango, ataque, relajación y rodilla, y un
+///    medidor de la ganancia dinámica (en una banda espectral, la del bin que
+///    más cambia). Con los tiempos automáticos, ataque y relajación se
+///    atenúan y dicen "Auto". El interruptor de la dinámica espectral se
+///    desactiva sin dinámica, pero se sigue viendo encendido: la latencia sigue.
 ///
 /// Todos los controles se enlazan a parámetros del host. Dónde va cada cosa
 /// lo decide esceq/ui/layout.h (testeado sin ventana); aquí solo se pinta.
@@ -67,6 +69,7 @@ private:
     ToggleSwitch dynamic_{ToggleSwitch::Style::Switch, "Active", "Dynamics on"};
     Dropdown source_{"Detector source"};
     ToggleSwitch autoTiming_{ToggleSwitch::Style::Switch, "Auto", "Auto timing"};
+    ToggleSwitch spectral_{ToggleSwitch::Style::Switch, "Spectral", "Spectral dynamics"};
     ParamControl threshold_{ParamControl::Style::Knob, "Thresh"};
     ParamControl range_{ParamControl::Style::Knob, "Range"};
     ParamControl attack_{ParamControl::Style::Knob, "Attack"};

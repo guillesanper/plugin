@@ -8,6 +8,7 @@
 #include "esceq/core/parameters.h"
 #include "esceq/core/control_thread.h"
 #include "esceq/core/match.h"
+#include "esceq/core/spectral_mask.h"
 #include "esceq/core/spectrum_session.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/auto_gain.h"
@@ -133,6 +134,12 @@ public:
     /// desde cualquier hilo.
     float dynamicGainDb(int band) const noexcept;
 
+    /// Forma de la máscara de cada banda con dinámica espectral, para el
+    /// sombreado de la curva (core/spectral_mask.h): el hilo de audio la
+    /// publica unas 30 veces por segundo mientras suena. Un único lector: la
+    /// curva del editor abierto, con read().
+    core::SpectralMaskPublisher& spectralMask() noexcept { return spectralMask_; }
+
     /// Mayor valor absoluto de la salida del canal `channel` desde la última
     /// llamada, y lo pone a cero. Un único lector: el medidor del editor.
     float takeOutputPeak(int channel) noexcept;
@@ -223,6 +230,7 @@ private:
     dsp::SpscFifo postFifo_{1 << 15};
     std::atomic<double> sampleRate_{0.0};
     std::array<std::atomic<float>, core::kNumBands> dynamicGains_{};
+    core::SpectralMaskPublisher spectralMask_;
     std::atomic<bool> sidechainConnected_{false};
     std::array<std::atomic<float>, 2> outputPeaks_{};
     std::atomic<int> outputChannels_{2};

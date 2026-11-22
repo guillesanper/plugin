@@ -6,12 +6,14 @@
 #include "test_support.h"
 
 #include "esceq/core/band_model.h"
+#include "esceq/core/spectral_mask.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/spectral_dynamics.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <numbers>
 #include <utility>
@@ -220,4 +222,41 @@ TEST_CASE("Espectral: el interruptor de la banda llega al audio y al medidor")
         else
             CHECK(weak < -1.0);
     }
+}
+
+TEST_CASE("Espectral: la forma de la mascara llega a la interfaz sin cambiar el sonido")
+{
+    // Bloque 6.6: el hilo de audio publica la máscara para el sombreado de la
+    // curva. Leerla (lo que hace la curva 30 veces por segundo) no cambia
+    // processBlock: bit a bit lo mismo que sin leerla.
+    auto input = sine(48000, 2000.0, 0.5);
+    auto reader = makeProcessor();
+    auto silent = makeProcessor();
+    for (auto* p : {reader.get(), silent.get()})
+    {
+        spectralBand(*p, -30.0f, true);
+        prepare(*p, 48000.0);
+    }
+
+    int published = 0;
+    core::SpectralMaskFrame last{};
+    const auto read = render(*reader, input, [&](int) {
+        if (const auto* frame = reader->spectralMask().read())
+        {
+            ++published;
+            last = *frame;
+        }
+    });
+    const auto unread = render(*silent, input);
+    CHECK(read == unread);
+
+    // Unas 30 veces por segundo de audio (1 s en bloques de 256: 29 o 30
+    // lecturas, según caiga la última), con la forma de la máscara: baja en
+    // 2 kHz lo que dice el medidor de la banda.
+    CHECK(published >= 29);
+    CHECK(published <= 30);
+    CHECK(last.active[0]);
+    const float deepest = *std::min_element(last.gainsDb[0].begin(), last.gainsDb[0].end());
+    CHECK_THAT(deepest, WithinAbs(-6.0, 0.5));
+    CHECK_THAT(deepest, WithinAbs(reader->dynamicGainDb(0), 0.3));
 }

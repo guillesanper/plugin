@@ -9,6 +9,7 @@
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/meter_logic.h"
 #include "esceq/ui/notes.h"
+#include "esceq/ui/spectral_mask.h"
 
 #include "esceq/core/band_model.h"
 #include "esceq/dsp/filter_design.h"
@@ -214,6 +215,15 @@ void CurveView::refresh()
     algorithm_ = algorithm;
     dynamicGains_ = gains;
     lastSampleRate_ = sampleRate;
+
+    // La forma de la máscara de las bandas espectrales: solo llega mientras suena.
+    if (const auto* mask = processor_.spectralMask().read();
+        mask != nullptr && (mask->active != spectralMask_.active || mask->gainsDb != spectralMask_.gainsDb))
+    {
+        spectralMask_ = *mask;
+        ++spectralMaskRevision_;
+        changed = true;
+    }
 
     // Si la banda seleccionada se ha desactivado (desde el host o el panel), se deselecciona.
     if (selected_ >= 0 && values_[core::bandParameter(selected_, core::BandParam::Enabled)] < 0.5f && dragging_ < 0)
@@ -828,15 +838,20 @@ void CurveView::updateCurveCache(const CurveMapping& m)
         const int points = std::max(2, static_cast<int>(area.width / 2.0f));
         cache.xs.resize(static_cast<std::size_t>(points));
         cache.tangents.resize(static_cast<std::size_t>(points));
+        cache.hz.resize(static_cast<std::size_t>(points));
         for (int i = 0; i < points; ++i)
         {
             const auto idx = static_cast<std::size_t>(i);
             const float x = area.x + area.width * static_cast<float>(i) / static_cast<float>(points - 1);
             cache.xs[idx] = x;
-            cache.tangents[idx] = dsp::responseTangent(std::min(m.frequencyForX(x), 0.499 * sampleRate), sampleRate);
+            cache.hz[idx] = m.frequencyForX(x);
+            cache.tangents[idx] = dsp::responseTangent(std::min(cache.hz[idx], 0.499 * sampleRate), sampleRate);
         }
         for (auto& band : cache.bands)
+        {
             band.valid = false;
+            band.maskRevision = -1;
+        }
     }
 
     const auto& xs = cache.xs;
@@ -856,6 +871,7 @@ void CurveView::updateCurveCache(const CurveMapping& m)
             continue;
         }
         const bool dynamic = isDynamic(settings);
+        curve.spectral = dynamic && settings.dynamics.spectral;
         const auto sounding = soundingSettings(band).filter;
         if (curve.valid && curve.dynamic == dynamic && curve.sounding == sounding &&
             (!dynamic || curve.reference == settings.filter))
@@ -887,11 +903,14 @@ void CurveView::updateCurveCache(const CurveMapping& m)
         {
             const auto design = dsp::designBand(settings.filter, sampleRate);
             juce::Path reference;
+            curve.referenceDb.resize(points);
             for (std::size_t i = 0; i < points; ++i)
             {
-                const float ys = clampY(dsp::magnitudeDbAtTangent(design, cache.tangents[i]));
+                curve.referenceDb[i] = dsp::magnitudeDbAtTangent(design, cache.tangents[i]);
+                const float ys = clampY(curve.referenceDb[i]);
                 i == 0 ? reference.startNewSubPath(xs[i], ys) : reference.lineTo(xs[i], ys);
             }
+            curve.maskRevision = -1; // la máscara cuelga de la referencia
             const float dashes[] = {4.0f, 4.0f};
             curve.dashed.clear();
             juce::PathStrokeType(1.0f).createDashedStroke(curve.dashed, reference, dashes, 2);
@@ -903,6 +922,37 @@ void CurveView::updateCurveCache(const CurveMapping& m)
         curve.dynamic = dynamic;
         curve.sounding = sounding;
         curve.reference = settings.filter;
+    }
+
+    // Dinámica espectral: la forma de la máscara, como un sombreado que baja
+    // (o sube, con un rango positivo) desde la referencia estática. Solo en
+    // las bandas que la tienen ahora, aunque la última máscara publicada aún
+    // no lo sepa, y solo si ha cambiado algo.
+    for (int band = 0; band < core::kNumBands; ++band)
+    {
+        auto& curve = cache.bands[static_cast<std::size_t>(band)];
+        const bool masked = curve.valid && curve.spectral && spectralMask_.active[static_cast<std::size_t>(band)];
+        if (!masked)
+        {
+            curve.mask.clear();
+            curve.maskDb.clear();
+            curve.maskRevision = -1;
+            continue;
+        }
+        if (curve.maskRevision == spectralMaskRevision_)
+            continue;
+        curve.maskDb.resize(points);
+        spectralMaskColumns(spectralMask_.gainsDb[static_cast<std::size_t>(band)], cache.hz, curve.maskDb);
+        curve.mask.clear();
+        for (std::size_t i = 0; i < points; ++i)
+        {
+            const float y = clampY(curve.referenceDb[i]);
+            i == 0 ? curve.mask.startNewSubPath(xs[i], y) : curve.mask.lineTo(xs[i], y);
+        }
+        for (std::size_t i = points; i-- > 0;)
+            curve.mask.lineTo(xs[i], clampY(curve.referenceDb[i] + static_cast<double>(curve.maskDb[i])));
+        curve.mask.closeSubPath();
+        curve.maskRevision = spectralMaskRevision_;
     }
 }
 
@@ -926,16 +976,25 @@ void CurveView::drawCurves(juce::Graphics& g, const CurveMapping& m) const
         any = true;
         for (std::size_t i = 0; i < points; ++i)
             total[i] += curve.db[i];
+        // La máscara de la dinámica espectral suena encima de la curva estática de la banda.
+        for (std::size_t i = 0; i < curve.maskDb.size(); ++i)
+            total[i] += static_cast<double>(curve.maskDb[i]);
 
         const auto colour = theme::band(band);
         const bool isSelected = band == selected_;
         const bool isHot = isSelected || band == hovered_ || band == dragging_;
         g.setColour(colour.withAlpha(isSelected ? 0.20f : isHot ? 0.14f : 0.06f));
         g.fillPath(curve.fill);
+        if (!curve.mask.isEmpty())
+        {
+            g.setColour(colour.withAlpha(isSelected ? 0.50f : isHot ? 0.42f : 0.30f));
+            g.fillPath(curve.mask);
+        }
         g.setColour(colour.withAlpha(isHot ? 0.95f : 0.45f));
         g.strokePath(curve.line, juce::PathStrokeType(isHot ? stroke::thin : stroke::hairline,
                                                       juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
-        if (curve.dynamic)
+        // La referencia estática punteada; en una banda espectral, la curva ya es la estática.
+        if (curve.dynamic && !curve.spectral)
         {
             g.setColour(colour.withAlpha(isSelected ? 0.7f : 0.35f));
             g.fillPath(curve.dashed);

@@ -8,6 +8,9 @@
 //   --bypass      con el bypass activado.
 //   --auto-gain   con la compensación automática de ganancia encendida.
 //   --auto-timing con los tiempos automáticos en la banda dinámica (la 6).
+//   --spectral    con la dinámica espectral en la banda dinámica (la 6), su
+//                 umbral en -24 dB y una resonancia en 8 kHz en el audio, que
+//                 es lo único que lo pasa: la máscara la sombrea.
 //   --notes       con el teclado de la escala de notas bajo la curva.
 //   --key N       con el teclado, la tecla de la nota N (MIDI, 69 = A4) señalada.
 //   --expanded    en la vista ampliada (como al pulsar F en la curva).
@@ -305,8 +308,8 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
-                     "[--bypass] [--auto-gain] [--auto-timing] [--notes] [--key N] [--expanded] [--peaks] [--peak HZ] "
-                     "[--gallery] [--compare] [--match] [--bench N]\n";
+                     "[--bypass] [--auto-gain] [--auto-timing] [--spectral] [--notes] [--key N] [--expanded] [--peaks] "
+                     "[--peak HZ] [--gallery] [--compare] [--match] [--bench N]\n";
         return 2;
     }
 
@@ -315,7 +318,7 @@ int main(int argc, char** argv)
     std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
-         compare = false, expanded = false, peaks = false, match = false;
+         compare = false, expanded = false, peaks = false, match = false, spectral = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -335,6 +338,8 @@ int main(int argc, char** argv)
             autoGain = true;
         else if (arg == "--auto-timing")
             autoTiming = true;
+        else if (arg == "--spectral")
+            spectral = true;
         else if (arg == "--notes")
             notes = true;
         else if (arg == "--key")
@@ -408,6 +413,12 @@ int main(int argc, char** argv)
         processor->parameter(esceq::core::kAutoGain).setValueNotifyingHost(1.0f);
     if (autoTiming)
         processor->parameter(esceq::core::autoTimingParameter(5)).setValueNotifyingHost(1.0f);
+    if (spectral)
+    {
+        // Con el umbral por encima del ruido, solo la resonancia lo pasa.
+        processor->parameter(esceq::core::spectralParameter(5)).setValueNotifyingHost(1.0f);
+        setDynamic(*processor, 5, DynParam::Threshold, -24.0f);
+    }
     if (bench > 0)
     {
         // El peor caso: las 24 bandas, todas campanas dinámicas que actúan.
@@ -430,7 +441,9 @@ int main(int argc, char** argv)
     juce::MidiBuffer midi;
     PinkNoise noise, noiseRight;
     noiseRight.state = 98765u;
-    Resonance resonance(peakHz > 0.0 ? peakHz : 1000.0, sampleRate);
+    // La resonancia: la de --peak, o con --spectral una en 8 kHz que la banda espectral reduce.
+    const double resonanceHz = peakHz > 0.0 ? peakHz : spectral ? 8000.0 : 0.0;
+    Resonance resonance(resonanceHz > 0.0 ? resonanceHz : 1000.0, sampleRate);
 
     // Con --compare, otras dos instancias en la misma sesión: un bajo (ruido
     // rosa con un corte de agudos) y unos teclados (ruido con cortes por los
@@ -474,7 +487,7 @@ int main(int argc, char** argv)
             for (int i = 0; i < blockSize; ++i)
             {
                 // Algo de diferencia entre canales, para que el medidor no muestre dos barras idénticas.
-                const float centre = noise.next() + (peakHz > 0.0 ? resonance.next() : 0.0f);
+                const float centre = noise.next() + (resonanceHz > 0.0 ? resonance.next() : 0.0f);
                 const float side = 0.35f * noiseRight.next();
                 buffer.setSample(0, i, centre + side);
                 buffer.setSample(1, i, centre - side);

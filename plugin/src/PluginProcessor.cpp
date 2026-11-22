@@ -304,6 +304,7 @@ void PluginProcessor::prepareToPlay(double sampleRate, int)
     engineChannels_ = std::clamp(getMainBusNumOutputChannels(), 1, 2);
     pushParametersToEngine(true);
     equalizer_.prepare(sampleRate, engineChannels_);
+    spectralMask_.prepare(sampleRate);
     // En fase lineal, el FIR se diseña ya, y la compensación se calcula ya:
     // así el primer bloque suena en el modo pedido, con su ganancia, y el
     // host conoce la latencia antes de empezar.
@@ -354,6 +355,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     for (int band = 0; band < core::kNumBands; ++band)
         dynamicGains_[static_cast<std::size_t>(band)].store(static_cast<float>(equalizer_.dynamicGainDb(band)),
                                                             std::memory_order_relaxed);
+    // La forma de la máscara, para el sombreado de la curva: solo se lee del ecualizador.
+    spectralMask_.publish(equalizer_, numSamples);
 
     const bool bypassed = raw_[core::kBypass]->load(std::memory_order_relaxed) >= 0.5f;
     // La compensación se suma a la ganancia de salida; con bypass, ninguna de

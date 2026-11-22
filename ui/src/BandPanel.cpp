@@ -40,16 +40,16 @@ BandPanel::BandPanel(PluginProcessor& processor)
 {
     static_assert(core::kChannelChoices.size() == 5);
 
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&enabled_, &type_, &slope_, &channel_, &frequency_,
-                                                                      &gain_, &q_, &dynamic_, &source_, &autoTiming_,
-                                                                      &threshold_, &range_, &attack_, &release_, &knee_})
+    for (juce::Component* c : std::initializer_list<juce::Component*>{
+             &enabled_, &type_, &slope_, &channel_, &frequency_, &gain_, &q_, &dynamic_, &source_, &autoTiming_,
+             &spectral_, &threshold_, &range_, &attack_, &release_, &knee_})
         addChildComponent(*c);
 
     // Orden de tabulación: de izquierda a derecha, tarjeta a tarjeta.
     int order = 1;
-    for (juce::Component* c : std::initializer_list<juce::Component*>{&enabled_, &type_, &slope_, &channel_, &frequency_,
-                                                                      &gain_, &q_, &dynamic_, &source_, &autoTiming_,
-                                                                      &threshold_, &range_, &attack_, &release_, &knee_})
+    for (juce::Component* c : std::initializer_list<juce::Component*>{
+             &enabled_, &type_, &slope_, &channel_, &frequency_, &gain_, &q_, &dynamic_, &source_, &autoTiming_,
+             &spectral_, &threshold_, &range_, &attack_, &release_, &knee_})
         c->setExplicitFocusOrder(order++);
 
     setTitle("Band");
@@ -72,6 +72,7 @@ void BandPanel::setBand(int band)
     dynamic_.detach();
     source_.detach();
     autoTiming_.detach();
+    spectral_.detach();
     for (ParamControl* c : {&frequency_, &gain_, &q_, &threshold_, &range_, &attack_, &release_, &knee_})
         c->detach();
 
@@ -102,6 +103,7 @@ void BandPanel::setBand(int band)
         dynamic_.attach(processor_.parameter(dynIndex(DynParam::Enabled)));
         source_.attach(processor_.parameter(dynIndex(DynParam::Source)), specs[dynIndex(DynParam::Source)]);
         autoTiming_.attach(processor_.parameter(core::autoTimingParameter(band)));
+        spectral_.attach(processor_.parameter(core::spectralParameter(band)));
         knob(threshold_, dynIndex(DynParam::Threshold));
         knob(range_, dynIndex(DynParam::Range));
         knob(attack_, dynIndex(DynParam::Attack));
@@ -113,6 +115,7 @@ void BandPanel::setBand(int band)
         enabled_.setAccent(colour);
         dynamic_.setAccent(colour);
         autoTiming_.setAccent(colour);
+        spectral_.setAccent(colour);
         channel_.setAccent(colour);
         for (ParamControl* c : {&frequency_, &gain_, &q_, &threshold_, &range_, &attack_, &release_, &knee_})
             c->setAccent(colour);
@@ -165,6 +168,11 @@ void BandPanel::refresh()
             c->setValueOverride(timeText);
     }
     autoTiming_.setTooltip(toJuce(autoTimingTooltip(settings.filter.frequencyHz)));
+    // La dinámica espectral solo se toca con la dinámica encendida; desactivado,
+    // el interruptor sigue diciendo si está encendido, porque la latencia sigue
+    // (ADR 0025), y su ayuda lo avisa.
+    spectral_.setEnabled(spectralSwitchEnabled(settings));
+    spectral_.setTooltip(toJuce(spectralTooltip(settings, processor_.currentSampleRate())));
     // Con la escala de notas, la etiqueta de la frecuencia dice su nota: en la
     // línea del valor no cabe junto a él ("1.20 kHz · D6 +37 ct", ADR 0017).
     frequency_.setLabel(notesVisible_ ? toJuce(noteText(settings.filter.frequencyHz, a4Hz_)) : juce::String("Freq"));
@@ -206,6 +214,7 @@ void BandPanel::resized()
     dynamic_.setBounds(toInt(layout_.dynamicsEnabled));
     source_.setBounds(toInt(layout_.source));
     autoTiming_.setBounds(toInt(layout_.autoTiming));
+    spectral_.setBounds(toInt(layout_.spectral));
     threshold_.setBounds(toInt(layout_.dynamicKnobs[0]));
     range_.setBounds(toInt(layout_.dynamicKnobs[1]));
     attack_.setBounds(toInt(layout_.dynamicKnobs[2]));

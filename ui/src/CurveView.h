@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/spectral_mask.h"
 #include "esceq/core/state.h"
 #include "esceq/dsp/spectrum_analyzer.h"
 #include "esceq/ui/curve_mapping.h"
@@ -201,6 +202,11 @@ private:
     core::ParameterValues values_{};
     dsp::FilterAlgorithm algorithm_ = dsp::FilterAlgorithm::Classic; ///< El de la instancia, leído en refresh().
     std::array<float, core::kNumBands> dynamicGains_{};
+    /// Forma de la máscara de las bandas espectrales, la última que ha
+    /// publicado el hilo de audio (core/spectral_mask.h), y un contador que
+    /// sube cada vez que cambia, para rehacer solo entonces su sombreado.
+    core::SpectralMaskFrame spectralMask_{};
+    int spectralMaskRevision_ = 0;
 
     int selected_ = -1;
     int hovered_ = -1;
@@ -259,9 +265,18 @@ private:
         dsp::FilterParams sounding;  ///< Lo que suena, con la ganancia dinámica.
         dsp::FilterParams reference; ///< El ajuste estático (solo si es dinámica).
         std::vector<double> db;      ///< Magnitud en cada columna.
+        std::vector<double> referenceDb; ///< Magnitud estática en cada columna (solo si es dinámica).
         juce::Path line;
         juce::Path fill;
         juce::Path dashed;           ///< Referencia estática punteada, ya convertida en contorno.
+        /// Dinámica espectral: la curva es la estática (sin la ganancia
+        /// dinámica, que es la del bin que más cambia); la máscara, en dB por
+        /// columna, se suma a la curva total y se sombrea bajo la de la banda.
+        /// `maskRevision`: con qué máscara se hizo (-1: hay que rehacerla).
+        bool spectral = false;
+        std::vector<float> maskDb;
+        juce::Path mask;
+        int maskRevision = -1;
     };
     struct CurveCache
     {
@@ -270,6 +285,7 @@ private:
         double sampleRate = 0.0;
         std::vector<float> xs;
         std::vector<double> tangents; ///< tan(ω/2) de cada columna, común a todas las bandas.
+        std::vector<double> hz;       ///< Frecuencia de cada columna.
         std::array<BandCurve, core::kNumBands> bands;
     };
     CurveCache curveCache_;
