@@ -84,9 +84,10 @@ cmake --build build --config Release --target esceq_bench
 ./build/tools/bench/esceq_bench --convolution
 ./build/tools/bench/esceq_bench --match
 ./build/tools/bench/esceq_bench --spectral
+./build/tools/bench/esceq_bench --saturation
 ```
 
-Opciones: `--scenario`, `--mode`, `--rate` y `--block` (listas separadas por comas), `--algorithm classic|matched`, `--seconds`, `--repeat`; `--convolution` mide en vez del ecualizador el pico de la fase lineal, la llamada que completa un bloque de la convolución, `--match`, el ajuste de la igualación con 24 bandas y con 4 ([docs/dsp/igualacion.md](docs/dsp/igualacion.md)), y `--spectral`, el motor de la dinámica espectral solo, con una banda, con 24 y con 24 en reposo, en % de un núcleo y en ms por trama ([docs/dsp/dinamica-espectral.md](docs/dsp/dinamica-espectral.md)). Las medidas solo valen en Release y comparadas en la misma máquina; antes de optimizar algo del hilo de audio, mídelo con esto antes y después y deja las cifras en la ADR. Las de la decisión sobre SIMD están en la [ADR 0020](docs/decisiones/0020-sin-simd.md).
+Opciones: `--scenario`, `--mode`, `--rate` y `--block` (listas separadas por comas), `--algorithm classic|matched`, `--seconds`, `--repeat`; `--convolution` mide en vez del ecualizador el pico de la fase lineal, la llamada que completa un bloque de la convolución, `--match`, el ajuste de la igualación con 24 bandas y con 4 ([docs/dsp/igualacion.md](docs/dsp/igualacion.md)), `--spectral`, el motor de la dinámica espectral solo, con una banda, con 24 y con 24 en reposo, en % de un núcleo y en ms por trama ([docs/dsp/dinamica-espectral.md](docs/dsp/dinamica-espectral.md)), y `--saturation`, la saturación: las alternativas contra el aliasing comparadas a 48 kHz (aliasing, agudos y coste) y el motor (sus criterios a 48 kHz y su coste con `--rate` y `--block`; [docs/dsp/saturacion.md](docs/dsp/saturacion.md)). Las medidas solo valen en Release y comparadas en la misma máquina; antes de optimizar algo del hilo de audio, mídelo con esto antes y después y deja las cifras en la ADR. Las de la decisión sobre SIMD están en la [ADR 0020](docs/decisiones/0020-sin-simd.md).
 
 ## Reglas de la interfaz
 
