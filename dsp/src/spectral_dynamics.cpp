@@ -87,6 +87,8 @@ void SpectralDynamics::prepare(double sampleRate)
     }
     const auto n = static_cast<std::size_t>(size_);
     const auto bins = static_cast<std::size_t>(bins_);
+    ringSize_ = 2 * size_;
+    const auto ring = static_cast<std::size_t>(ringSize_);
 
     // Ventanas periódicas: con un salto de N/4, la suma de los cuadrados de la
     // raíz de Hann solapada es 2 en todas las muestras.
@@ -129,12 +131,12 @@ void SpectralDynamics::prepare(double sampleRate)
     }
 
     for (auto& channel : input_)
-        channel.assign(n, 0.0f);
+        channel.assign(ring, 0.0f);
     for (auto& source : sources_)
         for (auto& channel : source)
-            channel.assign(n, 0.0f);
+            channel.assign(ring, 0.0f);
     for (auto& channel : output_)
-        channel.assign(n, 0.0f);
+        channel.assign(ring, 0.0f);
 
     spectrum_.assign(n, Complex{});
     detector_.assign(n, Complex{});
@@ -155,7 +157,7 @@ void SpectralDynamics::prepare(double sampleRate)
         band.gains.assign(bins, 0.0f);
         band.weight.assign(bins, 0.0f);
         band.weightValid = false;
-        updateBandConstants(band);
+        updateBandConstants(band.live);
     }
     reset();
 }
@@ -164,30 +166,24 @@ void SpectralDynamics::setBand(int index, const BandSettings& settings) noexcept
 {
     if (index < 0 || index >= kMaxBands)
         return;
-    Band& band = bands_[static_cast<std::size_t>(index)];
+    BandConstants& live = bands_[static_cast<std::size_t>(index)].live;
     const BandSettings next = sanitizeBand(settings);
-    if (next == band.settings)
+    if (next == live.settings)
         return;
-    band.settings = next;
-    updateBandConstants(band);
+    live.settings = next;
+    // La trama en curso sigue con los de antes (frame): la siguiente los toma.
+    updateBandConstants(live);
 }
 
-void SpectralDynamics::updateBandConstants(Band& band) noexcept
+void SpectralDynamics::updateBandConstants(BandConstants& constants) const noexcept
 {
-    const BandSettings& s = band.settings;
-    band.active = s.enabled && s.dynamics.enabled && supportsDynamics(s.filter.type) && s.dynamics.rangeDb != 0.0;
-    if (!band.active)
-    {
-        band.running = false;
-        band.gainDb = 0.0;
-        std::fill(band.gains.begin(), band.gains.end(), 0.0f);
-    }
-
+    const BandSettings& s = constants.settings;
+    constants.active = s.enabled && s.dynamics.enabled && supportsDynamics(s.filter.type) && s.dynamics.rangeDb != 0.0;
     const double hopMs = 1000.0 * hopSize() / sampleRate_;
-    band.attack = frameCoefficient(s.dynamics.attackMs, hopMs);
-    band.release = frameCoefficient(s.dynamics.releaseMs, hopMs);
+    constants.attack = frameCoefficient(s.dynamics.attackMs, hopMs);
+    constants.release = frameCoefficient(s.dynamics.releaseMs, hopMs);
     const double halfKnee = 0.5 * std::max(s.dynamics.kneeDb, 0.0);
-    band.kneeStart = static_cast<float>(std::pow(10.0, (s.dynamics.thresholdDb - halfKnee) / 20.0));
+    constants.kneeStart = static_cast<float>(std::pow(10.0, (s.dynamics.thresholdDb - halfKnee) / 20.0));
 }
 
 void SpectralDynamics::reset() noexcept ESCEQ_NONBLOCKING
@@ -203,6 +199,9 @@ void SpectralDynamics::reset() noexcept ESCEQ_NONBLOCKING
     position_ = 0;
     hopPhase_ = 0;
     frames_ = 0;
+    steps_ = 0;
+    frameStepCount_ = 0;
+    frameStepsDone_ = 0;
     for (auto& band : bands_)
     {
         band.running = false;
@@ -213,12 +212,12 @@ void SpectralDynamics::reset() noexcept ESCEQ_NONBLOCKING
 
 bool SpectralDynamics::isActive(int index) const noexcept
 {
-    return index >= 0 && index < kMaxBands && bands_[static_cast<std::size_t>(index)].active;
+    return index >= 0 && index < kMaxBands && bands_[static_cast<std::size_t>(index)].live.active;
 }
 
 bool SpectralDynamics::anyActive() const noexcept
 {
-    return std::any_of(bands_.begin(), bands_.end(), [](const Band& band) { return band.active; });
+    return std::any_of(bands_.begin(), bands_.end(), [](const Band& band) { return band.live.active; });
 }
 
 double SpectralDynamics::gainDb(int index) const noexcept
@@ -277,19 +276,28 @@ void SpectralDynamics::process(float* const* channels, int numChannels, int numS
     numSidechainChannels = std::clamp(numSidechainChannels, 0, kMaxChannels);
 
     const int hop = hopSize();
+    const int latency = this->latency();
     int offset = 0;
     while (offset < numSamples)
     {
-        // Hasta la trama siguiente, o el final del anillo, o el del bloque.
-        const int length = std::min({hop - hopPhase_, size_ - position_, numSamples - offset});
+        // Hasta la trama siguiente, o el final del anillo (al escribir o al
+        // leer la salida), o el del bloque.
+        const int reading = (position_ + ringSize_ - latency) % ringSize_;
+        const int length =
+            std::min({hop - hopPhase_, ringSize_ - position_, ringSize_ - reading, numSamples - offset});
         pushSamples(channels, numChannels, offset, length, sidechain, numSidechainChannels, detectorInput);
         offset += length;
-        position_ = (position_ + length) % size_;
+        position_ = (position_ + length) % ringSize_;
         hopPhase_ += length;
+
+        // La trama anterior, tantos pasos como la parte del salto que ha
+        // llegado: toda al completarlo, antes de que haga falta su salida.
+        if (frameStepsDone_ < frameStepCount_)
+            advanceFrame((frameStepCount_ * hopPhase_ + hop - 1) / hop);
         if (hopPhase_ == hop)
         {
             hopPhase_ = 0;
-            processFrame(numChannels);
+            startFrame(numChannels);
         }
     }
 }
@@ -299,6 +307,7 @@ void SpectralDynamics::pushSamples(float* const* channels, int numChannels, int 
                                    const float* const* detectorInput) noexcept
 {
     const auto at = static_cast<std::size_t>(position_);
+    const auto read = static_cast<std::size_t>((position_ + ringSize_ - latency()) % ringSize_);
     const auto count = static_cast<std::size_t>(length);
     for (int ch = 0; ch < kMaxChannels; ++ch)
     {
@@ -313,7 +322,7 @@ void SpectralDynamics::pushSamples(float* const* channels, int numChannels, int 
             std::copy_n(in, count, input);
             std::copy_n(detectorInput != nullptr ? detectorInput[ch] + offset : in, count, internal);
             float* const out = channels[ch] + offset;
-            std::copy_n(output_[c].data() + at, count, out);
+            std::copy_n(output_[c].data() + read, count, out);
         }
         else
         {
@@ -324,34 +333,103 @@ void SpectralDynamics::pushSamples(float* const* channels, int numChannels, int 
             std::copy_n(sidechain[ch] + offset, count, external);
         else
             std::fill_n(external, count, 0.0f);
-        std::fill_n(output_[c].data() + at, count, 0.0f);
+        std::fill_n(output_[c].data() + read, count, 0.0f);
     }
     sourceChannels_[kInternal] = std::max(numChannels, 1);
     sourceChannels_[kExternal] = numSidechainChannels;
 }
 
-void SpectralDynamics::processFrame(int numChannels) noexcept
+void SpectralDynamics::startFrame(int numChannels) noexcept
 {
     ++frames_;
-    const auto n = static_cast<std::size_t>(size_);
-    // La trama empieza en la muestra más antigua del anillo (N es potencia de 2).
-    const auto start = static_cast<std::size_t>(position_);
-    const std::size_t wrap = n - 1;
+    // La trama son las size_ últimas muestras, que no se sobrescriben en el
+    // salto que tarda en calcularse.
+    frameStart_ = (position_ + ringSize_ - size_) % ringSize_;
+    frameChannels_ = numChannels;
+    frameSourceChannels_ = sourceChannels_;
+    frameStepCount_ = 0;
+    frameStepsDone_ = 0;
 
-    // Qué hace falta escuchar.
-    std::array<std::array<bool, kNumLevels>, kNumSources> needed{};
-    bool any = false;
-    for (const Band& band : bands_)
+    // Los ajustes con los que se calcula, y qué hace falta escuchar.
+    frameNeeded_ = {};
+    frameAny_ = false;
+    frameSteps_[static_cast<std::size_t>(frameStepCount_++)] = kSignalStep;
+    std::array<int, kMaxBands> running{};
+    int numRunning = 0;
+    for (int b = 0; b < kMaxBands; ++b)
     {
-        if (!band.active || applyDomain(band.settings.channel, numChannels) == kNumDomains)
+        Band& band = bands_[static_cast<std::size_t>(b)];
+        band.frame = band.live;
+        if (!band.frame.active)
+        {
+            if (band.running || band.gainDb != 0.0)
+            {
+                band.running = false;
+                band.gainDb = 0.0;
+                std::fill(band.gains.begin(), band.gains.end(), 0.0f);
+            }
             continue;
-        const Source source = band.settings.dynamics.external ? kExternal : kInternal;
-        needed[source][static_cast<std::size_t>(levelFor(band.settings.channel, sourceChannels_[source]))] = true;
-        any = true;
+        }
+        running[static_cast<std::size_t>(numRunning++)] = b;
+        if (applyDomain(band.frame.settings.channel, numChannels) == kNumDomains)
+            continue;
+        const Source source = band.frame.settings.dynamics.external ? kExternal : kInternal;
+        const int level = levelFor(band.frame.settings.channel, frameSourceChannels_[source]);
+        frameNeeded_[source][static_cast<std::size_t>(level)] = true;
+        frameAny_ = true;
     }
+    if (frameAny_)
+    {
+        for (int source = 0; source < kNumSources; ++source)
+        {
+            const auto& need = frameNeeded_[static_cast<std::size_t>(source)];
+            if (std::any_of(need.begin(), need.end(), [](bool b) { return b; }))
+                frameSteps_[static_cast<std::size_t>(frameStepCount_++)] = kFirstSourceStep - source;
+        }
+        for (int i = 0; i < numRunning; ++i)
+            frameSteps_[static_cast<std::size_t>(frameStepCount_++)] = running[static_cast<std::size_t>(i)];
+        for (int domain = 0; domain < kNumDomains; ++domain)
+            frameSteps_[static_cast<std::size_t>(frameStepCount_++)] = kFirstMaskStep - domain;
+    }
+    frameSteps_[static_cast<std::size_t>(frameStepCount_++)] = kSynthesisStep;
+}
+
+void SpectralDynamics::advanceFrame(int target) noexcept
+{
+    target = std::min(target, frameStepCount_);
+    while (frameStepsDone_ < target)
+    {
+        runStep(frameSteps_[static_cast<std::size_t>(frameStepsDone_++)]);
+        ++steps_;
+    }
+}
+
+void SpectralDynamics::runStep(int step) noexcept
+{
+    if (step == kSignalStep)
+        analyseSignal();
+    else if (!frameFinite_)
+        return; // esta trama no suena; las que no contengan el no finito, sí
+    else if (step == kSynthesisStep)
+        synthesise();
+    else if (step <= kFirstMaskStep)
+        convertMask(kFirstMaskStep - step);
+    else if (step <= kFirstSourceStep)
+    {
+        const auto source = static_cast<Source>(kFirstSourceStep - step);
+        analyseSource(source, frameSourceChannels_[source], frameNeeded_[source]);
+    }
+    else
+        runBand(bands_[static_cast<std::size_t>(step)], frameChannels_);
+}
+
+void SpectralDynamics::analyseSignal() noexcept
+{
+    const auto n = static_cast<std::size_t>(size_);
+    const auto start = static_cast<std::size_t>(frameStart_);
+    const auto wrap = static_cast<std::size_t>(ringSize_ - 1);
 
     // La señal: L en la parte real y R en la imaginaria, con la raíz de Hann.
-    bool finite = true;
     {
         const float* const left = input_[0].data();
         const float* const right = input_[1].data();
@@ -363,33 +441,31 @@ void SpectralDynamics::processFrame(int numChannels) noexcept
             spectrum_[i] = Complex{left[j] * w, right[j] * w};
             check += std::abs(left[j]) + std::abs(right[j]);
         }
-        finite = std::isfinite(check);
+        frameFinite_ = std::isfinite(check);
     }
-    if (!finite)
-        return; // esta trama no suena; las que no lo contengan, sí
+    if (!frameFinite_)
+        return;
     fft_->forward(spectrum_.data());
 
     maskUsed_ = {};
-    if (any)
+    if (frameAny_)
     {
-        for (int s = 0; s < kNumSources; ++s)
-        {
-            sourceReset_[static_cast<std::size_t>(s)] = false;
-            const auto& need = needed[static_cast<std::size_t>(s)];
-            if (std::any_of(need.begin(), need.end(), [](bool b) { return b; }))
-                analyseSource(static_cast<Source>(s), sourceChannels_[static_cast<std::size_t>(s)], need);
-        }
+        sourceReset_ = {};
         for (auto& mask : masks_)
             std::fill(mask.begin(), mask.end(), 0.0f);
-        for (Band& band : bands_)
-            if (band.active)
-                runBand(band, numChannels);
     }
-    applyMasks(numChannels);
+}
+
+void SpectralDynamics::synthesise() noexcept
+{
+    applyMasks(frameChannels_);
 
     fft_->inverse(spectrum_.data());
 
     // Síntesis con la misma ventana: la suma solapada de w² es 2, y la inversa multiplica por N.
+    const auto n = static_cast<std::size_t>(size_);
+    const auto start = static_cast<std::size_t>(frameStart_);
+    const auto wrap = static_cast<std::size_t>(ringSize_ - 1);
     const float scale = 1.0f / (2.0f * static_cast<float>(n));
     float* const left = output_[0].data();
     float* const right = output_[1].data();
@@ -406,8 +482,8 @@ void SpectralDynamics::analyseSource(Source source, int numSourceChannels,
                                      const std::array<bool, kNumLevels>& needed) noexcept
 {
     const auto n = static_cast<std::size_t>(size_);
-    const auto start = static_cast<std::size_t>(position_);
-    const std::size_t wrap = n - 1;
+    const auto start = static_cast<std::size_t>(frameStart_);
+    const auto wrap = static_cast<std::size_t>(ringSize_ - 1);
     const auto& rings = sources_[source];
     auto& levels = levels_[source];
 
@@ -492,13 +568,13 @@ void SpectralDynamics::analyseSource(Source source, int numSourceChannels,
 
 void SpectralDynamics::updateWeight(Band& band) noexcept
 {
-    const FilterParams key = weightKey(band.settings.filter);
+    const FilterParams key = weightKey(band.frame.settings.filter);
     if (band.weightValid && key == band.weightFor)
         return;
     band.weightFor = key;
     band.weightValid = true;
 
-    const BandDesign design = designDetector(band.settings.filter, sampleRate_);
+    const BandDesign design = designDetector(band.frame.settings.filter, sampleRate_);
     if (design.numSections == 0)
     {
         std::fill(band.weight.begin(), band.weight.end(), 1.0f); // tilt: todo el espectro
@@ -518,7 +594,8 @@ void SpectralDynamics::updateWeight(Band& band) noexcept
 
 void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
 {
-    const int domain = applyDomain(band.settings.channel, numChannels);
+    const BandConstants& constants = band.frame;
+    const int domain = applyDomain(constants.settings.channel, numChannels);
     if (domain == kNumDomains)
     {
         band.gainDb = 0.0;
@@ -527,9 +604,9 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     }
     updateWeight(band);
 
-    const DynamicSettings& dyn = band.settings.dynamics;
+    const DynamicSettings& dyn = constants.settings.dynamics;
     const Source source = dyn.external ? kExternal : kInternal;
-    const int which = levelFor(band.settings.channel, sourceChannels_[source]);
+    const int which = levelFor(constants.settings.channel, frameSourceChannels_[source]);
     const float* const level = levels_[source][static_cast<std::size_t>(which)].data();
     if (!band.running || sourceReset_[source])
     {
@@ -564,8 +641,8 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     }
     else
     {
-        const float attack = band.attack;
-        const float release = band.release;
+        const float attack = constants.attack;
+        const float release = constants.release;
         for (std::size_t k = 0; k < bins; ++k)
         {
             const float in = level[k];
@@ -581,7 +658,7 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     for (std::size_t k = 0; k < bins; ++k)
         loudest = effective[k] > loudest ? effective[k] : loudest;
     float* const gains = band.gains.data();
-    if (!(loudest > band.kneeStart))
+    if (!(loudest > constants.kneeStart))
     {
         std::fill_n(gains, bins, 0.0f);
         band.gainDb = 0.0;
@@ -596,7 +673,7 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     const float inverseTwoKnees = knee > 0.0f ? 1.0f / (2.0f * knee) : 0.0f;
     const auto limit = static_cast<float>(std::abs(dyn.rangeDb));
     const float sign = dyn.rangeDb < 0.0 ? -1.0f : 1.0f;
-    const float kneeStart = band.kneeStart;
+    const float kneeStart = constants.kneeStart;
     const float* const weight = band.weight.data();
     for (std::size_t k = 0; k < bins; ++k)
     {
@@ -612,7 +689,7 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     float* const mask = masks_[static_cast<std::size_t>(domain)].data();
     for (std::size_t k = 0; k < bins; ++k)
         mask[k] += gains[k];
-    if (band.settings.channel == ChannelMode::Stereo && numChannels > 1)
+    if (constants.settings.channel == ChannelMode::Stereo && numChannels > 1)
     {
         float* const maskRight = masks_[kRight].data();
         for (std::size_t k = 0; k < bins; ++k)
@@ -628,20 +705,22 @@ void SpectralDynamics::runBand(Band& band, int numChannels) noexcept
     band.gainDb = extreme;
 }
 
+void SpectralDynamics::convertMask(int domain) noexcept
+{
+    // Un paso por dominio: es lo que más cuesta de la síntesis (un pow por bin).
+    if (!maskUsed_[static_cast<std::size_t>(domain)])
+        return;
+    for (float& g : masks_[static_cast<std::size_t>(domain)])
+        g = g == 0.0f ? 1.0f : static_cast<float>(std::pow(10.0, static_cast<double>(g) / 20.0));
+}
+
 void SpectralDynamics::applyMasks(int numChannels) noexcept
 {
+    // Las máscaras ya son lineales (convertMask()).
     const bool lr = maskUsed_[kLeft] || maskUsed_[kRight];
     const bool ms = maskUsed_[kMid] || maskUsed_[kSide];
     if (!lr && !ms)
         return;
-
-    for (int d = 0; d < kNumDomains; ++d)
-    {
-        if (!maskUsed_[static_cast<std::size_t>(d)])
-            continue;
-        for (float& g : masks_[static_cast<std::size_t>(d)])
-            g = g == 0.0f ? 1.0f : static_cast<float>(std::pow(10.0, static_cast<double>(g) / 20.0));
-    }
 
     const auto n = static_cast<std::size_t>(size_);
     const auto half = n / 2;

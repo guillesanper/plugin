@@ -169,16 +169,67 @@ TEST_CASE("Dinamica espectral: tamano de la STFT y latencia segun la frecuencia 
     CHECK(SpectralDynamics::fftSize(96000.0) == 4096);
     CHECK(SpectralDynamics::fftSize(176400.0) == 8192);
     CHECK(SpectralDynamics::fftSize(192000.0) == 8192);
-    CHECK(SpectralDynamics::latencySamples(48000.0) == 2048);
-    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(48000.0) / 48000.0, WithinAbs(42.67, 0.01));
-    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(192000.0) / 192000.0, WithinAbs(42.67, 0.01));
+    // La STFT y un salto más, el del cálculo repartido (ADR 0025).
+    CHECK(SpectralDynamics::latencySamples(48000.0) == 2560);
+    CHECK(SpectralDynamics::latencySamples(44100.0) == 2560);
+    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(48000.0) / 48000.0, WithinAbs(53.33, 0.01));
+    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(44100.0) / 44100.0, WithinAbs(58.05, 0.01));
+    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(96000.0) / 96000.0, WithinAbs(53.33, 0.01));
+    CHECK_THAT(1000.0 * SpectralDynamics::latencySamples(192000.0) / 192000.0, WithinAbs(53.33, 0.01));
 
     SpectralDynamics engine;
     engine.prepare(96000.0);
     CHECK(engine.size() == 4096);
     CHECK(engine.hopSize() == 1024);
     CHECK(engine.numBins() == 2049);
-    CHECK(engine.latency() == 4096);
+    CHECK(engine.latency() == 5120);
+    CHECK(engine.latency() == SpectralDynamics::latencySamples(96000.0));
+}
+
+TEST_CASE("Dinamica espectral: el calculo de cada trama se reparte en el salto siguiente")
+{
+    // ADR 0025: con bloques pequeños, ninguna llamada hace la trama entera.
+    // Con 24 bandas activas, una trama son 32 pasos (la señal, las dos fuentes
+    // del detector, una banda en cada uno, las cuatro máscaras y la síntesis):
+    // con bloques de 32 muestras y saltos de 512, como mucho 2 por llamada. Se
+    // cuentan pasos, no tiempos.
+    SpectralDynamics engine;
+    for (int band = 0; band < kMaxBands; ++band)
+    {
+        BandSettings settings = spectralBell(100.0 * (band + 1), 1.0, -40.0, -6.0);
+        settings.dynamics.external = band % 4 == 3;
+        engine.setBand(band, settings);
+    }
+    const int total = 48000;
+    const Stereo in{noise(total, 0.1, 21), noise(total, 0.1, 22)};
+    const Stereo key = same(noise(total, 0.1, 23));
+    const int hop = engine.hopSize();
+    REQUIRE(hop == 512);
+
+    for (const int block : {1, 32, 100, 512, 4096})
+    {
+        engine.reset();
+        Stereo signal = in;
+        long long most = 0;
+        for (int pos = 0; pos < total; pos += block)
+        {
+            const int length = std::min(block, total - pos);
+            float* channels[] = {signal.left.data() + pos, signal.right.data() + pos};
+            const float* sc[] = {key.left.data() + pos, key.right.data() + pos};
+            const long long before = engine.stepsProcessed();
+            engine.process(channels, 2, length, sc, 2);
+            most = std::max(most, engine.stepsProcessed() - before);
+        }
+        INFO("bloque de " << block);
+        // Todas las tramas empezadas menos la última, enteras.
+        CHECK(engine.framesProcessed() == total / hop);
+        CHECK(engine.stepsProcessed() >= 32 * (engine.framesProcessed() - 1));
+        CHECK(engine.stepsProcessed() <= 32 * engine.framesProcessed());
+        // Por llamada: los pasos de la parte del salto que trae, redondeando hacia arriba.
+        CHECK(most <= (32LL * block + hop - 1) / hop);
+        if (block <= 32)
+            CHECK(most <= 2);
+    }
 }
 
 TEST_CASE("Dinamica espectral: que bandas actuan")

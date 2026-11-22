@@ -40,13 +40,20 @@ namespace esceq::dsp {
 /// Las ganancias del mismo dominio (L/R: Stereo, Left y Right; M/S: Mid y
 /// Side) se suman en dB y se aplican: primero L/R y luego M/S.
 ///
-/// Latencia: N muestras (latencySamples()). Por debajo del umbral, o sin
-/// bandas activas, la salida es la entrada retrasada N muestras (con el error
+/// El cálculo de cada trama se reparte entre las llamadas del salto
+/// siguiente (ADR 0025): en pasos (la FFT de la señal, cada fuente del
+/// detector, cada banda, cada máscara de dB a lineal y la síntesis), tantos
+/// en cada llamada como la parte del salto que trae, así que una llamada corta
+/// hace poco trabajo. Por eso la salida sale un salto más tarde. El resultado
+/// es el mismo que si se calculara de una vez.
+///
+/// Latencia: N + N/4 muestras (latencySamples()). Por debajo del umbral, o sin
+/// bandas activas, la salida es la entrada retrasada esa latencia (con el error
 /// de redondeo de la FFT, por debajo de −120 dB).
 ///
-/// Aquí no hay fundidos: un cambio de ajustes actúa en la trama siguiente y
-/// el solapamiento de las tramas lo funde en N muestras. Al activarse una
-/// banda, sus envolventes empiezan en cero.
+/// Aquí no hay fundidos: un cambio de ajustes actúa en la trama siguiente (la
+/// primera que empieza a calcularse después) y el solapamiento de las tramas
+/// lo funde en N muestras. Al activarse una banda, sus envolventes empiezan en cero.
 ///
 /// Garantías:
 ///  - prepare() asigna memoria y no es segura en tiempo real; el resto sí.
@@ -67,8 +74,11 @@ public:
 
     /// Tamaño de la STFT a esa frecuencia de muestreo.
     static int fftSize(double sampleRate) noexcept;
-    /// Latencia, en muestras: el tamaño de la STFT.
-    static int latencySamples(double sampleRate) noexcept { return fftSize(sampleRate); }
+    /// Latencia, en muestras: el tamaño de la STFT más un salto (el del cálculo repartido).
+    static int latencySamples(double sampleRate) noexcept
+    {
+        return fftSize(sampleRate) + fftSize(sampleRate) / kHopDivisor;
+    }
 
     SpectralDynamics();
     ~SpectralDynamics();
@@ -108,7 +118,7 @@ public:
     double sampleRate() const noexcept { return sampleRate_; }
     int size() const noexcept { return size_; }
     int hopSize() const noexcept { return size_ / kHopDivisor; }
-    int latency() const noexcept { return size_; }
+    int latency() const noexcept { return size_ + hopSize(); }
     /// Bins de la mitad positiva del espectro: size()/2 + 1.
     int numBins() const noexcept { return size_ / 2 + 1; }
     double binFrequencyHz(int bin) const noexcept { return sampleRate_ * bin / size_; }
@@ -125,8 +135,10 @@ public:
     /// valores; vacía si la banda no actúa o fuera de rango): la forma de la máscara.
     std::span<const float> binGainsDb(int index) const noexcept;
 
-    /// Tramas calculadas desde prepare() o reset(). Para los tests.
+    /// Tramas empezadas desde prepare() o reset(). Para los tests y las medidas.
     long long framesProcessed() const noexcept { return frames_; }
+    /// Pasos de trama hechos desde prepare() o reset() (ver la clase). Para los tests.
+    long long stepsProcessed() const noexcept { return steps_; }
 
 private:
     using Complex = std::complex<float>;
@@ -149,16 +161,23 @@ private:
         kNumSources,
     };
 
-    struct Band
+    /// Lo que de una banda sale de sus ajustes.
+    struct BandConstants
     {
         BandSettings settings{};
         bool active = false;
+        float attack = 0.0f; ///< Coeficientes por trama de los tiempos fijos.
+        float release = 0.0f;
+        float kneeStart = 0.0f; ///< Nivel lineal donde empieza la rodilla: por debajo, ganancia 0.
+    };
+
+    struct Band
+    {
+        BandConstants live;  ///< Los últimos ajustes recibidos.
+        BandConstants frame; ///< Con los que se calcula la trama en curso.
         bool running = false; ///< Sus envolventes llevan la cuenta (false: empiezan de cero).
         FilterParams weightFor{};
         bool weightValid = false;
-        float attack = 0.0f;  ///< Coeficientes por trama de los tiempos fijos.
-        float release = 0.0f;
-        float kneeStart = 0.0f; ///< Nivel lineal donde empieza la rodilla: por debajo, ganancia 0.
         double gainDb = 0.0;
         std::vector<float> envelope;
         std::vector<float> slowEnvelope;
@@ -166,10 +185,27 @@ private:
         std::vector<float> weight;
     };
 
-    void updateBandConstants(Band& band) noexcept;
+    /// Pasos de una trama, además de una banda (su índice) por paso.
+    enum Step
+    {
+        kSignalStep = -1,       ///< La FFT de la señal.
+        kSynthesisStep = -2,    ///< Aplicar las máscaras, la FFT inversa y la suma solapada.
+        kFirstSourceStep = -10, ///< kFirstSourceStep - s: la fuente s del detector.
+        kFirstMaskStep = -20,   ///< kFirstMaskStep - d: la máscara del dominio d, de dB a lineal.
+    };
+    static constexpr int kMaxSteps = 1 + kNumSources + kMaxBands + kNumDomains + 1;
+
+    void updateBandConstants(BandConstants& constants) const noexcept;
     void pushSamples(float* const* channels, int numChannels, int offset, int length, const float* const* sidechain,
                      int numSidechainChannels, const float* const* detectorInput) noexcept;
-    void processFrame(int numChannels) noexcept;
+    /// La trama que acaba en la muestra actual: fija sus ajustes y sus pasos.
+    void startFrame(int numChannels) noexcept;
+    /// Hace los pasos de la trama en curso hasta llevar `target` hechos.
+    void advanceFrame(int target) noexcept;
+    void runStep(int step) noexcept;
+    void analyseSignal() noexcept;
+    void convertMask(int domain) noexcept;
+    void synthesise() noexcept;
     void analyseSource(Source source, int numSourceChannels, const std::array<bool, kNumLevels>& needed) noexcept;
     void runBand(Band& band, int numChannels) noexcept;
     void updateWeight(Band& band) noexcept;
@@ -193,14 +229,28 @@ private:
     std::vector<float> autoRelease_;
     std::vector<float> autoSlow_;
 
-    // Señal, fuentes del detector y salida: anillos de size_ muestras.
+    // Señal, fuentes del detector y salida: anillos de 2·size_ muestras, para
+    // que la trama en curso no se sobrescriba mientras se calcula.
+    int ringSize_ = 0;
     std::array<std::vector<float>, kMaxChannels> input_;
     std::array<std::array<std::vector<float>, kMaxChannels>, kNumSources> sources_;
     std::array<int, kNumSources> sourceChannels_{};
     std::array<std::vector<float>, kMaxChannels> output_;
-    int position_ = 0; ///< Posición en los anillos.
+    int position_ = 0; ///< Posición de escritura en los anillos (la de lectura va latency() por detrás).
     int hopPhase_ = 0; ///< Muestras desde la última trama.
     long long frames_ = 0;
+    long long steps_ = 0;
+
+    // La trama en curso.
+    int frameStart_ = 0; ///< Su primera muestra en los anillos.
+    int frameChannels_ = 0;
+    std::array<int, kNumSources> frameSourceChannels_{};
+    std::array<std::array<bool, kNumLevels>, kNumSources> frameNeeded_{};
+    bool frameAny_ = false;    ///< Alguna banda actúa en ella.
+    bool frameFinite_ = true;  ///< false: la señal trae un no finito y la trama no suena.
+    std::array<int, kMaxSteps> frameSteps_{};
+    int frameStepCount_ = 0;
+    int frameStepsDone_ = 0;
 
     std::vector<Complex> spectrum_;  ///< La señal de la trama.
     std::vector<Complex> detector_;  ///< Una fuente del detector de la trama.
