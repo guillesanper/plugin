@@ -408,10 +408,7 @@ int main(int argc, char** argv)
         auto& channel = processor->parameter(esceq::core::channelParameter(1)); // la campana de graves, solo en Mid
         channel.setValueNotifyingHost(channel.convertTo0to1(3.0f));
     }
-    // Con --match, sin el notch: hoy la igualación propondría una campana que
-    // lo rellena (pendiente, PLAN.md 5.6), y la captura no sería representativa.
-    if (!match)
-        addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);     // notch
+    addBand(*processor, 4, 5.0f, 5200.0f, 0.0f, 8.0f);         // notch
     addBand(*processor, 5, 0.0f, 7000.0f, 0.0f, 1.5f);         // de-esser: campana dinámica
     setDynamic(*processor, 5, DynParam::Threshold, -48.0f);
     setDynamic(*processor, 5, DynParam::Range, -9.0f);

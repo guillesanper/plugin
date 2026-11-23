@@ -254,6 +254,8 @@ Mientras se recalcula, la propuesta anterior se queda atenuada en lugar de desap
 
 ![El panel Match con una propuesta](img/ui/igualar.png)
 
+En la captura, las bandas de ejemplo llevan un notch de Q 8 a 5,2 kHz. La propuesta lo cuenta por la potencia que quita en el tercio de octava del suavizado: pone junto a él una campana de unos +6 dB y Q 4,3, cuyo nodo en fantasma queda bajo la tarjeta. No lo rellena con una campana estrecha y alta ([ADR 0023](decisiones/0023-igualar-a-una-referencia.md), «Cambios al aceptarla»).
+
 ### Medidor de salida
 
 Pico por canal después del ecualizador y de la ganancia de salida. Sube al instante y baja a 24 dB/s; el pico máximo se retiene 1,2 s. Verde hasta −6 dB, ámbar hasta 0 dBFS, rojo por encima. El número de arriba es el pico retenido; se pone rojo si ha habido recorte y se borra con un clic. Escala y balística en `esceq/ui/meter_logic.h`.
