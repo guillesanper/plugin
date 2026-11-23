@@ -2,7 +2,7 @@
 
 Cómo funciona la saturación de esceQ: una etapa global de saturación suave tras el ecualizador, para dar color armónico, con sobremuestreo contra el aliasing, compensación del drive y mezcla con la señal seca. Código en `dsp/include/esceq/dsp/saturation.h` (`dsp::Saturation`, el motor, y `dsp::Oversampler`, el sobremuestreo). Las decisiones y sus motivos están en la [ADR 0026](../decisiones/0026-saturacion.md), y el comportamiento que verá el usuario, en la sección 5.8 del [plan](../../PLAN.md).
 
-Estado: el motor (bloque 6.7) y su integración en `dsp::PhaseEqualizer`, con los parámetros `sat_mode`, `sat_drive` y `sat_mix` (bloque 6.8), están hechos y medidos: suena en el plugin y se puede automatizar desde el host. Falta la interfaz (bloque 6.9).
+Estado: el motor (bloque 6.7) y su integración en `dsp::PhaseEqualizer`, con los parámetros `sat_mode`, `sat_drive` y `sat_mix` (bloque 6.8), están hechos y medidos: suena en el plugin y se puede automatizar desde el host. La interfaz (bloque 6.9) está en el cajón *Output*, entre la curva y el medidor ([docs/ui.md](../ui.md), [ADR 0027](../decisiones/0027-cajon-de-la-etapa-de-salida.md)).
 
 ## Cadena
 

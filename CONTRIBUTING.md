@@ -51,7 +51,7 @@ cmake --build build --target esceq_snapshot
 ./build/tools/snapshot/esceq_snapshot_artefacts/Release/esceq_snapshot captura.png
 ```
 
-En Linux sin pantalla, anteponer `xvfb-run -a`. Opciones: `ancho alto`, `--scale F` (1, 1.25, 1.5, 2), `--select N`, `--hover N` (etiqueta flotante de esa banda), `--overflow`, `--bypass`, `--auto-gain`, `--auto-timing` (tiempos automáticos en la banda dinámica), `--spectral` (dinámica espectral en la banda dinámica, con una resonancia en 8 kHz que es lo único que pasa del umbral: la máscara la sombrea), `--notes` (con el teclado de la escala de notas), `--key N` (con la tecla de la nota N, en MIDI, señalada), `--expanded` (en la vista ampliada, como al pulsar F en la curva), `--peaks` (con los picos del analizador mantenidos), `--peak HZ` (con una resonancia en HZ en el audio y el ratón junto a ella: el pico marcado de las bandas desde el espectro), `--gallery` (estados de los controles), `--compare` (dos instancias más en la sesión, "Bass" y "Keys", superpuestas y con las colisiones marcadas) y `--match` (el panel Match abierto, tras aprender 10 s de otra instancia, "Reference", con la propuesta calculada; imprime las bandas propuestas).
+En Linux sin pantalla, anteponer `xvfb-run -a`. Opciones: `ancho alto`, `--scale F` (1, 1.25, 1.5, 2), `--select N`, `--hover N` (etiqueta flotante de esa banda), `--overflow`, `--bypass`, `--auto-gain`, `--auto-timing` (tiempos automáticos en la banda dinámica), `--spectral` (dinámica espectral en la banda dinámica, con una resonancia en 8 kHz que es lo único que pasa del umbral: la máscara la sombrea), `--saturation` (la saturación en Warm, con 9 dB de drive y la mezcla al 80 %, en Linear Medium), `--drawer-closed` (con el cajón *Output* plegado), `--notes` (con el teclado de la escala de notas), `--key N` (con la tecla de la nota N, en MIDI, señalada), `--expanded` (en la vista ampliada, como al pulsar F en la curva), `--peaks` (con los picos del analizador mantenidos), `--peak HZ` (con una resonancia en HZ en el audio y el ratón junto a ella: el pico marcado de las bandas desde el espectro), `--gallery` (estados de los controles), `--compare` (dos instancias más en la sesión, "Bass" y "Keys", superpuestas y con las colisiones marcadas) y `--match` (el panel Match abierto, tras aprender 10 s de otra instancia, "Reference", con la propuesta calculada; imprime las bandas propuestas).
 
 Para medir el coste de pintar la curva, `--bench N` pone las 24 bandas dinámicas y pinta N fotogramas de arrastre (por ejemplo `esceq_snapshot x.png 1480 860 --scale 1 --bench 60`). Imprime la media y la mediana, sin audio y con audio, y una huella de los píxeles de un fotograma fijo: si una optimización no debe cambiar lo que se ve, la huella tiene que salir igual antes y después.
 
@@ -69,6 +69,8 @@ $S docs/img/ui/pico.png 1120 580 --select 0 --peak 1300 --notes
 $S docs/img/ui/comparar.png 1180 700 --compare --select 0
 $S docs/img/ui/igualar.png 1180 700 --match --select 0
 $S docs/img/ui/espectral.png 1120 580 --spectral --hover 6
+$S docs/img/ui/saturacion.png 1180 700 --saturation --select 0
+$S docs/img/ui/salida-plegada.png 1120 580 --saturation --drawer-closed --select 0
 ```
 
 Los menús y los diálogos son ventanas aparte y no salen en esas capturas. Para verlos, `--desktop presets|edit|save SEGUNDOS` deja el editor en pantalla con eso abierto mientras otra herramienta captura la pantalla (el ejemplo está en la cabecera de `tools/snapshot/main.cpp`).

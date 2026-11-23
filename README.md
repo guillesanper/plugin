@@ -38,7 +38,10 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Cargar o guardar un preset | Nombre del preset en la barra superior; las flechas de los lados pasan al anterior o al siguiente |
 | Elegir el modo de fase | Desplegable de la barra superior (ver abajo); su ayuda dice la latencia |
 | Elegir la precisión en agudos | Botón de opciones (tres deslizadores) de la barra superior → *HF accuracy*: *Classic* o *Matched* (ver abajo). Se puede deshacer |
-| Igualar la sonoridad al comparar con el bypass | Botón *Auto* de la barra superior, junto a la salida: encendido, dice la compensación ("Auto -2.3 dB"; ver abajo) |
+| Dar color armónico a la mezcla | Cajón *Output*, a la izquierda del medidor: *Saturation* → *Soft* o *Warm*, y *Drive* y *Mix* (ver abajo; en fase lineal añade 0,98 ms de latencia a 48 kHz) |
+| Cambiar la ganancia de salida | Potenciómetro *Gain* del cajón *Output* |
+| Igualar la sonoridad al comparar con el bypass | Botón *Auto* del cajón *Output*, bajo la ganancia de salida: encendido, dice la compensación ("Auto -2.3 dB"; ver abajo) |
+| Ganar ancho de curva | Plegar el cajón *Output* con su flecha; plegado, un punto en la pestaña avisa si algo de dentro suena, y un clic lo abre. Se recuerda con el proyecto |
 | Leer y fijar frecuencias como notas | Botón de opciones → *Notes* → *Piano keyboard* muestra un teclado bajo la curva; la afinación, en *Tuning* (ver abajo) |
 | Llevar una banda a una nota | Alt (Option en macOS) al arrastrar el nodo; Ctrl/Cmd + izquierda/derecha con la banda seleccionada avanza un semitono; o escribir la nota en el campo de frecuencia ("A3", "C#2", "Eb4") |
 | Igualar la pista a otra | Botón de comparar → *Match to reference…*: elegir la referencia (otra instancia de esceQ o el sidechain), *Learn* mientras suenan las dos al menos 10 s, y *Apply* crea las bandas que faltan, en una sola acción de deshacer (ver abajo) |
@@ -116,6 +119,17 @@ La forma más rápida de atacar una resonancia que se ve. Con el analizador ence
 ### Igualar a una referencia
 
 Para que una pista tenga el balance de otra, o igualar dos tomas. En el menú del botón de comparar, *Match to reference…* abre el panel *Match* sobre la esquina de la curva. Se elige la referencia: otra instancia de esceQ del proyecto (se iguala a cómo suena, con su ecualizador) o la entrada de sidechain, para una pista sin esceQ o un bus. *Learn* escucha las dos mientras suenan, y con 10 s útiles la curva muestra los dos espectros, el objetivo (discontinuo) y la propuesta, con los nodos de las bandas nuevas en fantasma. *Amount* dice cuánto de la diferencia se iguala; *Smoothing*, el detalle (1/3 de octava por defecto); *Max bands*, cuántas bandas como mucho, y *Range*, entre qué frecuencias. *Apply* crea campanas y shelves normales en las bandas libres, de una vez (se deshace de una vez), y aplicar otra vez no crea más. Se mide la entrada de la pista, antes del ecualizador, y el nivel no se iguala. Lo aprendido se pierde al cerrar el proyecto. Detalles en [docs/dsp/igualacion.md](docs/dsp/igualacion.md).
+
+### Saturación
+
+Para dar color armónico, como una cinta o un previo empujados. Va después del ecualizador y de la dinámica, antes de la ganancia de salida, en el cajón *Output* (parámetros `sat_mode`, `sat_drive` y `sat_mix`, automatizables y guardados en los presets):
+
+- ***Off*** (por defecto): no se ejecuta; el sonido y la latencia son exactamente los de sin ella.
+- ***Soft***: simétrica, solo armónicos impares. ***Warm***: asimétrica, añade también los pares, más cálidos.
+- ***Drive*** (0 a 24 dB, 6 por defecto): cuánto se empuja. El nivel no sube al subirlo: se compensa para que un seno a −18 dBFS salga igual, así que se compara el color, no el volumen.
+- ***Mix*** (0 a 100 %, 100 por defecto): la saturada frente a la limpia, sin filtro de peine.
+
+Contra el aliasing (los armónicos que pasarían de la mitad de la frecuencia de muestreo y volverían como ruido inarmónico) se trabaja sobremuestreada a unos 384 kHz. En IIR no añade latencia; en fase lineal añade 47 muestras (0,98 ms a 48 kHz; la ayuda del selector dice la de la frecuencia de muestreo actual), y encenderla o apagarla, también al automatizarla o al cargar un preset, deja un hueco corto, como cambiar el modo de fase. Con *Off*, *Drive* y *Mix* se atenúan: se pueden ajustar, pero no suenan hasta elegir *Soft* o *Warm*. Detalles en [docs/dsp/saturacion.md](docs/dsp/saturacion.md) y en la [ADR 0026](docs/decisiones/0026-saturacion.md); el cajón, en la [ADR 0027](docs/decisiones/0027-cajon-de-la-etapa-de-salida.md).
 
 ## Compilar
 

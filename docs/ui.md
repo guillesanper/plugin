@@ -11,7 +11,7 @@ Cómo está hecha la interfaz de esceQ y qué reglas sigue. Las decisiones y sus
 | Lógica | `ui/logic/` (C++20 puro, sin JUCE) | De gestos a valores, escalas, disposición de la ventana, geometría de la curva | `tests/ui/` |
 | Tema | `ui/src/Theme.h` | Colores, tipografía, espaciado, radios y grosores | — |
 | Dibujo | `ui/src/Draw.h` | Funciones sin estado que pintan cada pieza en un estado dado | Galería de capturas |
-| Componentes | `ui/src/Controls.h`, `BandPanel`, `CurveView`, `OutputMeter`, `EqEditor` | Reciben el ratón y el teclado, deciden el estado, llaman a la lógica y al dibujo | Capturas y `pluginval` |
+| Componentes | `ui/src/Controls.h`, `BandPanel`, `CurveView`, `OutputDrawer`, `OutputMeter`, `EqEditor` | Reciben el ratón y el teclado, deciden el estado, llaman a la lógica y al dibujo | Capturas y `pluginval` |
 | Aspecto de JUCE | `ui/src/EsceqLookAndFeel.h` | Viste desplegables, menús, campos de texto y botones de texto | Capturas |
 
 Regla: **si algo se puede calcular sin ventana, va en `ui/logic` con su test.** `ui/src` solo pinta y traduce gestos.
@@ -85,8 +85,8 @@ El arco de valor sale **del centro** en los parámetros bipolares (ganancia, ran
 
 ### Interruptor, selector y desplegable
 
-- `ToggleSwitch`: interruptor (On, Active, Auto, Spectral) o botón que se queda encendido (Auto de la barra superior, Bypass). Espacio o Intro lo cambian.
-- `Segmented`: una opción entre unas pocas, todas a la vista (canal de la banda).
+- `ToggleSwitch`: interruptor (On, Active, Auto, Spectral) o botón que se queda encendido (Auto del cajón *Output*, Bypass). Espacio o Intro lo cambian.
+- `Segmented`: una opción entre unas pocas, todas a la vista (canal de la banda, modo de la saturación).
 - `Dropdown`: desplegable (tipo, pendiente, fuente del detector, analizador, rango). La rueda cambia de opción.
 
 ## Ventana
@@ -94,26 +94,27 @@ El arco de valor sale **del centro** en los parámetros bipolares (ganancia, ran
 Las zonas y la posición de cada control las calcula `esceq/ui/layout.h`:
 
 ```
-┌──────────────────────────────────────────────────────────────────────┐
-│ marca  presets  deshacer  comparar  opciones  fase  analizador  ampliar  rango  salida  Auto  bypass │  48 px
-├──────────────────────────────────────────────────────────┬───────────┤
-│                                                          │           │
-│                         curva                            │  medidor  │
-│                                                          │  52 px    │
-│ (teclado de notas, 14 px, si está visible)               │           │
-├──────────────┬─────────────────┬─────────────────────────┴───────────┤
-│ banda        │ EQ              │ dinámica                            │ 168 px
-└──────────────┴─────────────────┴─────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│ marca  presets  deshacer  comparar  opciones  fase  analizador  ampliar  rango  bypass │  48 px
+├──────────────────────────────────────────────┬──────────────┬───────────┤
+│                                              │ cajón Output │           │
+│                   curva                      │ 160 px       │  medidor  │
+│                                              │ (plegado, 16)│  52 px    │
+│ (teclado de notas, 14 px, si está visible)   │              │           │
+├──────────────┬─────────────────┬─────────────┴──────────────┴───────────┤
+│ banda        │ EQ              │ dinámica                               │ 168 px
+└──────────────┴─────────────────┴────────────────────────────────────────┘
 ```
 
-- **Vista ampliada:** sin panel ni medidor, la curva (con el teclado de notas, si se ve) ocupa la ventana menos la barra superior, con el mismo margen de 12 px a los lados y por abajo (ver más abajo).
-- **Tamaños:** S (1120 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 1120 × 540 y 2400 × 1400. El ancho mínimo es el que necesita la barra superior entera con el navegador de presets en su mínimo ([ADR 0012](decisiones/0012-modos-de-fase.md), [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md) y [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)): en 1120 px el navegador tiene exactamente 140. Los tamaños predefinidos se eligen en el menú de opciones.
+- **Cajón de la etapa de salida:** entre la curva y el medidor, con su mismo alto; abierto la curva cede 168 px y plegado 24 (ver más abajo).
+- **Vista ampliada:** sin panel, cajón ni medidor, la curva (con el teclado de notas, si se ve) ocupa la ventana menos la barra superior, con el mismo margen de 12 px a los lados y por abajo (ver más abajo).
+- **Tamaños:** S (1120 × 580), M (1180 × 700, por defecto) y L (1480 × 860), además del redimensionado libre entre 1120 × 540 y 2400 × 1400. El ancho mínimo era el que necesitaba la barra superior entera con el navegador de presets en su mínimo ([ADR 0012](decisiones/0012-modos-de-fase.md), [ADR 0014](decisiones/0014-estado-v3-algoritmo-de-filtro.md) y [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)); desde que la salida y *Auto* pasaron al cajón ([ADR 0027](decisiones/0027-cajon-de-la-etapa-de-salida.md)), en 1120 px el navegador tiene su máximo, 320, y aún sobran 88 px en la barra. Los tamaños predefinidos se eligen en el menú de opciones.
 - **Sin textos cortados:** los tests de `tests/ui/layout_test.cpp` recorren los tamaños de ventana y comprueban que ninguna zona ni control se solapa, y que cada celda de potenciómetro tiene ancho para su etiqueta y su valor.
 - **Escalado:** todo es vectorial y se dibuja en píxeles lógicos; el factor de escala (100, 125, 150, 200 %) lo aplican JUCE y el host. Las líneas de 1 px se alinean a píxeles enteros.
 
 ### Barra superior
 
-De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **opciones** (ver más abajo); **modo de fase** (IIR, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; **vista ampliada** (ver más abajo); rango de la curva; ganancia de salida; **compensación automática de ganancia** (ver más abajo) y bypass. El navegador de presets se queda con el ancho que sobra, entre 140 y 320 px. Para que cupiera el botón de la vista ampliada sin ensanchar la ventana mínima, el rango pasó de 92 a 72 px ("±30 dB" mide 34 px), el bypass de 76 a 64 y la separación tras la marca de 16 a 12 ([ADR 0018](decisiones/0018-analizador-ampliado.md)).
+De izquierda a derecha: la marca; el navegador de presets (anterior, nombre, siguiente; el nombre abre el menú con los de fábrica, los de usuario, guardar, borrar (pide confirmación), valores por defecto y abrir la carpeta; un punto del color de acento indica que el preset se ha modificado); deshacer y rehacer; **comparar** con otras instancias (ver más abajo); **opciones** (ver más abajo); **modo de fase** (IIR, Linear Low, Linear Medium, Linear High; su ayuda dice la latencia del modo que suena, ver [fase-lineal.md](dsp/fase-lineal.md)); modo del analizador; **vista ampliada** (ver más abajo); rango de la curva y bypass. La ganancia de salida y la **compensación automática de ganancia** están en el cajón *Output* (ver más abajo). El navegador de presets se queda con el ancho que sobra, hasta 320 px. Para que cupiera el botón de la vista ampliada sin ensanchar la ventana mínima, el rango pasó de 92 a 72 px ("±30 dB" mide 34 px), el bypass de 76 a 64 y la separación tras la marca de 16 a 12 ([ADR 0018](decisiones/0018-analizador-ampliado.md)).
 
 ### Opciones: precisión en agudos, tamaño de la ventana, escala de notas y analizador
 
@@ -132,13 +133,33 @@ La cuarta, **Analyzer**, son los ajustes del analizador ([ADR 0018](decisiones/0
 
 Los textos y la correspondencia entre entradas y acciones están en `ui/logic` (`options_menu.h`), con tests.
 
+### Etapa de salida: el cajón Output
+
+![El cajón Output con la saturación en Warm](img/ui/saturacion.png)
+
+Entre la curva y el medidor, el cajón **Output** reúne lo que va tras el ecualizador, en el orden de la señal ([ADR 0027](decisiones/0027-cajon-de-la-etapa-de-salida.md)): arriba, *Saturation* (PLAN.md 5.8, [ADR 0026](decisiones/0026-saturacion.md)); abajo, junto al medidor, *Gain* (`output_gain`) y *Auto*. La disposición es `outputDrawerLayout` (en `layout.h`, con sus tests: cabe en todos los tamaños, con y sin teclado de notas, sin solapes y con las celdas de potenciómetro de 66 px como mínimo), y los textos están en `esceq/ui/output_stage.h`.
+
+| Control | Parámetro | Notas |
+|---|---|---|
+| *Off / Soft / Warm* | `sat_mode` | Selector. Su ayuda dice qué hace y, en fase lineal, la latencia que añade con la frecuencia de muestreo actual ("Saturation · adds 0.98 ms latency" a 48 kHz; 1.07 ms a 44,1, 0.45 a 96 y 0.18 a 192) y que encenderla o apagarla deja un hueco, también al automatizarlo; en IIR no dice nada de latencia (`saturationTooltip`) |
+| *Drive* | `sat_drive` | De 0 a 24 dB (6). Con Off se atenúa (sin efecto, pero editable) y su ayuda lo dice (`saturationAmountActive`) |
+| *Mix* | `sat_mix` | De 0 a 100 % (100), escrito "80%". Con Off, igual que *Drive* |
+| *Gain* | `output_gain` | Potenciómetro bipolar, de −24 a +24 dB (antes, la barra de la barra superior) |
+| *Auto* | `auto_gain` | Ver más abajo |
+
+- **Plegar y abrir:** la cabecera (*OUTPUT* y una flecha) lo pliega en una pestaña de 16 px, y un clic en la pestaña lo abre. Plegado, un punto del color de acento en la pestaña avisa de que algo de dentro cambia el sonido (la saturación fuera de Off, una ganancia distinta de 0 dB o *Auto* encendido), y su ayuda dice qué: "Show the output stage... · Saturation Warm, drive 9.0 dB, mix 80% · Output -3.0 dB · Auto gain on" (`outputStageActive`, `outputStageTooltip`).
+- **Se guarda con el proyecto** (`ui.output_stage`, solo plegado: abierto es el de siempre) y no se deshace, como el teclado de notas. Una instancia nueva y los proyectos anteriores lo abren.
+- **Vista ampliada:** se oculta con el medidor; al volver está como estaba.
+
+![Plegado: la pestaña, con el punto porque la saturación está encendida](img/ui/salida-plegada.png)
+
 ### Compensación automática de ganancia
 
-El botón **Auto**, entre la ganancia de salida y el bypass, enciende y apaga la compensación (`auto_gain`, [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)). Encendido se queda iluminado con el color de acento y dice la compensación que aplica, con una cifra decimal ("Auto -2.3 dB"); apagado dice "Auto". El valor lo calcula la interfaz con la misma función y los mismos ajustes que el procesador (`dsp::autoGainDb`), solo cuando cambian, así que es el que suena aunque el host no esté procesando audio. Mide 92 px: cabe "Auto +12.0 dB". Los textos del botón y de su ayuda están en `ui/logic` (`control_logic.h`).
+El botón **Auto**, bajo la ganancia de salida en el cajón *Output*, enciende y apaga la compensación (`auto_gain`, [ADR 0015](decisiones/0015-compensacion-automatica-de-ganancia.md)). Encendido se queda iluminado con el color de acento y dice la compensación que aplica, con una cifra decimal ("Auto -2.3 dB"); apagado dice "Auto". El valor lo calcula la interfaz con la misma función y los mismos ajustes que el procesador (`dsp::autoGainDb`), solo cuando cambian, así que es el que suena aunque el host no esté procesando audio. Ocupa el ancho del cajón (136 px): cabe "Auto +12.0 dB". Los textos del botón y de su ayuda están en `ui/logic` (`control_logic.h`).
 
 ### Vista ampliada
 
-El botón de las cuatro esquinas, a la derecha del selector del analizador, o la tecla F con el foco en la curva, ocultan el panel de la banda y el medidor de salida: la curva y el analizador ocupan la ventana menos la barra superior (`editorLayout(..., expanded)`; lo comprueba `tests/ui/layout_test.cpp` en los tres tamaños, en el mínimo y en un barrido). Encendido, el botón se ilumina con el color de acento y sus esquinas apuntan hacia dentro. Esc (con el foco en cualquier parte del editor) o el mismo botón vuelven, y la disposición es idéntica a la de antes. Si el teclado de notas se ve, sigue bajo la curva.
+El botón de las cuatro esquinas, a la derecha del selector del analizador, o la tecla F con el foco en la curva, ocultan el panel de la banda, el cajón *Output* y el medidor de salida: la curva y el analizador ocupan la ventana menos la barra superior (`editorLayout(..., expanded)`; lo comprueba `tests/ui/layout_test.cpp` en los tres tamaños, en el mínimo y en un barrido). Encendido, el botón se ilumina con el color de acento y sus esquinas apuntan hacia dentro. Esc (con el foco en cualquier parte del editor) o el mismo botón vuelven, y la disposición es idéntica a la de antes. Si el teclado de notas se ve, sigue bajo la curva.
 
 Las bandas se editan igual en la curva. Como no se ve el panel, la etiqueta flotante dice además el canal (también "Stereo") y, en los tipos con dinámica, una segunda línea con ella: "Thr -48.0 dB  Range -9.0 dB  Att 1.00 ms  Rel 100 ms", "Auto times" en lugar de los tiempos si son automáticos, "Sidechain" si el detector escucha la entrada externa, o "Dynamics off" (`nodeReadout(..., detailed)`). Solo aparece al señalar o arrastrar un nodo: fija sobre la banda seleccionada taparía los nodos de alrededor.
 
@@ -256,12 +277,14 @@ El marcador de las bandas desde el espectro ([ADR 0019](decisiones/0019-bandas-d
 
 La vista ampliada ([ADR 0018](decisiones/0018-analizador-ampliado.md)) no cambia nada de esto: solo da más área a la curva. Medido en otra sesión (otra máquina, más rápida que la de la tabla; dos tandas, mediana): en L, la vista normal cuesta de 9,0 a 10,2 ms antes de existir la ampliada y de 9,9 a 10,3 ms con ella, con la misma huella del fotograma fijo; la ampliada en L (curva de 1456 × 800), de 10,3 a 11,8 ms; y en la ventana máxima a escala 1, la ampliada (2376 × 1340) de 20,6 a 21,3 ms, frente a 17,6–21,3 de la normal. Los picos mantenidos son un trazo más y no se notan.
 
+El cajón *Output* ([ADR 0027](decisiones/0027-cajon-de-la-etapa-de-salida.md)) no se repinta al arrastrar un nodo (sus controles solo se repintan si cambia su valor o si se atenúan), y solo cambia el ancho de la curva. Con `--bench 60` (L, escala 1, dos tandas, mediana): abierto (curva de 1228 × 644), de 8,8 a 9,1 ms; plegado (1372 × 644), de 8,9 a 10,3 ms. Dentro del ruido.
+
 Lo que queda es casi todo rasterizar los rellenos y los trazos (más del 60 % del tiempo a escala 1, más a escala 2): reducirlo exige dibujar otra cosa. En Windows (Direct2D, el renderizador por defecto de JUCE 9) y en macOS (CoreGraphics) la rasterización la hace el sistema; ahí no se ha medido.
 
 ## Accesibilidad
 
 - Todos los controles tienen nombre y rol para los lectores de pantalla; los potenciómetros exponen su rango, su valor y su valor como texto ("1.20 kHz").
-- Tabulador recorre la barra superior, la curva, el panel Match (si está abierto) y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
+- Tabulador recorre la barra superior, la curva, el panel Match (si está abierto), el cajón *Output* (la cabecera o la pestaña y, abierto, sus controles) y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
 - En la curva: izquierda y derecha eligen banda; arriba y abajo cambian su ganancia; Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono (con Mayús, en pasos finos); Mayús, ajuste fino; Supr la elimina; F amplía o reduce la vista, y Esc vuelve.
 - El teclado de notas no recibe el foco: es una referencia visual, y la nota se lee en la etiqueta y se escribe en el campo de frecuencia.
 - Limitación: los nodos no son elementos accesibles individuales.

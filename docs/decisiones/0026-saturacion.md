@@ -65,3 +65,7 @@ Al integrarla en `dsp::PhaseEqualizer` no ha cambiado ninguna decisión; lo que 
 - **La saturación va en los presets** (decidido antes, sección 5.8): cargar un preset que la encienda o la apague en fase lineal deja el hueco del cambio de latencia, como el interruptor de la dinámica espectral.
 
 Con Off, el ecualizador es bit a bit el de antes, con la misma latencia en los cuatro modos (comparado con el código anterior: [docs/dsp/saturacion.md](../dsp/saturacion.md), «En el procesador»). Coste con la mezcla de 8 bandas a 48 kHz: del 0,7 al 1,0 % más; la mezcla con saturación, del 1,45 al 1,9 % en los cuatro modos y con los dos compiladores.
+
+## Nota: la interfaz (bloque 6.9)
+
+Dónde se muestra la saturación lo decidió el usuario, y está en la [ADR 0027](0027-cajon-de-la-etapa-de-salida.md): un cajón plegable *Output* entre la curva y el medidor, con la saturación, la ganancia de salida y *Auto*, que dejan la barra superior. No cambia nada de esta ADR: la ayuda del selector dice la latencia de la decisión 2 en fase lineal (0,98 ms a 48 kHz) y nada en IIR, y con Off el drive y la mezcla se atenúan, porque no se ejecutan.
