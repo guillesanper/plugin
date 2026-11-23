@@ -52,6 +52,14 @@ enum class Icon { Undo, Redo, Previous, Next, Compare, Options, Expand, Close };
 void iconButton(juce::Graphics& g, juce::Rectangle<float> bounds, Icon icon, const ControlState& state,
                 Corners corners = Corners::All, bool on = false, const juce::String& badge = {});
 
+/// Lo que abre y pliega el cajón de la etapa de salida (ADR 0027). Abierto,
+/// la cabecera: el título y una flecha hacia la derecha (plegar). Plegado, la
+/// pestaña: una tira con la flecha hacia la izquierda arriba, el título en
+/// vertical y, si algo del cajón cambia el sonido (`active`), un punto del
+/// color de acento abajo.
+void drawerToggle(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& title, bool open, bool active,
+                  const ControlState& state);
+
 /// Cuerpo de un campo de valor (el mínimo y el máximo del rango del panel
 /// Match): como un desplegable, sin flecha. El texto lo pinta quien lo usa.
 void field(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state);

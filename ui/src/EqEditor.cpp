@@ -37,7 +37,8 @@ EqEditor::EqEditor(PluginProcessor& owner)
       curve_(owner),
       meter_(owner),
       panel_(owner),
-      presets_(owner)
+      presets_(owner),
+      drawer_(owner)
 {
     setLookAndFeel(&lookAndFeel_);
     setTitle("esceQ");
@@ -87,11 +88,8 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(undo_);
     addAndMakeVisible(redo_);
 
-    output_.attach(owner.parameter(core::kOutputGain), core::parameters()[core::kOutputGain]);
-    addAndMakeVisible(output_);
-
-    autoGain_.attach(owner.parameter(core::kAutoGain));
-    addAndMakeVisible(autoGain_);
+    drawer_.onToggle = [this] { setDrawerOpen(!drawer_.isOpen()); };
+    addAndMakeVisible(drawer_);
     updateAutoGain();
 
     bypass_.attach(owner.parameter(core::kBypass));
@@ -132,8 +130,8 @@ EqEditor::EqEditor(PluginProcessor& owner)
     int order = 1;
     for (juce::Component* c :
          std::initializer_list<juce::Component*>{&presets_, &undo_, &redo_, &compare_, &options_, &phase_, &analyzer_,
-                                                 &expand_, &range_, &output_, &autoGain_, &bypass_, &curve_,
-                                                 &matchPanel_, &panel_})
+                                                 &expand_, &range_, &bypass_, &curve_, &matchPanel_, &drawer_,
+                                                 &panel_})
         c->setExplicitFocusOrder(order++);
 
     setResizable(true, true);
@@ -155,6 +153,7 @@ void EqEditor::applyUiSettings()
     analyzer_.setSelectedId(ui.analyzerMode + 1, juce::sendNotificationSync);
     range_.setSelectedId(ui.displayRangeDb, juce::sendNotificationSync);
     setNoteScale(ui.pianoKeyboard, ui.a4Hz);
+    setDrawerOpen(ui.outputStageOpen);
     // La congelación no se guarda: se conserva la de la vista.
     curve_.setAnalyzerView({ui.analyzerFftSize, ui.analyzerFallMs, ui.analyzerTiltDbPerOctave, ui.analyzerPeakHold,
                             curve_.analyzerView().frozen});
@@ -175,6 +174,7 @@ void EqEditor::storeUiSettings()
     ui.windowHeight = getHeight();
     ui.pianoKeyboard = showKeyboard_;
     ui.a4Hz = a4Hz_;
+    ui.outputStageOpen = drawer_.isOpen();
     const auto& analyzer = curve_.analyzerView();
     ui.analyzerFftSize = analyzer.fftSize;
     ui.analyzerFallMs = analyzer.fallMs;
@@ -253,13 +253,12 @@ void EqEditor::paint(juce::Graphics& g)
     g.setColour(colour::accent);
     g.drawText("Q", logo.withTrimmedLeft(juce::GlyphArrangement::getStringWidth(logoFont, "esce")),
                juce::Justification::centredLeft, false);
-
-    draw::caption(g, "Out", toJuce(topBar_.output).withWidth(26.0f), juce::Justification::centredLeft);
 }
 
 void EqEditor::resized()
 {
-    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()), showKeyboard_, expanded_);
+    layout_ = editorLayout(static_cast<float>(getWidth()), static_cast<float>(getHeight()), showKeyboard_, expanded_,
+                           drawer_.isOpen());
     topBar_ = topBarLayout(layout_.topBar);
 
     presets_.setBounds(toInt(topBar_.presets));
@@ -271,14 +270,12 @@ void EqEditor::resized()
     analyzer_.setBounds(toInt(topBar_.analyzer));
     expand_.setBounds(toInt(topBar_.expand));
     range_.setBounds(toInt(topBar_.range));
-    // La barra y su valor son un solo control; a su izquierda va la etiqueta "OUT".
-    output_.setBounds(toInt(topBar_.output).withTrimmedLeft(26).getUnion(toInt(topBar_.outputValue)));
-    autoGain_.setBounds(toInt(topBar_.autoGain));
     bypass_.setBounds(toInt(topBar_.bypass));
 
     curve_.setBounds(toInt(layout_.curve));
     keyboard_.setBounds(toInt(layout_.keyboard));
     meter_.setBounds(toInt(layout_.meter));
+    drawer_.setBounds(toInt(layout_.drawer));
     panel_.setBounds(toInt(layout_.panel));
     matchPanel_.setPanelLayout(matchPanelLayout(layout_.curve));
 
@@ -295,6 +292,7 @@ void EqEditor::timerCallback()
     updateMatch(true);
     meter_.refresh();
     panel_.refresh();
+    drawer_.refresh();
     presets_.refresh();
     updateCompareButton(); // la curva quita de la selección las instancias que se van
     updatePhaseTooltip();
@@ -336,8 +334,18 @@ void EqEditor::updateAutoGain()
     const double db = enabled ? dsp::autoGainDb(core::allBandSettings(inputs.values, inputs.algorithm),
                                                 inputs.sampleRate, inputs.channels)
                               : 0.0;
-    autoGain_.setButtonText(toJuce(autoGainLabel(enabled, db)));
-    autoGain_.setTooltip(toJuce(autoGainTooltip(enabled, db)));
+    drawer_.setAutoGainText(toJuce(autoGainLabel(enabled, db)), toJuce(autoGainTooltip(enabled, db)));
+}
+
+void EqEditor::setDrawerOpen(bool open)
+{
+    // Una preferencia de la interfaz, como el teclado de notas: no se deshace (ADR 0009).
+    const bool wasOpen = drawer_.isOpen();
+    drawer_.setOpen(open);
+    if (open != wasOpen)
+        resized(); // también guarda las preferencias
+    else
+        storeUiSettings();
 }
 
 void EqEditor::showOptionsMenu()
@@ -402,8 +410,9 @@ void EqEditor::setExpanded(bool expanded)
     if (expanded == expanded_)
         return;
     expanded_ = expanded;
-    // El medidor y el panel se ocultan; la curva se queda con su sitio.
+    // El medidor, el cajón y el panel se ocultan; la curva se queda con su sitio.
     meter_.setVisible(!expanded);
+    drawer_.setVisible(!expanded);
     panel_.setVisible(!expanded);
     curve_.setExpanded(expanded);
     updateExpandButton();

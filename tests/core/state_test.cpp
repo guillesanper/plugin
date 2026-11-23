@@ -369,6 +369,41 @@ TEST_CASE("Estado: preferencias de la escala de notas")
     CHECK(v2->ui.a4Hz == 442.0);
 }
 
+TEST_CASE("Estado: el cajon de la etapa de salida, abierto salvo que se pliegue")
+{
+    // Abierto por defecto, y entonces no se escribe: el estado es el de antes del cajon.
+    CHECK(UiSettings{}.outputStageOpen);
+    CHECK(serializePluginState(PluginState{}).find("ui.output_stage") == std::string::npos);
+
+    PluginState state;
+    state.ui.outputStageOpen = false;
+    const auto text = serializePluginState(state);
+    CHECK(text.find("\nui.output_stage 0\n") != std::string::npos);
+    const auto restored = deserializePluginState(text);
+    REQUIRE(restored.has_value());
+    CHECK(*restored == state);
+
+    // Los estados anteriores lo abren; lo que no se entiende, tambien.
+    for (const char* name : {"v1_default.txt", "v1_custom.txt", "v2_ui.txt", "v3_classic.txt", "v3_matched.txt"})
+    {
+        INFO(name);
+        const auto old = deserializePluginState(readFixture(name));
+        REQUIRE(old.has_value());
+        CHECK(old->ui.outputStageOpen);
+    }
+    for (const char* bad : {"esceQ-state 3\nui.output_stage 2\n", "esceQ-state 3\nui.output_stage -1\n",
+                            "esceQ-state 3\nui.output_stage abc\n", "esceQ-state 3\nui.output_stage\n"})
+    {
+        INFO(bad);
+        const auto parsed = deserializePluginState(bad);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->ui == UiSettings{});
+    }
+    const auto open = deserializePluginState("esceQ-state 3\nui.output_stage 1\n");
+    REQUIRE(open.has_value());
+    CHECK(open->ui.outputStageOpen);
+}
+
 TEST_CASE("Estado: preferencias de la escala de notas absurdas toman el valor por defecto")
 {
     for (const char* text : {"esceQ-state 3\nui.notes 7\nui.a4 399.9\n", "esceQ-state 3\nui.notes -1\nui.a4 480.1\n",

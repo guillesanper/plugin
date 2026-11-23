@@ -61,6 +61,10 @@ struct UiSettings
     double analyzerTiltDbPerOctave = 4.5;
     ///  - mantener los picos (línea `ui.analyzer_peaks`, 0 o 1).
     bool analyzerPeakHold = false;
+    /// Cajón de la etapa de salida (saturación, ganancia de salida y
+    /// compensación automática; PLAN.md 5.8, ADR 0027): abierto o plegado en
+    /// su pestaña. Línea `ui.output_stage` (0 o 1); solo se escribe plegado.
+    bool outputStageOpen = true;
 
     /// Igualdad exacta a propósito: a4Hz está redondeada a 0,1 Hz por
     /// sanitize(), y la inclinación es uno de unos pocos valores exactos.
@@ -118,6 +122,7 @@ struct PluginState
 ///     ui.analyzer_fall 1000
 ///     ui.analyzer_tilt 3
 ///     ui.analyzer_peaks 1
+///     ui.output_stage 0
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
 /// independientemente de la configuración regional. `filter_algorithm` (el

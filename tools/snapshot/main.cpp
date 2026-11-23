@@ -11,6 +11,10 @@
 //   --spectral    con la dinámica espectral en la banda dinámica (la 6), su
 //                 umbral en -24 dB y una resonancia en 8 kHz en el audio, que
 //                 es lo único que lo pasa: la máscara la sombrea.
+//   --saturation  con la saturación encendida (Warm, drive 9 dB, mezcla 80 %)
+//                 y la fase lineal (Linear Medium), cuya latencia dice su ayuda.
+//   --drawer-closed
+//                 con el cajón de la etapa de salida plegado en su pestaña.
 //   --notes       con el teclado de la escala de notas bajo la curva.
 //   --key N       con el teclado, la tecla de la nota N (MIDI, 69 = A4) señalada.
 //   --expanded    en la vista ampliada (como al pulsar F en la curva).
@@ -308,7 +312,8 @@ int main(int argc, char** argv)
     if (argc < 2)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
-                     "[--bypass] [--auto-gain] [--auto-timing] [--spectral] [--notes] [--key N] [--expanded] [--peaks] "
+                     "[--bypass] [--auto-gain] [--auto-timing] [--spectral] [--saturation] "
+                     "[--drawer-closed] [--notes] [--key N] [--expanded] [--peaks] "
                      "[--peak HZ] [--gallery] [--compare] [--match] [--bench N]\n";
         return 2;
     }
@@ -318,7 +323,8 @@ int main(int argc, char** argv)
     std::string desktop;
     float scale = 2.0f;
     bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
-         compare = false, expanded = false, peaks = false, match = false, spectral = false;
+         compare = false, expanded = false, peaks = false, match = false, spectral = false,
+         saturation = false, drawerClosed = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -340,6 +346,10 @@ int main(int argc, char** argv)
             autoTiming = true;
         else if (arg == "--spectral")
             spectral = true;
+        else if (arg == "--saturation")
+            saturation = true;
+        else if (arg == "--drawer-closed")
+            drawerClosed = true;
         else if (arg == "--notes")
             notes = true;
         else if (arg == "--key")
@@ -418,6 +428,17 @@ int main(int argc, char** argv)
         // Con el umbral por encima del ruido, solo la resonancia lo pasa.
         processor->parameter(esceq::core::spectralParameter(5)).setValueNotifyingHost(1.0f);
         setDynamic(*processor, 5, DynParam::Threshold, -24.0f);
+    }
+    if (saturation)
+    {
+        auto set = [&](std::size_t index, float value) {
+            auto& parameter = processor->parameter(index);
+            parameter.setValueNotifyingHost(parameter.convertTo0to1(value));
+        };
+        set(esceq::core::kSaturationMode, 2.0f); // Warm
+        set(esceq::core::kSaturationDrive, 9.0f);
+        set(esceq::core::kSaturationMix, 80.0f);
+        set(esceq::core::kPhaseMode, 2.0f); // Linear Medium
     }
     if (bench > 0)
     {
@@ -512,6 +533,7 @@ int main(int argc, char** argv)
         auto ui = processor->uiSettings();
         ui.pianoKeyboard = ui.pianoKeyboard || notes;
         ui.analyzerPeakHold = ui.analyzerPeakHold || peaks;
+        ui.outputStageOpen = ui.outputStageOpen && !drawerClosed;
         processor->setUiSettings(ui);
     }
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor->createEditor());

@@ -108,7 +108,7 @@ WindowSize clampWindow(WindowSize size) noexcept
             std::clamp(size.height, kMinWindow.height, kMaxWindow.height)};
 }
 
-EditorLayout editorLayout(float width, float height, bool pianoKeyboard, bool expanded) noexcept
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard, bool expanded, bool drawerOpen) noexcept
 {
     Rect area{0.0f, 0.0f, std::max(width, 0.0f), std::max(height, 0.0f)};
     EditorLayout layout;
@@ -136,6 +136,8 @@ EditorLayout editorLayout(float width, float height, bool pianoKeyboard, bool ex
     Rect middle = inset(area, kS3, 0.0f);
     layout.meter = takeRight(middle, kMeterWidth);
     takeRight(middle, kS2);
+    layout.drawer = takeRight(middle, drawerOpen ? kOutputDrawerWidth : kOutputDrawerTabWidth);
+    takeRight(middle, kS2);
     if (pianoKeyboard)
     {
         layout.keyboard = takeBottom(middle, kPianoKeyboardHeight);
@@ -156,11 +158,6 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     takeLeft(row, kS3);
 
     layout.bypass = takeRight(row, 64.0f);
-    takeRight(row, kS2);
-    layout.autoGain = takeRight(row, 92.0f); // "Auto -12.0 dB" sin cortarse
-    takeRight(row, kS3);
-    layout.outputValue = takeRight(row, 60.0f);
-    layout.output = takeRight(row, 96.0f);
     takeRight(row, kS3);
     layout.range = takeRight(row, 72.0f); // "±30 dB"
     takeRight(row, kS2);
@@ -183,6 +180,38 @@ TopBarLayout topBarLayout(Rect bounds) noexcept
     takeLeft(row, kS2);
     layout.undo = takeLeft(row, kHistoryButton);
     layout.redo = takeLeft(row, kHistoryButton);
+    return layout;
+}
+
+OutputDrawerLayout outputDrawerLayout(Rect drawer, bool open) noexcept
+{
+    OutputDrawerLayout layout;
+    layout.card = drawer;
+    if (!open)
+    {
+        layout.toggle = drawer;
+        return layout;
+    }
+
+    constexpr float kHeaderHeight = 20.0f;
+    constexpr float kMaxKnobRow = 90.0f; // la celda con el potenciómetro más grande
+    Rect inner = inset(drawer, kS3, kS3);
+    layout.toggle = takeTop(inner, kHeaderHeight);
+    takeTop(inner, kS2);
+    layout.saturationTitle = takeTop(inner, kGroupTitleHeight);
+    takeTop(inner, kS1);
+    layout.saturationMode = takeTop(inner, kControlHeight);
+    takeTop(inner, kS1);
+
+    layout.autoGain = takeBottom(inner, kControlHeight);
+    takeBottom(inner, kS1);
+    // Las dos filas de potenciómetros, con al menos kS3 entre ellas.
+    const float row = std::clamp(std::floor(0.5f * (inner.height - kS3)), 0.0f, kMaxKnobRow);
+    Rect knobs = takeTop(inner, row);
+    const float cell = std::floor(0.5f * std::max(0.0f, knobs.width - kS1));
+    layout.drive = takeLeft(knobs, cell);
+    layout.mix = takeRight(knobs, cell);
+    layout.gain = takeBottom(inner, row);
     return layout;
 }
 

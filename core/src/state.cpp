@@ -30,6 +30,7 @@ constexpr std::string_view kUiAnalyzerFft = "ui.analyzer_fft";
 constexpr std::string_view kUiAnalyzerFall = "ui.analyzer_fall";
 constexpr std::string_view kUiAnalyzerTilt = "ui.analyzer_tilt";
 constexpr std::string_view kUiAnalyzerPeaks = "ui.analyzer_peaks";
+constexpr std::string_view kUiOutputStage = "ui.output_stage";
 
 constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
 /// kLegacyFilterAlgorithm tal y como se escribe en el estado.
@@ -203,6 +204,9 @@ std::string serializePluginState(const PluginState& state)
         extra << kUiAnalyzerTilt << ' ' << ui.analyzerTiltDbPerOctave << '\n';
     if (ui.analyzerPeakHold)
         extra << kUiAnalyzerPeaks << " 1\n";
+    // El cajón de la etapa de salida, solo plegado: abierto es el de siempre.
+    if (!ui.outputStageOpen)
+        extra << kUiOutputStage << " 0\n";
     return out + extra.str();
 }
 
@@ -286,6 +290,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             state.ui.analyzerFallMs = number;
         else if (entry.key == kUiAnalyzerPeaks && (number == 0 || number == 1))
             state.ui.analyzerPeakHold = number == 1;
+        else if (entry.key == kUiOutputStage && (number == 0 || number == 1))
+            state.ui.outputStageOpen = number == 1;
     }
 
     state.ui = sanitize(std::move(state.ui));

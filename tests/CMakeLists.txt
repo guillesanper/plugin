@@ -43,6 +43,7 @@ add_executable(esceq_tests
     ui/meter_logic_test.cpp
     ui/notes_test.cpp
     ui/options_menu_test.cpp
+    ui/output_stage_test.cpp
     ui/session_overlay_test.cpp
     ui/spectral_mask_test.cpp
     ui/spectrum_peaks_test.cpp)

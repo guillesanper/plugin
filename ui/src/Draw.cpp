@@ -325,6 +325,61 @@ void dropdown(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlSta
         focusRing(g, bounds, radius::control);
 }
 
+void drawerToggle(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& title, bool open, bool active,
+                  const ControlState& state)
+{
+    const float alpha = alphaFor(state);
+    const auto textColour = (state.hover ? colour::text : colour::textMuted).withMultipliedAlpha(alpha);
+    constexpr float kChevron = 3.0f;
+    auto chevron = [&](juce::Point<float> c, float direction) {
+        juce::Path path;
+        path.startNewSubPath(c.x - kChevron * direction, c.y - 2.0f * kChevron);
+        path.lineTo(c.x + kChevron * direction, c.y);
+        path.lineTo(c.x - kChevron * direction, c.y + 2.0f * kChevron);
+        g.setColour(textColour);
+        g.strokePath(path,
+                     juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    };
+
+    if (open)
+    {
+        // La cabecera de la tarjeta: el título como los de grupo y la flecha a la derecha.
+        caption(g, title, bounds, juce::Justification::centredLeft, state.hover ? colour::textMuted : colour::textDim);
+        chevron({bounds.getRight() - 6.0f, bounds.getCentreY()}, 1.0f);
+        if (state.focused)
+            focusRing(g, bounds.expanded(4.0f, 2.0f), radius::control);
+        return;
+    }
+
+    // La pestaña plegada: una tarjeta estrecha que se ilumina al pasar el ratón.
+    g.setColour((state.hover || state.pressed ? body(state) : colour::card).withMultipliedAlpha(alpha));
+    g.fillRoundedRectangle(bounds, radius::control);
+    g.setColour(colour::line.withMultipliedAlpha(alpha));
+    g.drawRoundedRectangle(bounds.reduced(0.5f), radius::control, stroke::hairline);
+    chevron({bounds.getCentreX(), bounds.getY() + 16.0f}, -1.0f);
+
+    // El título, de abajo arriba, centrado en la pestaña.
+    g.setFont(captionFont());
+    g.setColour(colour::textDim.withMultipliedAlpha(alpha));
+    const float textWidth = std::min(bounds.getHeight() - 64.0f, 120.0f);
+    if (textWidth > 20.0f)
+    {
+        const auto centre = bounds.getCentre();
+        juce::Graphics::ScopedSaveState save(g);
+        g.addTransform(juce::AffineTransform::rotation(-juce::MathConstants<float>::halfPi, centre.x, centre.y));
+        g.drawText(title.toUpperCase(), juce::Rectangle<float>(textWidth, bounds.getWidth()).withCentre(centre),
+                   juce::Justification::centred, false);
+    }
+
+    if (active)
+    {
+        g.setColour(colour::accent.withMultipliedAlpha(alpha));
+        g.fillEllipse(juce::Rectangle<float>(6.0f, 6.0f).withCentre({bounds.getCentreX(), bounds.getBottom() - 14.0f}));
+    }
+    if (state.focused)
+        focusRing(g, bounds, radius::control);
+}
+
 void field(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state)
 {
     const float alpha = alphaFor(state);

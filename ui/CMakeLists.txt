@@ -14,6 +14,7 @@ add_library(esceq_ui_logic STATIC
     logic/src/meter_logic.cpp
     logic/src/notes.cpp
     logic/src/options_menu.cpp
+    logic/src/output_stage.cpp
     logic/src/session_overlay.cpp
     logic/src/spectral_mask.cpp
     logic/src/spectrum_peaks.cpp)
@@ -43,6 +44,8 @@ set(ESCEQ_UI_SOURCES
     ${ESCEQ_UI_DIR}/EsceqLookAndFeel.h
     ${ESCEQ_UI_DIR}/MatchPanel.cpp
     ${ESCEQ_UI_DIR}/MatchPanel.h
+    ${ESCEQ_UI_DIR}/OutputDrawer.cpp
+    ${ESCEQ_UI_DIR}/OutputDrawer.h
     ${ESCEQ_UI_DIR}/OutputMeter.cpp
     ${ESCEQ_UI_DIR}/OutputMeter.h
     ${ESCEQ_UI_DIR}/PianoKeyboard.cpp

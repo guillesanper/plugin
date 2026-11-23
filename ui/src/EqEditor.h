@@ -6,6 +6,7 @@
 #include "CurveView.h"
 #include "EsceqLookAndFeel.h"
 #include "MatchPanel.h"
+#include "OutputDrawer.h"
 #include "OutputMeter.h"
 #include "PianoKeyboard.h"
 #include "PresetBar.h"
@@ -30,9 +31,9 @@ class PluginProcessor;
 namespace esceq::ui {
 
 /// Ventana del plugin: barra superior (presets, deshacer, comparar, opciones,
-/// modo de fase, analizador, rango, salida, compensación automática de
-/// ganancia y bypass), curva, medidor de salida y panel de la banda
-/// seleccionada.
+/// modo de fase, analizador, vista ampliada, rango y bypass), curva, cajón
+/// de la etapa de salida (saturación, ganancia de salida y compensación
+/// automática), medidor de salida y panel de la banda seleccionada.
 /// La disposición sale de esceq/ui/layout.h.
 class EqEditor final : public juce::AudioProcessorEditor, private juce::Timer
 {
@@ -88,6 +89,8 @@ private:
     void updatePhaseTooltip();
     /// Pone en el botón Auto la compensación de la curva actual.
     void updateAutoGain();
+    /// Abre o pliega el cajón de la etapa de salida y lo guarda en las preferencias.
+    void setDrawerOpen(bool open);
     /// Lo que la instancia sabe ahora, para el controlador de la igualación.
     MatchContext matchContext();
     /// Pone al día el panel Match y la curva con el estado del controlador.
@@ -124,9 +127,8 @@ private:
     IconButton expand_{draw::Icon::Expand, "Expanded view"};
     bool expanded_ = false;
     Dropdown range_{"Display range"};
-    ParamControl output_{ParamControl::Style::Bar, "Output"};
-    ToggleSwitch autoGain_{ToggleSwitch::Style::Pill, "Auto", "Auto gain"};
-    /// De lo que depende la compensación que muestra autoGain_: solo se
+    OutputDrawer drawer_;
+    /// De lo que depende la compensación que muestra el botón Auto: solo se
     /// recalcula si cambia (tarda de 13 µs a unos ms, ver dsp/auto_gain.h).
     struct AutoGainInputs
     {

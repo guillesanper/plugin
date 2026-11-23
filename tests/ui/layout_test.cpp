@@ -83,12 +83,20 @@ TEST_CASE("Disposicion: las zonas de la ventana no se solapan en ningun tamano")
     {
         INFO(size.width << " x " << size.height);
         const Rect window{0.0f, 0.0f, static_cast<float>(size.width), static_cast<float>(size.height)};
-        const auto layout = editorLayout(window.width, window.height);
-        checkDisjointInside({{"barra", layout.topBar}, {"curva", layout.curve}, {"medidor", layout.meter}, {"panel", layout.panel}},
-                            window);
-        // La curva se queda con casi todo el alto.
-        CHECK(layout.curve.height >= 300.0f);
-        CHECK(layout.curve.width >= 800.0f);
+        for (const bool open : {true, false})
+        {
+            INFO("cajon abierto: " << open);
+            const auto layout = editorLayout(window.width, window.height, false, false, open);
+            checkDisjointInside({{"barra", layout.topBar},
+                                 {"curva", layout.curve},
+                                 {"cajon", layout.drawer},
+                                 {"medidor", layout.meter},
+                                 {"panel", layout.panel}},
+                                window);
+            // La curva se queda con casi todo el alto.
+            CHECK(layout.curve.height >= 300.0f);
+            CHECK(layout.curve.width >= 800.0f);
+        }
     }
 }
 
@@ -109,23 +117,18 @@ TEST_CASE("Disposicion: la barra superior cabe entera y no se solapa en ningun t
                              {"analizador", bar.analyzer},
                              {"ampliar", bar.expand},
                              {"rango", bar.range},
-                             {"salida", bar.output},
-                             {"valor de salida", bar.outputValue},
-                             {"compensacion", bar.autoGain},
                              {"bypass", bar.bypass}},
                             editor.topBar);
-        CHECK(bar.presets.width >= 140.0f); // sitio para el nombre de un preset
-        CHECK(bar.presets.width <= 320.0f);
+        // La salida y Auto pasaron al cajon de la etapa de salida (ADR 0027):
+        // el navegador de presets tiene su ancho maximo en todos los tamanos.
+        CHECK(bar.presets.width == 320.0f);
         // Los botones de icono son cuadrados y del mismo tamaño.
         CHECK(bar.compare.width == bar.undo.width);
         CHECK(bar.compare.width == bar.compare.height);
         CHECK(bar.options.width == bar.compare.width);
         CHECK(bar.options.height == bar.compare.height);
-        // La compensación, junto al bypass y de su misma altura.
-        CHECK(bar.autoGain.width >= 92.0f);
-        CHECK(bar.autoGain.height == bar.bypass.height);
-        CHECK(bar.autoGain.x > bar.outputValue.x);
-        CHECK(bar.autoGain.x < bar.bypass.x);
+        // Los controles de la derecha siguen pegados al bypass.
+        CHECK(bar.range.x + bar.range.width + 12.0f == bar.bypass.x);
     }
 }
 
@@ -211,13 +214,21 @@ bool same(const Rect& a, const Rect& b)
 
 TEST_CASE("Disposicion: sin el teclado de notas, la de siempre, pixel a pixel")
 {
-    // Medidas de la ventana mediana antes de la escala de notas (PLAN.md 5.1).
+    // Medidas de la ventana mediana antes de la escala de notas (PLAN.md 5.1),
+    // con el cajon de la etapa de salida (ADR 0027) entre la curva y el
+    // medidor: abierto, la curva cede 168 px (160 y la separacion); plegado, 24.
     const auto medium = editorLayout(1180.0f, 700.0f);
     CHECK(same(medium.topBar, {0.0f, 0.0f, 1180.0f, 48.0f}));
-    CHECK(same(medium.curve, {12.0f, 48.0f, 1096.0f, 484.0f}));
+    CHECK(same(medium.curve, {12.0f, 48.0f, 928.0f, 484.0f}));
+    CHECK(same(medium.drawer, {948.0f, 48.0f, 160.0f, 484.0f}));
     CHECK(same(medium.meter, {1116.0f, 48.0f, 52.0f, 484.0f}));
     CHECK(same(medium.panel, {0.0f, 532.0f, 1180.0f, 168.0f}));
     CHECK(same(medium.keyboard, {}));
+    const auto folded = editorLayout(1180.0f, 700.0f, false, false, false);
+    CHECK(same(folded.curve, {12.0f, 48.0f, 1072.0f, 484.0f}));
+    CHECK(same(folded.drawer, {1092.0f, 48.0f, 16.0f, 484.0f}));
+    CHECK(same(folded.meter, medium.meter));
+    CHECK(same(folded.panel, medium.panel));
 
     for (const auto size : sizesToCheck())
     {
@@ -281,6 +292,13 @@ TEST_CASE("Disposicion: tamanos absurdos no producen medidas negativas")
         const auto editor = editorLayout(w, h);
         const auto panel = panelLayout(editor.panel);
         const auto bar = topBarLayout(editor.topBar);
+        const auto drawer = outputDrawerLayout(editor.drawer, true);
+        for (const Rect& r : {editor.drawer, drawer.toggle, drawer.saturationMode, drawer.drive, drawer.mix,
+                              drawer.gain, drawer.autoGain})
+        {
+            CHECK(r.width >= 0.0f);
+            CHECK(r.height >= 0.0f);
+        }
         for (const Rect& r : {editor.topBar, editor.curve, editor.meter, editor.panel, panel.bandCard, panel.eqCard,
                               panel.dynamicsCard, panel.type, panel.eqKnobs[0], panel.dynamicKnobs[4], panel.dynamicsMeter,
                               bar.logo, bar.presets, bar.phase, bar.bypass})
@@ -312,6 +330,8 @@ TEST_CASE("Disposicion: la vista ampliada es la ventana menos la barra superior"
         CHECK(same(expanded.topBar, normal.topBar));
         CHECK(same(expanded.curve, {12.0f, 48.0f, w - 24.0f, h - 48.0f - 12.0f}));
         CHECK(same(expanded.meter, {}));
+        CHECK(same(expanded.drawer, {})); // se oculta con el medidor, abierto o plegado
+        CHECK(same(editorLayout(w, h, false, true, false).curve, expanded.curve));
         CHECK(same(expanded.panel, {}));
         CHECK(same(expanded.keyboard, {}));
 
@@ -358,10 +378,12 @@ TEST_CASE("Disposicion: el boton de la vista ampliada va junto al analizador")
         CHECK(bar.range.width >= 72.0f);
         CHECK(bar.bypass.width >= 64.0f);
     }
-    // En la ventana minima, el navegador de presets conserva sus 140 px.
+    // En la ventana minima, el navegador de presets tenia 140 px; sin la
+    // salida ni Auto (en el cajon, ADR 0027) tiene su maximo y aun sobran 88 px.
     const auto minimum =
         topBarLayout(editorLayout(static_cast<float>(kMinWindow.width), static_cast<float>(kMinWindow.height)).topBar);
-    CHECK(minimum.presets.width == 140.0f);
+    CHECK(minimum.presets.width == 320.0f);
+    CHECK(minimum.compare.x - (minimum.redo.x + minimum.redo.width) == 88.0f + 16.0f);
 }
 
 TEST_CASE("Disposicion: el panel Match cabe en la curva sin tapar la barra")
@@ -434,5 +456,79 @@ TEST_CASE("Disposicion: el panel Match no se sale de una curva diminuta")
         CHECK(match.card.y + match.card.height <= curve.y + std::max(curve.height, 8.0f) + 0.01f);
         CHECK(match.apply.width >= 0.0f);
         CHECK(match.status.width >= 0.0f);
+    }
+}
+
+TEST_CASE("Disposicion: el cajon de la etapa de salida cabe abierto en todos los tamanos")
+{
+    for (const auto size : sizesToCheck())
+        for (const bool keyboard : {false, true})
+        {
+            INFO(size.width << " x " << size.height << ", teclado: " << keyboard);
+            const auto editor = editorLayout(static_cast<float>(size.width), static_cast<float>(size.height), keyboard);
+            // Junto al medidor y con su mismo alto (el del teclado incluido).
+            CHECK(editor.drawer.width == kOutputDrawerWidth);
+            CHECK(editor.drawer.y == editor.meter.y);
+            CHECK(editor.drawer.height == editor.meter.height);
+            CHECK(editor.drawer.x + editor.drawer.width + 8.0f == editor.meter.x);
+            CHECK(editor.curve.x + editor.curve.width + 8.0f == editor.drawer.x);
+
+            const auto drawer = outputDrawerLayout(editor.drawer, true);
+            CHECK(same(drawer.card, editor.drawer));
+            checkDisjointInside({{"cabecera", drawer.toggle},
+                                 {"titulo", drawer.saturationTitle},
+                                 {"modo", drawer.saturationMode},
+                                 {"drive", drawer.drive},
+                                 {"mezcla", drawer.mix},
+                                 {"ganancia", drawer.gain},
+                                 {"auto", drawer.autoGain}},
+                                drawer.card);
+            // En el orden de la senal: la saturacion arriba, la salida abajo.
+            CHECK(drawer.saturationMode.y < drawer.drive.y);
+            CHECK(drawer.drive.y + drawer.drive.height < drawer.gain.y);
+            CHECK(drawer.gain.y + drawer.gain.height <= drawer.autoGain.y);
+            CHECK(drawer.drive.y == drawer.mix.y);
+            // El selector Off/Soft/Warm y "Auto -12.0 dB" caben (Auto media 92 px en la barra).
+            CHECK(drawer.saturationMode.width >= 120.0f);
+            CHECK(drawer.saturationMode.height == 24.0f);
+            CHECK(drawer.autoGain.width >= 92.0f);
+            CHECK(drawer.autoGain.height == 24.0f);
+            // Cada celda tiene ancho para su etiqueta y su valor, y alto para un potenciometro.
+            for (const Rect& cell : {drawer.drive, drawer.mix, drawer.gain})
+            {
+                CHECK(cell.width >= kMinKnobCellWidth);
+                const auto parts = knobCellLayout(cell);
+                CHECK(parts.knob.width >= kMinKnobDiameter);
+                CHECK(parts.knob.width <= kMaxKnobDiameter);
+                CHECK(inside(parts.label, cell));
+                CHECK(inside(parts.knob, cell));
+                CHECK(inside(parts.value, cell));
+            }
+        }
+}
+
+TEST_CASE("Disposicion: plegado, el cajon es una pestana y la curva recupera el sitio")
+{
+    for (const auto size : sizesToCheck())
+    {
+        INFO(size.width << " x " << size.height);
+        const auto w = static_cast<float>(size.width);
+        const auto h = static_cast<float>(size.height);
+        const auto open = editorLayout(w, h);
+        const auto folded = editorLayout(w, h, false, false, false);
+        CHECK(folded.drawer.width == kOutputDrawerTabWidth);
+        CHECK(folded.drawer.x + folded.drawer.width + 8.0f == folded.meter.x);
+        CHECK(folded.curve.width == open.curve.width + kOutputDrawerWidth - kOutputDrawerTabWidth);
+        // Lo demas no se mueve.
+        CHECK(same(folded.topBar, open.topBar));
+        CHECK(same(folded.meter, open.meter));
+        CHECK(same(folded.panel, open.panel));
+        CHECK(folded.curve.x == open.curve.x);
+
+        const auto tab = outputDrawerLayout(folded.drawer, false);
+        CHECK(same(tab.card, folded.drawer));
+        CHECK(same(tab.toggle, folded.drawer));
+        for (const Rect& r : {tab.saturationTitle, tab.saturationMode, tab.drive, tab.mix, tab.gain, tab.autoGain})
+            CHECK(same(r, {}));
     }
 }

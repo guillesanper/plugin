@@ -54,7 +54,13 @@ struct EditorLayout
     Rect meter;    ///< Medidor de salida, a la derecha de la curva; vacío en la vista ampliada.
     Rect panel;    ///< Panel de la banda seleccionada; vacío en la vista ampliada.
     Rect keyboard; ///< Teclado de la escala de notas, bajo la curva; vacío si está oculto.
+    Rect drawer;   ///< Cajón de la etapa de salida, entre la curva y el medidor; vacío en la vista ampliada.
 };
+
+/// Cajón de la etapa de salida (PLAN.md 5.8, ADR 0027): abierto mide
+/// kOutputDrawerWidth; plegado, una pestaña de kOutputDrawerTabWidth.
+inline constexpr float kOutputDrawerWidth = 160.0f;
+inline constexpr float kOutputDrawerTabWidth = 16.0f;
 
 /// Con `pianoKeyboard`, la curva cede por abajo el alto del teclado de notas
 /// (kPianoKeyboardHeight, de esceq/ui/notes.h) y una separación, y el teclado
@@ -65,9 +71,15 @@ struct EditorLayout
 /// ni medidor: la curva, con el teclado si se ve, ocupa toda la ventana menos
 /// la barra superior, con el margen de siempre a los lados y por abajo. Sin
 /// él, la disposición no cambia.
-EditorLayout editorLayout(float width, float height, bool pianoKeyboard = false, bool expanded = false) noexcept;
+///
+/// El cajón de la etapa de salida va entre la curva y el medidor, con su
+/// mismo alto (el del teclado incluido): `drawerOpen` dice si está abierto
+/// o plegado en su pestaña. En la vista ampliada se oculta con el medidor.
+EditorLayout editorLayout(float width, float height, bool pianoKeyboard = false, bool expanded = false,
+                          bool drawerOpen = true) noexcept;
 
-/// Barra superior, de izquierda a derecha.
+/// Barra superior, de izquierda a derecha. La ganancia de salida y la
+/// compensación automática están en el cajón de la etapa de salida (ADR 0027).
 struct TopBarLayout
 {
     Rect logo;
@@ -80,13 +92,30 @@ struct TopBarLayout
     Rect analyzer;
     Rect expand; ///< Vista ampliada del analizador (botón con icono).
     Rect range;
-    Rect output;      ///< Barra de la ganancia de salida.
-    Rect outputValue; ///< Su valor, editable.
-    Rect autoGain;    ///< Compensación automática de ganancia: "Auto -2.3 dB".
     Rect bypass;
 };
 
 TopBarLayout topBarLayout(Rect bounds) noexcept;
+
+/// Cajón de la etapa de salida (PLAN.md 5.8, ADR 0027), en el orden de la
+/// señal: la saturación arriba (modo, drive y mezcla) y la salida abajo
+/// (ganancia y compensación automática), junto al medidor.
+struct OutputDrawerLayout
+{
+    Rect card;   ///< Todo el cajón: la tarjeta abierta o la pestaña plegada.
+    Rect toggle; ///< Lo que lo abre y lo pliega: la cabecera abierto, la pestaña entera plegado.
+    Rect saturationTitle;
+    Rect saturationMode; ///< Off, Soft, Warm.
+    Rect drive;          ///< Celdas de potenciómetro.
+    Rect mix;
+    Rect gain;
+    Rect autoGain; ///< "Auto -2.3 dB".
+};
+
+/// `drawer` es EditorLayout::drawer. Plegado, solo hay pestaña (los demás,
+/// vacíos). Abierto, la saturación se queda arriba y la salida abajo; si
+/// sobra alto, queda entre las dos.
+OutputDrawerLayout outputDrawerLayout(Rect drawer, bool open) noexcept;
 
 inline constexpr int kNumEqKnobs = 3;
 inline constexpr int kNumDynamicKnobs = 5;
