@@ -52,6 +52,13 @@
 //                 desde 32 Hz, sin suavizar: pide las 24 bandas (el caso del
 //                 límite de evaluaciones de tests/dsp/curve_match_test.cpp).
 //   4 bandas      low shelf, dos campanas y high shelf, con 1/3 de octava.
+//   notch         la referencia y las bandas de tools/snapshot --match (con un
+//                 notch de Q 8 a 5,2 kHz en las actuales), con 1/3 de octava.
+// Después, la idempotencia: 300 casos aleatorios (generador fijo) de una a
+// cuatro bandas en la referencia y hasta tres en la pista, un 50 % de ellas
+// estrechas (notch o campana de Q 6 a 16), con 1/6, 1/3 o 1 octava y al 50
+// o al 100 %. Se aplica la propuesta y se vuelve a pedir: cuántas veces
+// sale algo la segunda, su mayor ganancia y lo que tarda la primera.
 //
 // Con --spectral (la misma señal; además del % de un núcleo, lo que tarda
 // cada trama, que se calcula entera en la llamada que completa un salto):
@@ -502,6 +509,99 @@ esceq::dsp::FilterParams matchBand(FilterType type, double frequencyHz, double g
     return params;
 }
 
+/// Aplicar dos veces (ver la cabecera): casos aleatorios con un generador fijo.
+void runMatchIdempotence(const std::vector<double>& frequencies)
+{
+    std::uint32_t state = 12345;
+    auto random = [&state]() {
+        state = state * 1664525u + 1013904223u;
+        return static_cast<double>(state >> 8) / 16777216.0;
+    };
+    auto enabled = [](const esceq::dsp::FilterParams& params) {
+        BandSettings band;
+        band.enabled = true;
+        band.filter = params;
+        return band;
+    };
+    constexpr int kCases = 300;
+    int withBands = 0;
+    double worstGainDb = 0.0;
+    std::vector<double> times;
+    for (int c = 0; c < kCases; ++c)
+    {
+        std::vector<esceq::dsp::FilterParams> reference;
+        const int referenceBands = 1 + static_cast<int>(random() * 4.0);
+        for (int k = 0; k < referenceBands; ++k)
+        {
+            const double r = random();
+            const FilterType type = r < 0.6 ? FilterType::Bell : r < 0.8 ? FilterType::LowShelf : FilterType::HighShelf;
+            const double frequency = 40.0 * std::pow(400.0, random());
+            const double gain = (random() * 2.0 - 1.0) * 8.0;
+            reference.push_back(
+                matchBand(type, frequency, gain, type == FilterType::Bell ? 0.5 + random() * 3.0 : 0.7071));
+        }
+        std::vector<float> track(frequencies.size(), -20.0f), referenceDb(frequencies.size());
+        for (std::size_t i = 0; i < frequencies.size(); ++i)
+        {
+            double db = -20.0;
+            for (const auto& band : reference)
+                db += esceq::dsp::magnitudeDb(esceq::dsp::designBand(band, 48000.0), frequencies[i], 48000.0);
+            referenceDb[i] = static_cast<float>(db);
+        }
+        std::vector<BandSettings> current;
+        const int currentBands = static_cast<int>(random() * 4.0);
+        for (int k = 0; k < currentBands; ++k)
+        {
+            const double r = random();
+            if (r < 0.3)
+            {
+                const double frequency = 200.0 * std::pow(60.0, random());
+                current.push_back(enabled(matchBand(FilterType::Notch, frequency, 0.0, 4.0 + random() * 8.0)));
+            }
+            else if (r < 0.5)
+            {
+                const double frequency = 100.0 * std::pow(100.0, random());
+                const double gain = (random() * 2.0 - 1.0) * 12.0;
+                current.push_back(enabled(matchBand(FilterType::Bell, frequency, gain, 6.0 + random() * 10.0)));
+            }
+            else
+            {
+                const double frequency = 50.0 * std::pow(300.0, random());
+                const double gain = (random() * 2.0 - 1.0) * 6.0;
+                current.push_back(enabled(matchBand(FilterType::Bell, frequency, gain, 0.5 + random() * 2.0)));
+            }
+        }
+        constexpr double kSmoothing[] = {1.0 / 6.0, 1.0 / 3.0, 1.0};
+        esceq::dsp::CurveMatchSettings settings;
+        settings.smoothingOctaves = kSmoothing[static_cast<int>(random() * 3.0)];
+        settings.amount = random() < 0.5 ? 0.5 : 1.0;
+        esceq::dsp::CurveMatchInput input;
+        input.frequencies = frequencies;
+        input.trackDb = track;
+        input.referenceDb = referenceDb;
+        input.resolutionHz = 48000.0 / 8192.0;
+        input.currentBands = current;
+        const auto start = Clock::now();
+        const esceq::dsp::CurveMatchResult first = esceq::dsp::matchCurve(input, settings);
+        times.push_back(1.0e3 * std::chrono::duration<double>(Clock::now() - start).count());
+        for (const auto& band : first.bands)
+            current.push_back(enabled(band));
+        input.currentBands = current;
+        const esceq::dsp::CurveMatchResult second = esceq::dsp::matchCurve(input, settings);
+        if (!second.bands.empty())
+            ++withBands;
+        for (const auto& band : second.bands)
+            worstGainDb = std::max(worstGainDb, std::abs(band.gainDb));
+    }
+    double mean = 0.0;
+    for (const double t : times)
+        mean += t;
+    mean /= static_cast<double>(times.size());
+    std::printf("\naplicar dos veces, %d casos: la segunda propone algo en %d (%.1f %%), con %.2f dB como mucho;\n"
+                "la primera tarda %.1f ms de media, %.1f ms como mucho\n",
+                kCases, withBands, 100.0 * withBands / kCases, worstGainDb, mean, *std::ranges::max_element(times));
+}
+
 void runMatch(const Options& options)
 {
     struct Target
@@ -510,6 +610,7 @@ void runMatch(const Options& options)
         std::vector<esceq::dsp::FilterParams> bands;
         double smoothingOctaves;
         int maxBands;
+        std::vector<BandSettings> current{};
     };
     std::vector<Target> targets;
     {
@@ -525,6 +626,27 @@ void runMatch(const Options& options)
                             matchBand(FilterType::Bell, 900.0, -4.0, 1.5), matchBand(FilterType::Bell, 3500.0, 3.0, 2.0),
                             matchBand(FilterType::HighShelf, 9000.0, 4.0, 0.7071)},
                            1.0 / 3.0, 8});
+        // tools/snapshot --match: la referencia y las bandas de la pista.
+        Target notch{"notch",
+                     {matchBand(FilterType::LowShelf, 120.0, -4.0, 0.7071),
+                      matchBand(FilterType::Bell, 2500.0, 3.0, 1.2),
+                      matchBand(FilterType::HighShelf, 7000.0, 5.0, 0.7071)},
+                     1.0 / 3.0,
+                     8};
+        for (const auto& params : {matchBand(FilterType::LowCut, 35.0, 0.0, 0.7071),
+                                   matchBand(FilterType::Bell, 240.0, -4.0, 1.4),
+                                   matchBand(FilterType::Bell, 2800.0, 3.5, 0.9),
+                                   matchBand(FilterType::HighShelf, 9000.0, 2.5, 0.7071),
+                                   matchBand(FilterType::Notch, 5200.0, 0.0, 8.0)})
+        {
+            BandSettings band;
+            band.enabled = true;
+            band.filter = params;
+            notch.current.push_back(band);
+        }
+        notch.current[0].filter.slopeDbPerOct = 24;
+        notch.current[1].channel = esceq::dsp::ChannelMode::Mid;
+        targets.push_back(notch);
     }
 
     // La rejilla de la sesión: 192 puntos logarítmicos de 20 Hz a 20 kHz.
@@ -552,6 +674,7 @@ void runMatch(const Options& options)
                 input.trackDb = track;
                 input.referenceDb = reference;
                 input.resolutionHz = 48000.0 / 8192.0;
+                input.currentBands = target.current;
                 input.sampleRate = rate;
                 input.algorithm = algorithm;
                 esceq::dsp::CurveMatchSettings settings;
@@ -574,6 +697,7 @@ void runMatch(const Options& options)
                 std::fflush(stdout);
             }
     }
+    runMatchIdempotence(frequencies);
 }
 
 std::vector<BandSettings> spectralBands(int count, bool resting)
