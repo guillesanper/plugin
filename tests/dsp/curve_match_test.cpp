@@ -271,11 +271,36 @@ TEST_CASE("CurveMatch: en graves la ventana abarca al menos 8 bins", "[curve_mat
     for (std::size_t i = 0; i < spectra.frequencies.size(); ++i)
         if (spectra.frequencies[i] < 200.0)
             spectra.reference[i] += static_cast<float>(2.0 * std::sin(1.2 * static_cast<double>(i)));
-    const CurveMatchSettings settings = fullAmount();
-    CHECK_FALSE(matchCurve(spectra.input(), settings).bands.empty());
+    // Rizado del objetivo de 30 a 200 Hz, de pico a pico.
+    auto ripple = [](const CurveMatchResult& result) {
+        double low = 0.0, high = 0.0;
+        for (std::size_t i = 0; i < result.frequencies.size(); ++i)
+            if (result.frequencies[i] >= 30.0 && result.frequencies[i] <= 200.0)
+            {
+                low = std::min(low, result.targetDb[i]);
+                high = std::max(high, result.targetDb[i]);
+            }
+        return high - low;
+    };
     CurveMatchInput input = spectra.input();
     input.resolutionHz = 48000.0 / 8192.0;
-    CHECK(matchCurve(input, settings).bands.empty());
+    for (const double smoothing : {0.0, 1.0 / 3.0})
+    {
+        CAPTURE(smoothing);
+        CurveMatchSettings settings = fullAmount();
+        settings.smoothingOctaves = smoothing;
+        const CurveMatchResult narrow = matchCurve(spectra.input(), settings);
+        const CurveMatchResult wide = matchCurve(input, settings);
+        CHECK(ripple(wide) < 1.0);
+        CHECK(ripple(wide) < ripple(narrow));
+        CHECK(wide.bands.empty());
+        // Sin suavizar ni ancho mínimo, el rizado entero pide bandas.
+        if (smoothing == 0.0)
+        {
+            CHECK(ripple(narrow) > 3.0);
+            CHECK_FALSE(narrow.bands.empty());
+        }
+    }
 }
 
 TEST_CASE("CurveMatch: al 50 % la propuesta es la mitad de la del 100 %", "[curve_match]")
@@ -522,4 +547,129 @@ TEST_CASE("CurveMatch: entradas no validas", "[curve_match]")
     settings.maxBands = 1000;
     const CurveMatchResult sanitized = matchCurve(Spectra().input(), settings);
     CHECK(sanitized.bands.empty());
+}
+
+namespace {
+
+/// Las bandas de tools/snapshot: un corte de graves, dos campanas (la de
+/// graves en Mid), un shelf de agudos y un notch de Q 8 a 5,2 kHz.
+std::vector<BandSettings> snapshotBands()
+{
+    FilterParams lowCut = filter(FilterType::LowCut, 35.0, 0.0, kButterworthQ);
+    lowCut.slopeDbPerOct = 24;
+    std::vector<BandSettings> bands = {enabled(lowCut), enabled(filter(FilterType::Bell, 240.0, -4.0, 1.4)),
+                                       enabled(filter(FilterType::Bell, 2800.0, 3.5, 0.9)),
+                                       enabled(filter(FilterType::HighShelf, 9000.0, 2.5, kButterworthQ)),
+                                       enabled(filter(FilterType::Notch, 5200.0, 0.0, 8.0))};
+    bands[1].channel = ChannelMode::Mid;
+    return bands;
+}
+
+/// La referencia de tools/snapshot --match: menos graves y más brillo.
+std::vector<FilterParams> snapshotReference()
+{
+    return {filter(FilterType::LowShelf, 120.0, -4.0, kButterworthQ), filter(FilterType::Bell, 2500.0, 3.0, 1.2),
+            filter(FilterType::HighShelf, 7000.0, 5.0, kButterworthQ)};
+}
+
+/// La mayor ganancia, en valor absoluto, de las campanas propuestas a menos
+/// de `octaves` de `hz`: lo que se propone donde ya hay una banda estrecha.
+double gainNear(const CurveMatchResult& result, double hz, double octaves)
+{
+    double gainDb = 0.0;
+    for (const FilterParams& band : result.bands)
+        if (band.type == FilterType::Bell && std::abs(std::log2(band.frequencyHz / hz)) <= octaves)
+            gainDb = std::max(gainDb, std::abs(band.gainDb));
+    return gainDb;
+}
+
+/// `bands` más lo propuesto en `result`, en bandas nuevas: Apply.
+std::vector<BandSettings> applied(std::vector<BandSettings> bands, const CurveMatchResult& result)
+{
+    for (const FilterParams& params : result.bands)
+        bands.push_back(enabled(params));
+    return bands;
+}
+
+} // namespace
+
+TEST_CASE("CurveMatch: el Q de las campanas no pasa del ancho del suavizado", "[curve_match]")
+{
+    CHECK(matchMaxBellQ(1000.0, 0.0) == kMatchMaxBellQ);
+    CHECK_THAT(matchMaxBellQ(1000.0, 1.0), WithinRel(qForBandwidth(1.0), 1e-12));
+    CHECK_THAT(matchMaxBellQ(5000.0, 1.0 / 3.0), WithinRel(qForBandwidth(1.0 / 3.0), 1e-12));
+    CHECK_THAT(matchMaxBellQ(5000.0, 1.0 / 6.0), WithinRel(qForBandwidth(1.0 / 6.0), 1e-12));
+    // En graves, con el ancho mínimo, la ventana es más ancha y el Q, menor.
+    const double minWidthHz = kMatchMinWindowBins * kRate / 8192.0;
+    CHECK(matchMaxBellQ(50.0, 1.0 / 3.0, minWidthHz) < matchMaxBellQ(5000.0, 1.0 / 3.0, minWidthHz));
+    CHECK_THAT(matchMaxBellQ(50.0, 1.0 / 3.0, minWidthHz),
+               WithinRel(qForBandwidth(smoothWindowOctaves(50.0, 1.0 / 3.0, minWidthHz)), 1e-12));
+    CHECK(matchMaxBellQ(20.0, 4.0) == kMatchMinBellQ);
+    CHECK(matchMaxBellQ(0.0, 1.0) == kMatchMaxBellQ);
+}
+
+TEST_CASE("CurveMatch: una banda estrecha que ya hay cuenta por lo que quita al ancho del suavizado", "[curve_match]")
+{
+    // El caso de tools/snapshot --match. Sin suavizar la curva actual, una
+    // campana de +17,7 dB y Q 16 a 5194 Hz deshacía el notch. Ahora el notch
+    // cuenta por la potencia que quita en la ventana del suavizado (con 1/3
+    // de octava, unos 3,7 dB), y lo que se propone junto a él no es más
+    // estrecho que esa ventana (docs/dsp/igualacion.md).
+    const std::vector<BandSettings> current = snapshotBands();
+    const Spectra spectra(snapshotReference());
+    const double minWidthHz = kMatchMinWindowBins * kRate / 8192.0;
+    struct Case
+    {
+        double smoothing;
+        double maxGainNearNotch; ///< Medido: 10,8, 6,2 y 2,0 dB (docs/dsp/igualacion.md).
+    };
+    for (const Case c : {Case{1.0 / 6.0, 12.0}, Case{1.0 / 3.0, 7.0}, Case{1.0, 3.0}})
+        for (const double amount : {0.5, 1.0})
+        {
+            CAPTURE(c.smoothing, amount);
+            CurveMatchSettings settings;
+            settings.smoothingOctaves = c.smoothing;
+            settings.amount = amount;
+            CurveMatchInput input = spectra.input(current);
+            input.resolutionHz = kRate / 8192.0;
+            const CurveMatchResult result = matchCurve(input, settings);
+            checkLimits(result, settings);
+            for (const FilterParams& band : result.bands)
+            {
+                CAPTURE(static_cast<int>(band.type), band.frequencyHz, band.gainDb, band.q);
+                if (band.type == FilterType::Bell)
+                    CHECK(band.q <= matchMaxBellQ(band.frequencyHz, c.smoothing, minWidthHz) * (1.0 + 1e-9));
+                if (std::abs(std::log2(band.frequencyHz / 5200.0)) > 0.25)
+                    CHECK(std::abs(band.gainDb) <= 6.0); // lo demás, lo que pide la referencia
+            }
+            CHECK(gainNear(result, 5200.0, 0.25) <= c.maxGainNearNotch);
+
+            // Aplicar dos veces: la segunda no propone nada.
+            const std::vector<BandSettings> after = applied(current, result);
+            input.currentBands = after;
+            const CurveMatchResult again = matchCurve(input, settings);
+            CHECK(again.bands.empty());
+            CHECK(again.initialRmsDb < kMatchStopErrorDb);
+        }
+}
+
+TEST_CASE("CurveMatch: la curva actual se compara suavizada en potencia", "[curve_match]")
+{
+    // Un notch solo, con la pista y la referencia iguales: lo que falta es
+    // la potencia que quita en la ventana de cada punto, y nada más.
+    const Spectra spectra;
+    const BandSettings current[] = {enabled(filter(FilterType::Notch, 2000.0, 0.0, 8.0))};
+    CurveMatchSettings settings = fullAmount();
+    settings.maxBands = 0; // solo el objetivo y lo que falta
+    const CurveMatchResult result = matchCurve(spectra.input(current), settings);
+    // Lejos del notch, S(C) es 0 dB: no falta nada. En él, falta lo que quita.
+    CHECK(result.initialRmsDb > 0.1);
+    CHECK(result.initialRmsDb < 2.0);
+    // currentDb sigue siendo la curva sin suavizar, con el notch entero.
+    CHECK(*std::min_element(result.currentDb.begin(), result.currentDb.end()) < -20.0);
+
+    // Sin suavizar, el notch se ve entero: lo que falta es mucho mayor.
+    settings.smoothingOctaves = 0.0;
+    const CurveMatchResult raw = matchCurve(spectra.input(current), settings);
+    CHECK(raw.initialRmsDb > 2.0 * result.initialRmsDb);
 }

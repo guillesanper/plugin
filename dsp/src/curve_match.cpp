@@ -36,6 +36,17 @@ constexpr double kGainPenalty = 1.0e-4;
 constexpr double kOffsetPenalty = 0.1;
 /// Límite del nivel libre: muy por encima de lo que puede pedir un objetivo de ±12 dB.
 constexpr double kMaxOffsetDb = 24.0;
+/// Límites de la curva antes de pasarla a potencia para suavizarla: lo que no
+/// es finito (el centro de un notch) o se sale queda en ellos.
+constexpr double kMinCurveDb = -200.0;
+constexpr double kMaxCurveDb = 200.0;
+
+/// dB a potencia, con la curva dentro de [kMinCurveDb, kMaxCurveDb].
+double curvePower(double db) noexcept
+{
+    const double clamped = std::isnan(db) ? kMinCurveDb : std::clamp(db, kMinCurveDb, kMaxCurveDb);
+    return std::pow(10.0, 0.1 * clamped);
+}
 
 /// Interpolación suave (smoothstep) de 0 a 1.
 double smooth01(double t) noexcept
@@ -64,12 +75,21 @@ struct Problem
     std::vector<double> tangents; ///< responseTangent() de cada punto de la rejilla.
     std::vector<double> weights;
     std::vector<double> sqrtWeights;
-    std::vector<double> needed; ///< N: lo que falta, ya con el peso del rango y la presencia.
+    /// N: lo que falta, T − S(C), ya con el peso del rango y la presencia.
+    std::vector<double> needed;
+    /// Ventana del suavizado de cada punto, [windowBegin, windowEnd): la de
+    /// smoothOctaves() con el ancho elegido, en la rejilla del ajuste.
+    std::vector<std::size_t> windowBegin;
+    std::vector<std::size_t> windowEnd;
+    std::vector<double> currentDb;          ///< C, la curva estática de las bandas actuales.
+    std::vector<double> currentWindowPower; ///< Σ de la potencia de C en la ventana de cada punto.
     double weightSum = 0.0;
     double sampleRate = 48000.0;
     FilterAlgorithm algorithm = FilterAlgorithm::Classic;
     double lowOctave = 0.0; ///< Límites de la frecuencia de las bandas, en log2(Hz).
     double highOctave = 0.0;
+    double smoothingOctaves = 0.0; ///< Ancho del suavizado, en octavas.
+    double minWidthHz = 0.0;       ///< Su ancho mínimo en graves, en Hz.
     std::size_t first = 0; ///< Primer y último punto de la rejilla dentro del rango.
     std::size_t last = 0;
     const std::atomic<bool>* cancel = nullptr;
@@ -81,23 +101,29 @@ struct Problem
 
     std::size_t size() const noexcept { return tangents.size(); }
 
-    /// Límites de la variable `j` (0: octava, 1: ganancia, 2: log Q) de una banda de tipo `type`.
-    double lower(FilterType type, int j) const noexcept
+    /// Límites de la variable `j` (0: octava, 1: ganancia, 2: log Q) de `band`.
+    double lower(const Band& band, int j) const noexcept
     {
         if (j == 0)
             return lowOctave;
         if (j == 1)
             return -kMatchMaxGainDb;
-        return std::log(isShelf(type) ? kMatchMinShelfQ : kMatchMinBellQ);
+        return std::log(isShelf(band.type) ? kMatchMinShelfQ : kMatchMinBellQ);
     }
 
-    double upper(FilterType type, int j) const noexcept
+    /// El Q de una campana no pasa del de una que abarca la ventana del
+    /// suavizado en su frecuencia (matchMaxBellQ()): el objetivo no ve nada
+    /// más estrecho, y sin ese límite el ajuste suavizado puede dibujar lo
+    /// mismo con campanas estrechas y altas (docs/dsp/igualacion.md).
+    double upper(const Band& band, int j) const noexcept
     {
         if (j == 0)
             return highOctave;
         if (j == 1)
             return kMatchMaxGainDb;
-        return std::log(isShelf(type) ? kMatchMaxShelfQ : kMatchMaxBellQ);
+        if (isShelf(band.type))
+            return std::log(kMatchMaxShelfQ);
+        return std::log(matchMaxBellQ(std::exp2(band.octave), smoothingOctaves, minWidthHz));
     }
 
     FilterParams params(const Band& band) const noexcept
@@ -131,18 +157,41 @@ struct Fit
 {
     std::vector<Band> bands;
     double offsetDb = 0.0;
-    std::vector<std::vector<double>> curves; ///< Una por banda, en la rejilla.
+    std::vector<std::vector<double>> curves; ///< Una por banda, en la rejilla, sin suavizar.
+    /// Lo que añaden las bandas propuestas a la curva actual, visto al ancho
+    /// del suavizado: S(C + Σ Hk) − S(C), en dB. Lo calcula update().
+    std::vector<double> effect;
+    std::vector<double> power;       ///< Potencia de C + Σ Hk en cada punto.
+    std::vector<double> windowPower; ///< Σ de `power` en la ventana de cada punto.
 
-    /// Σ Hk en el punto `i`.
-    double model(std::size_t i) const noexcept
+    /// Recalcula effect, power y windowPower tras cambiar las curvas.
+    void update(const Problem& problem)
     {
-        double sum = 0.0;
-        for (const auto& curve : curves)
-            sum += curve[i];
-        return sum;
+        const std::size_t n = problem.size();
+        power.resize(n);
+        windowPower.resize(n);
+        effect.resize(n);
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            double sum = problem.currentDb[i];
+            for (const auto& curve : curves)
+                sum += curve[i];
+            power[i] = curvePower(sum);
+        }
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            double sum = 0.0;
+            for (std::size_t j = problem.windowBegin[i]; j < problem.windowEnd[i]; ++j)
+                sum += power[j];
+            windowPower[i] = sum;
+            effect[i] = 10.0 * std::log10(sum / problem.currentWindowPower[i]);
+        }
     }
 
-    /// Residuo sin ponderar: N + c − Σ Hk.
+    /// S(C + Σ Hk) − S(C) en el punto `i`.
+    double model(std::size_t i) const noexcept { return effect.empty() ? 0.0 : effect[i]; }
+
+    /// Residuo sin ponderar: N + c − (S(C + Σ Hk) − S(C)).
     double residual(const Problem& problem, std::size_t i) const noexcept
     {
         return problem.needed[i] + offsetDb - model(i);
@@ -203,6 +252,7 @@ struct Fit
         bands.push_back(band);
         curves.emplace_back(problem.size());
         problem.curve(band, curves.back());
+        update(problem);
     }
 };
 
@@ -264,8 +314,12 @@ bool refine(const Problem& problem, Fit& fit, int maxIterations)
     std::vector<double> residual(n);
     std::vector<double> normal(m * m), gradient(m), negGradient(m), step(m), factor;
 
-    // Residuo ponderado e = √w·(N + c − Σ Hk); su jacobiano es −√w·∂Hk/∂θ
-    // para las variables de una banda (solo cambia su curva) y √w para el nivel.
+    // Residuo ponderado e = √w·(N + c − S(C + Σ Hk) + S(C)); su jacobiano es
+    // −√w·∂S/∂θ para las variables de una banda y √w para el nivel. Solo
+    // cambia la curva de esa banda, y la derivada del suavizado en potencia
+    // es la media de ∂Hk/∂θ en la ventana ponderada por la potencia:
+    // ∂S_i/∂θ = Σ_j∈ventana(i) p_j·∂Hk_j/∂θ / Σ_j∈ventana(i) p_j.
+    std::vector<double> derivative(n);
     auto linearize = [&]() {
         for (std::size_t i = 0; i < n; ++i)
             residual[i] = problem.sqrtWeights[i] * fit.residual(problem, i);
@@ -280,7 +334,14 @@ bool refine(const Problem& problem, Fit& fit, int maxIterations)
                 problem.curve(shifted, minus);
                 const std::size_t column = 3 * k + static_cast<std::size_t>(j);
                 for (std::size_t i = 0; i < n; ++i)
-                    jacobian[i * m + column] = -problem.sqrtWeights[i] * (plus[i] - minus[i]) / (2.0 * kJacobianStep);
+                    derivative[i] = fit.power[i] * (plus[i] - minus[i]) / (2.0 * kJacobianStep);
+                for (std::size_t i = 0; i < n; ++i)
+                {
+                    double sum = 0.0;
+                    for (std::size_t l = problem.windowBegin[i]; l < problem.windowEnd[i]; ++l)
+                        sum += derivative[l];
+                    jacobian[i * m + column] = -problem.sqrtWeights[i] * sum / fit.windowPower[i];
+                }
             }
         for (std::size_t i = 0; i < n; ++i)
             jacobian[i * m + m - 1] = problem.sqrtWeights[i];
@@ -363,7 +424,7 @@ bool refine(const Problem& problem, Fit& fit, int maxIterations)
                 Band& band = trial.bands[j / 3];
                 const int which = static_cast<int>(j % 3);
                 current = variable(band, which);
-                next = std::clamp(current + step[j], problem.lower(band.type, which), problem.upper(band.type, which));
+                next = std::clamp(current + step[j], problem.lower(band, which), problem.upper(band, which));
                 variable(band, which) = next;
             }
             step[j] = next - current;
@@ -380,6 +441,7 @@ bool refine(const Problem& problem, Fit& fit, int maxIterations)
             trial.curves[k].resize(n);
             problem.curve(trial.bands[k], trial.curves[k]);
         }
+        trial.update(problem);
         const double trialCost = trial.cost(problem);
 
         // Reducción que predice el modelo lineal para el paso proyectado:
@@ -398,6 +460,9 @@ bool refine(const Problem& problem, Fit& fit, int maxIterations)
             const double rho = (cost - trialCost) / predicted;
             std::swap(fit.bands, trial.bands);
             std::swap(fit.curves, trial.curves);
+            std::swap(fit.effect, trial.effect);
+            std::swap(fit.power, trial.power);
+            std::swap(fit.windowPower, trial.windowPower);
             fit.offsetDb = trial.offsetDb;
             cost = trialCost;
             linearize();
@@ -484,7 +549,7 @@ std::optional<Band> initialBand(const Problem& problem, const Fit& fit, std::spa
         band.logQ = std::log(std::clamp(qForBandwidth(rightOctave - leftOctave), kMatchMinBellQ, kMatchMaxBellQ));
     }
     for (int j = 0; j < 3; ++j)
-        variable(band, j) = std::clamp(variable(band, j), problem.lower(band.type, j), problem.upper(band.type, j));
+        variable(band, j) = std::clamp(variable(band, j), problem.lower(band, j), problem.upper(band, j));
     return band;
 }
 
@@ -541,6 +606,14 @@ bool validInput(const CurveMatchInput& input) noexcept
 }
 
 } // namespace
+
+double matchMaxBellQ(double frequencyHz, double smoothingOctaves, double minWidthHz) noexcept
+{
+    if (!(frequencyHz > 0.0) || !std::isfinite(frequencyHz))
+        return kMatchMaxBellQ;
+    const double width = smoothWindowOctaves(frequencyHz, std::max(smoothingOctaves, 0.0), minWidthHz);
+    return std::clamp(qForBandwidth(width), kMatchMinBellQ, kMatchMaxBellQ);
+}
 
 CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettings& rawSettings,
                             const std::atomic<bool>* cancel)
@@ -668,6 +741,8 @@ CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettin
     problem.sampleRate = input.sampleRate;
     problem.algorithm = input.algorithm;
     problem.cancel = cancel;
+    problem.smoothingOctaves = settings.smoothingOctaves;
+    problem.minWidthHz = minWidthHz;
     problem.lowOctave = rangeLow;
     problem.highOctave = std::min(rangeHigh, std::log2(kMaxFrequencyRatio * input.sampleRate));
     problem.lowOctave = std::min(problem.lowOctave, problem.highOctave);
@@ -681,6 +756,37 @@ CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettin
     if (problem.first == n)
         return result; // el rango no tiene ningún punto de la rejilla
 
+    // La curva actual se compara con el objetivo al mismo ancho: S(C), su
+    // promedio en potencia en la ventana del suavizado de cada punto. Sin
+    // suavizarla, una banda estrecha que ya hay (un notch) se veía entera
+    // en lo que falta y el ajuste la rellenaba (docs/dsp/igualacion.md).
+    problem.windowBegin.resize(n);
+    problem.windowEnd.resize(n);
+    problem.currentDb = result.currentDb;
+    problem.currentWindowPower.resize(n);
+    std::vector<double> currentPower(n), smoothCurrent(n);
+    for (std::size_t i = 0; i < n; ++i)
+        currentPower[i] = curvePower(result.currentDb[i]);
+    {
+        std::size_t begin = 0, end = 0;
+        for (std::size_t i = 0; i < n; ++i)
+        {
+            const double half = 0.5 * smoothWindowOctaves(result.frequencies[i], settings.smoothingOctaves, minWidthHz);
+            while (end < n && octaves[end] <= octaves[i] + half)
+                ++end;
+            while (begin < i && octaves[begin] < octaves[i] - half)
+                ++begin;
+            end = std::max(end, i + 1);
+            problem.windowBegin[i] = begin;
+            problem.windowEnd[i] = end;
+            double sum = 0.0;
+            for (std::size_t j = begin; j < end; ++j)
+                sum += currentPower[j];
+            problem.currentWindowPower[i] = sum;
+            smoothCurrent[i] = 10.0 * std::log10(sum / static_cast<double>(end - begin));
+        }
+    }
+
     // El nivel no se iguala: la diferencia se centra en su mediana ponderada,
     // así que se iguala lo que difiere de lo más común (docs/dsp/igualacion.md).
     const double centre = weightedMedian(referenceGrid, trackGrid, counts);
@@ -690,7 +796,7 @@ CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettin
         const double t = std::clamp(settings.amount * (referenceGrid[i] - trackGrid[i] - centre), -kMatchMaxTargetDb,
                                     kMatchMaxTargetDb);
         target[i] = counts[i] * t;
-        needed[i] = counts[i] * (t - result.currentDb[i]);
+        needed[i] = counts[i] * (t - smoothCurrent[i]);
     }
     // Fuera del rango, lo de su borde (el punto que cuenta más cercano): las
     // bandas nuevas no crean nada ahí, pero un shelf puede seguir.
@@ -788,6 +894,8 @@ CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettin
             fit.curves.erase(fit.curves.begin() + static_cast<std::ptrdiff_t>(k));
             removed = true;
         }
+    if (removed)
+        fit.update(problem);
     if (removed && !refine(problem, fit, kMatchFinalIterations))
         return finish(true);
     return finish(false);

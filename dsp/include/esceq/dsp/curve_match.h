@@ -87,7 +87,8 @@ struct CurveMatchInput
     /// 0 si no se sabe: sin ancho mínimo en graves.
     double resolutionHz = 0.0;
     /// Bandas que ya hay: se ajusta lo que falta sobre su curva estática,
-    /// con la regla de canales de autoGainDb() (staticCurveDb()).
+    /// con la regla de canales de autoGainDb() (staticCurveDb()), vista al
+    /// ancho del suavizado.
     std::span<const BandSettings> currentBands;
     int numChannels = 2;
     /// Las curvas de las bandas nuevas se calculan con este algoritmo y esta
@@ -103,8 +104,8 @@ struct CurveMatchResult
     /// algoritmo de la entrada y la pendiente por defecto. Vacío si no hace
     /// falta ninguna, si no hay contenido común o si se ha cancelado.
     std::vector<FilterParams> bands;
-    /// Nivel libre c del ajuste: las bandas se ajustan a T − C + c (fuera del
-    /// rango, a c), con c cerca de 0 (está penalizado). El nivel no se iguala.
+    /// Nivel libre c del ajuste: las bandas se ajustan para que S(C + Σ Hk)
+    /// se acerque a T + c, con c cerca de 0 (está penalizado). El nivel no se iguala.
     double offsetDb = 0.0;
     /// Error RMS ponderado, con el nivel libre, de lo que falta antes de las
     /// bandas propuestas y de lo que queda con ellas, en dB.
@@ -116,8 +117,8 @@ struct CurveMatchResult
     /// Curva objetivo T: centrada en la mediana ponderada, 0 donde no cuenta
     /// dentro del rango y, fuera, la del borde.
     std::vector<double> targetDb;
-    std::vector<double> currentDb;   ///< Curva estática de las bandas actuales C.
-    std::vector<double> proposedDb;  ///< C más las bandas propuestas.
+    std::vector<double> currentDb;   ///< Curva estática de las bandas actuales C, sin suavizar.
+    std::vector<double> proposedDb;  ///< C más las bandas propuestas, sin suavizar.
 
     /// Curvas de una banda evaluadas en toda la rejilla: el coste, que no depende de la máquina.
     std::int64_t evaluations = 0;
@@ -126,12 +127,22 @@ struct CurveMatchResult
     bool cancelled = false;
 };
 
+/// Q máximo de una campana propuesta en `frequencyHz`: el de una campana
+/// cuyo ancho (qForBandwidth) es el de la ventana del suavizado ahí
+/// (smoothWindowOctaves, con el mínimo de los graves), entre kMatchMinBellQ y
+/// kMatchMaxBellQ. Sin suavizado, kMatchMaxBellQ.
+double matchMaxBellQ(double frequencyHz, double smoothingOctaves, double minWidthHz = 0.0) noexcept;
+
 /// Ajusta las bandas que acercan la pista a la referencia (PLAN.md 5.6):
 ///
-///     D = suavizado(R) − suavizado(P),  T = clamp(cantidad·(D − mediana_w D), ±12 dB),  N = T − C
+///     D = suavizado(R) − suavizado(P),  T = clamp(cantidad·(D − mediana_w D), ±12 dB),  N = T − S(C)
 ///
-/// y minimiza Σ w·(N + c − Σ Hk)² (fuera del rango, N = 0) con un nivel c
-/// casi libre. Si `cancel` no es nulo y pasa a true, vuelve tras la
+/// y minimiza Σ w·(N + c − [S(C + Σ Hk) − S(C)])² (fuera del rango, N es lo
+/// del borde) con un nivel c casi libre. S es el promedio en potencia en la
+/// ventana del suavizado: la curva actual y las bandas nuevas se comparan al
+/// mismo ancho que el objetivo, así que una banda estrecha que ya hay cuenta
+/// por lo que quita a ese ancho, y no se rellena. El Q de las campanas no pasa
+/// de matchMaxBellQ(). Si `cancel` no es nulo y pasa a true, vuelve tras la
 /// iteración en curso con `cancelled` y sin bandas.
 CurveMatchResult matchCurve(const CurveMatchInput& input, const CurveMatchSettings& settings,
                             const std::atomic<bool>* cancel = nullptr);
