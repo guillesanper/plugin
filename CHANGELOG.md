@@ -77,6 +77,10 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ### Corregido
 
+- **La igualación ya no rellena una banda estrecha que ya hay.** Con un notch en la pista (o una campana estrecha), *Match* proponía una campana de hasta +18 dB y Q 16 justo encima, que lo deshacía: el objetivo está suavizado y la curva de las bandas actuales no lo estaba. Ahora se comparan al mismo ancho. Una banda estrecha cuenta por lo que quita a ese ancho (con 1/3 de octava, un notch de Q 8 lleva junto a él una campana de unos +6 dB y Q 4,3), y las campanas propuestas no son más estrechas que el suavizado. Aplicar y volver a proponer casi nunca crea nada (en el 2 % de 300 casos de prueba, como mucho 2,3 dB; antes, en el 9 %, con hasta 10 dB). Igualar a una curva conocida es aún más preciso (a 0,04 dB, antes 0,13). Ver la [ADR 0023](docs/decisiones/0023-igualar-a-una-referencia.md) y [docs/dsp/igualacion.md](docs/dsp/igualacion.md).
+
+  **Compatibilidad:** no cambia el procesado, el estado ni los parámetros; solo las bandas que propone *Match*.
+
 - **Deshacer la carga de un preset ya no deshace también el último cambio.** Si se cargaba un preset (o *Default*) justo después de mover un control, antes de que el historial lo registrara (300 ms, o más con el ordenador cargado), los dos quedaban en una sola acción, y deshacer la carga devolvía también el control a su valor anterior. Ahora son dos acciones, como al cambiar el algoritmo de filtro.
 
   **Compatibilidad:** no cambia el procesado, el estado ni los parámetros.
