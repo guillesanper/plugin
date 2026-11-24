@@ -1,16 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
-// CONTRATOS DE LA VERSION 0.1.0, la primera publicada.
+// CONTRATOS DE LAS VERSIONES 0.1.0 Y 0.5.0.
 //
-// Los archivos de tests/fixtures/*/release_0.1* son lo que esa version
-// declaro, escribio y sono. No se editan ni se borran, y estos tests no se
-// "arreglan" cambiando lo que esperan: si uno falla, el cambio rompe
-// proyectos guardados por usuarios. Ver docs/arquitectura.md, "Contratos".
+// Los archivos de tests/fixtures/*/release_0.1* y release_0.5* son lo que
+// cada version declaro, escribio y sono. No se editan ni se borran, y estos
+// tests no se "arreglan" cambiando lo que esperan: si uno falla, el cambio
+// rompe proyectos guardados por usuarios. Ver docs/arquitectura.md, "Contratos".
+// (La 0.1.0 no llego a publicarse, pero sus contratos se mantienen: los
+// proyectos de las compilaciones de entonces deben seguir abriendo igual.)
 #include "esceq/core/band_model.h"
 #include "esceq/core/presets.h"
 #include "esceq/core/state.h"
 #include "state_test_utils.h"
 #include "esceq/dsp/equalizer.h"
+#include "esceq/dsp/phase_equalizer.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
@@ -21,6 +24,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <locale>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -251,4 +255,236 @@ TEST_CASE("Contrato 0.1: un proyecto guardado con la 0.1 suena igual")
     // La señal de prueba hace trabajar de verdad a la dinamica.
     CHECK(deepestReduction < -1.0);
     CHECK(highestBoost > 1.0);
+}
+
+// --- 0.5.0 ---
+
+namespace {
+
+/// release_0.5_full.txt: el proyecto de la 0.1 (release_0.1_full.txt) con lo
+/// que trae la 0.5 encendido: Matched, Linear Low, compensacion automatica,
+/// tiempos automaticos en la banda 3 (dinamica con sidechain en Mid),
+/// dinamica espectral en la banda 5 (de-esser), saturacion Warm (9 dB, 80 %)
+/// y las preferencias nuevas de la interfaz.
+std::optional<PluginState> release05State()
+{
+    return deserializePluginState(readFile(kFixtures + "/state/release_0.5_full.txt"));
+}
+
+struct Release05Render
+{
+    std::vector<float> left, right;
+    int latency = 0;
+    double deepestReduction = 0.0; // banda 5: de-esser espectral
+    double highestBoost = 0.0;     // banda 3: realce con sidechain y tiempos automaticos
+};
+
+/// Salida de dsp::PhaseEqualizer con el estado de release_0.5_full.txt en el
+/// modo de fase `mode`, preparada como en el plugin al arrancar.
+Release05Render renderRelease05(const PluginState& state, dsp::PhaseMode mode)
+{
+    constexpr double kSampleRate = 48000.0;
+    constexpr int kLength = 48000;
+
+    dsp::PhaseEqualizer equalizer;
+    const auto bands = allBandSettings(state.parameters, state.filterAlgorithm);
+    for (int band = 0; band < kNumBands; ++band)
+        equalizer.setBand(band, bands[static_cast<std::size_t>(band)]);
+    equalizer.setBypassed(false);
+    equalizer.setPhaseMode(mode);
+    equalizer.setSaturation(saturationSettings(state.parameters));
+    equalizer.prepare(kSampleRate);
+    while (equalizer.serviceDesigns())
+    {
+    }
+    equalizer.update();
+    // Suena ya lo pedido, sin transicion (lo que hace el plugin en prepareToPlay).
+    REQUIRE(equalizer.activePhaseMode() == mode);
+    REQUIRE(equalizer.spectralActive());
+    REQUIRE(equalizer.saturationActive());
+
+    Release05Render render;
+    render.left.resize(kLength);
+    render.right.resize(kLength);
+    render.latency = equalizer.latencySamples();
+    testSignal(render.left, render.right);
+    std::vector<float> scLeft(kLength), scRight(kLength);
+    for (std::size_t i = 0; i < scLeft.size(); ++i)
+    {
+        scLeft[i] = 1.5f * render.right[i];
+        scRight[i] = 1.5f * render.left[i];
+    }
+
+    // En bloques de tamaño irregular, como los entrega FL Studio.
+    for (int position = 0, block = 0; position < kLength; ++block)
+    {
+        const int size = std::min(kLength - position, 1 + (block * 37) % 509);
+        float* channels[2] = {render.left.data() + position, render.right.data() + position};
+        const float* sidechain[2] = {scLeft.data() + position, scRight.data() + position};
+        equalizer.process(channels, 2, size, sidechain, 2);
+        position += size;
+        render.deepestReduction = std::min(render.deepestReduction, equalizer.dynamicGainDb(4));
+        render.highestBoost = std::max(render.highestBoost, equalizer.dynamicGainDb(2));
+    }
+    return render;
+}
+
+/// Compara `render` con el archivo `name` de tests/fixtures/dsp/. Con
+/// ESCEQ_WRITE_GOLDEN=1, lo escribe antes si no existe.
+void checkAgainstGolden(const Release05Render& render, const std::string& name, const std::string& description)
+{
+    constexpr int kStep = 61; // se guarda una muestra de cada 61 (primo: no se alinea con nada)
+    const std::string path = kFixtures + "/dsp/" + name;
+    const auto length = static_cast<int>(render.left.size());
+
+    if (std::getenv("ESCEQ_WRITE_GOLDEN") != nullptr && !std::ifstream(path).is_open())
+    {
+        std::ofstream out(path, std::ios::binary);
+        out.imbue(std::locale::classic());
+        out.precision(9);
+        out << "# Salida de dsp::PhaseEqualizer con el estado release_0.5_full.txt (esceQ 0.5.0), " << description
+            << ".\n# 48 kHz, una muestra de cada " << kStep << ": izquierda derecha\n";
+        for (int i = 0; i < length; i += kStep)
+            out << render.left[static_cast<std::size_t>(i)] << ' ' << render.right[static_cast<std::size_t>(i)]
+                << '\n';
+    }
+
+    std::ifstream in(path, std::ios::binary);
+    REQUIRE(in.is_open());
+    in.imbue(std::locale::classic());
+    int compared = 0;
+    double worst = 0.0;
+    for (std::string line; std::getline(in, line);)
+    {
+        if (line.empty() || line[0] == '#')
+            continue;
+        std::istringstream fields(line);
+        fields.imbue(std::locale::classic());
+        double expectedLeft = 0.0, expectedRight = 0.0;
+        REQUIRE(static_cast<bool>(fields >> expectedLeft >> expectedRight));
+        const auto index = static_cast<std::size_t>(compared * kStep);
+        REQUIRE(index < render.left.size());
+        worst = std::max({worst, std::abs(render.left[index] - expectedLeft),
+                          std::abs(render.right[index] - expectedRight)});
+        ++compared;
+    }
+    CHECK(compared == (length + kStep - 1) / kStep);
+    // -80 dB respecto a fondo de escala, como en la 0.1.
+    INFO("mayor diferencia: " << worst);
+    CHECK(worst < 1.0e-4);
+}
+
+} // namespace
+
+TEST_CASE("Contrato 0.5: los parametros publicados no cambian")
+{
+    // Como en la 0.1: v1.txt (la tabla viva) debe seguir empezando por la de la 0.5.
+    const auto released = lines(readFile(kFixtures + "/parameters/release_0.5.txt"));
+    const auto current = lines(readFile(kFixtures + "/parameters/v1.txt"));
+
+    REQUIRE(released.size() == 392); // cabecera + 391 parametros
+    REQUIRE(current.size() >= released.size());
+    for (std::size_t i = 0; i < released.size(); ++i)
+    {
+        INFO("linea " << i + 1);
+        CHECK(current[i] == released[i]);
+    }
+    CHECK(kNumParameters >= 391);
+}
+
+TEST_CASE("Contrato 0.5: un proyecto guardado con la 0.5 carga con todos sus valores")
+{
+    const auto text = readFile(kFixtures + "/state/release_0.5_full.txt");
+    const auto state = release05State();
+    REQUIRE(state.has_value());
+    const auto& p = state->parameters;
+
+    // Lo de la 0.1 sigue ahi.
+    CHECK(p[kOutputGain] == -1.5f);
+    CHECK(bandSettings(p, 0).filter.type == dsp::FilterType::LowCut);
+    CHECK(bandSettings(p, 2).dynamics.external);
+    CHECK(bandSettings(p, 2).channel == dsp::ChannelMode::Mid);
+    CHECK(bandSettings(p, 23).filter.type == dsp::FilterType::Notch);
+
+    // Lo nuevo de la 0.5.
+    CHECK(state->filterAlgorithm == dsp::FilterAlgorithm::Matched);
+    CHECK(bandSettings(p, 0, state->filterAlgorithm).filter.algorithm == dsp::FilterAlgorithm::Matched);
+    CHECK(phaseModeFromChoice(p[kPhaseMode]) == dsp::PhaseMode::LinearLow);
+    CHECK(p[kAutoGain] == 1.0f);
+    CHECK(bandSettings(p, 2).dynamics.autoTiming);
+    CHECK(bandSettings(p, 4).dynamics.spectral);
+    int spectral = 0, autoTiming = 0;
+    for (int band = 0; band < kNumBands; ++band)
+    {
+        spectral += bandSettings(p, band).dynamics.spectral ? 1 : 0;
+        autoTiming += bandSettings(p, band).dynamics.autoTiming ? 1 : 0;
+    }
+    CHECK(spectral == 1);
+    CHECK(autoTiming == 1);
+    const auto saturation = saturationSettings(p);
+    CHECK(saturation.mode == dsp::SaturationMode::Warm);
+    CHECK(saturation.driveDb == 9.0);
+    CHECK_THAT(saturation.mix, WithinAbs(0.8, 1e-6));
+
+    CHECK(state->ui.analyzerMode == 2);
+    CHECK(state->ui.displayRangeDb == 30);
+    CHECK(state->ui.windowWidth == 1480);
+    CHECK(state->ui.windowHeight == 860);
+    CHECK(state->ui.presetName == "Vocal");
+    CHECK(state->ui.pianoKeyboard);
+    CHECK(state->ui.a4Hz == 432.0);
+    CHECK(state->ui.analyzerFftSize == 16384);
+    CHECK(state->ui.analyzerFallMs == 120);
+    CHECK(state->ui.analyzerTiltDbPerOctave == 3.0);
+    CHECK(state->ui.analyzerPeakHold);
+    CHECK_FALSE(state->ui.outputStageOpen);
+
+    // Mientras el formato siga en la version 3, se vuelve a escribir identico
+    // (sin las lineas de los parametros añadidos despues de la 0.5, que tenia 391).
+    if (kStateVersion == 3)
+        CHECK(test::withoutParametersAddedAfter(serializePluginState(*state), 391) == text);
+}
+
+TEST_CASE("Contrato 0.5: los presets de fabrica publicados no cambian")
+{
+    for (const char* name : {"De-esser", "Resonance Control", "Low-End Cleanup", "Vocal", "Gentle Master"})
+    {
+        INFO(name);
+        const auto released = deserializeState(readFile(kFixtures + "/presets/release_0.5/" + name + ".txt"));
+        REQUIRE(released.has_value());
+        const auto current = loadFactoryPreset(name);
+        REQUIRE(current.has_value());
+        for (std::size_t i = 0; i < 391; ++i)
+        {
+            INFO(parameters()[i].id);
+            CHECK((*current)[i] == (*released)[i]);
+        }
+    }
+}
+
+// Para generar los archivos la primera vez (y SOLO si no existen):
+//   ESCEQ_WRITE_GOLDEN=1 ./esceq_tests "Contrato 0.5: un proyecto*suena*"
+TEST_CASE("Contrato 0.5: un proyecto guardado con la 0.5 suena igual")
+{
+    const auto state = release05State();
+    REQUIRE(state.has_value());
+
+    SECTION("en su modo, Linear Low")
+    {
+        const auto render = renderRelease05(*state, phaseModeFromChoice(state->parameters[kPhaseMode]));
+        // La latencia que se comunica al host: Linear Low, la dinamica
+        // espectral y la saturacion en fase lineal.
+        CHECK(render.latency == 1280 + 2560 + 47);
+        checkAgainstGolden(render, "release_0.5_audio.txt", "en Linear Low");
+        CHECK(render.deepestReduction < -1.0);
+        CHECK(render.highestBoost > 1.0);
+    }
+    SECTION("el mismo proyecto en IIR")
+    {
+        const auto render = renderRelease05(*state, dsp::PhaseMode::Iir);
+        CHECK(render.latency == 2560); // solo la dinamica espectral
+        checkAgainstGolden(render, "release_0.5_audio_iir.txt", "en IIR");
+        CHECK(render.deepestReduction < -1.0);
+        CHECK(render.highestBoost > 1.0);
+    }
 }

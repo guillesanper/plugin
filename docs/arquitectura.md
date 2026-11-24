@@ -49,7 +49,7 @@ Son lo que no se puede cambiar sin romper proyectos que los usuarios ya han guar
 | Nombre, orden y sonido de los presets de fábrica | `core/src/presets.cpp` | `tests/core/presets_test.cpp` · [ADR 0009](decisiones/0009-preferencias-deshacer-y-presets.md) |
 | Identidad del plugin ante el host: `PLUGIN_MANUFACTURER_CODE` (`Escq`), `PLUGIN_CODE` (`EscQ`), `BUNDLE_ID`, `CLAP_ID` (`org.esceq.esceq`), nombre | `plugin/CMakeLists.txt` | Revisión manual: no tocar |
 | Identidad de la instalación en Windows: `AppId` | `packaging/windows/esceQ.iss` | Revisión manual: si cambia, una versión nueva no actualiza la anterior |
-| Lo que publicó cada versión: parámetros, estado, presets y sonido de un proyecto de referencia | `tests/fixtures/*/release_0.1*` | `tests/core/release_contract_test.cpp` · [ADR 0010](decisiones/0010-distribucion.md) |
+| Lo que publicó cada versión: parámetros, estado, presets y sonido de un proyecto de referencia | `tests/fixtures/*/release_0.1*` y `release_0.5*` | `tests/core/release_contract_test.cpp` · [ADR 0010](decisiones/0010-distribucion.md) |
 | Buses: entrada y salida principales, y sidechain opcional como segundo bus de entrada | `plugin/src/PluginProcessor.cpp` | Revisión manual: reordenar los buses rompe el enrutado guardado en los proyectos |
 | Sonido de una configuración dada | `dsp/` | `tests/fixtures/dsp/respuesta_v1.txt` (Classic), `respuesta_matched.txt` (Matched) y `tests/dsp/filter_golden_test.cpp`; Classic, además, bit a bit con el código de la 0.1 (`tests/dsp/filter_algorithm_test.cpp`) · [docs/dsp/filtros.md](dsp/filtros.md). La dinámica: `tests/dsp/dynamics_test.cpp` y [docs/dsp/dinamica.md](dsp/dinamica.md). El canal por banda: `tests/dsp/equalizer_channel_test.cpp` |
 
