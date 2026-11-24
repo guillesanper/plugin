@@ -4,6 +4,57 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## Sin publicar
 
+## [0.5.0] - 2026-11-24
+
+Primera versión pública. La 0.1.0 se cerró pero no llegó a publicarse: sus paquetes de macOS y Linux no habrían cargado en muchos sistemas (ver «Cambiado»). Esta versión trae todo lo de la 0.1.0 y lo que se detalla debajo.
+
+### Qué es
+
+esceQ es un ecualizador paramétrico y dinámico, libre (AGPLv3), pensado para funcionar bien en FL Studio y en cualquier host VST3, CLAP o AU.
+
+### Qué trae
+
+- **Ecualizador de 24 bandas**, cada una con nueve tipos de filtro: campana, shelf de graves y de agudos, corte de graves y de agudos (de 6 a 96 dB/oct), notch, paso banda, paso todo y tilt, en estéreo, solo izquierdo, solo derecho, Mid o Side. Cambios de parámetros sin chasquidos.
+- **Cuatro modos de fase:** *IIR*, sin latencia, y fase lineal en tres resoluciones (*Linear Low*, *Medium* y *High*, de 26,7 a 362,7 ms de latencia a 48 kHz, que el host compensa).
+- **Filtros fieles al analógico también en agudos** (algoritmo *Matched*, por defecto en cada instancia nueva): a 44,1 o 48 kHz, las campanas y los shelves cerca de Nyquist ya no se estrechan ni caen antes de tiempo.
+- **Dinámica por banda** en campanas, shelves y tilt: umbral, rango (negativo reduce, positivo realza), ataque, relajación y rodilla, con **sidechain externo** a elegir en cada banda, **tiempos automáticos** según la frecuencia y la señal, y **dinámica espectral**, que dentro de la banda solo reduce (o realza) las frecuencias que pasan del umbral: de-esser y control de resonancias que se mueven.
+- **Saturación** global tras el ecualizador, *Soft* o *Warm*, con *Drive* y *Mix*, sin subir el nivel y con sobremuestreo contra el aliasing, en el cajón *Output* junto a la ganancia de salida.
+- **Compensación automática de ganancia**, que mantiene la sonoridad al ecualizar para comparar con el bypass sin engañarse.
+- **Curva interactiva:** doble clic para añadir una banda, arrastrar para moverla, rueda para el Q, clic derecho para el tipo, el canal y la dinámica; arrastrar desde un pico del espectro crea una campana en él. La curva muestra en tiempo real la ganancia dinámica.
+- **Analizador de espectro** antes y después del ecualizador, ajustable (resolución, caída, inclinación, picos retenidos, congelar) y con una vista ampliada; **medidor de nivel de salida** con pico retenido y aviso de recorte.
+- **Comparar con otras pistas** (el espectro de otras instancias de esceQ del proyecto, con las colisiones marcadas) e **igualar a una referencia** (otra instancia o el sidechain): esceQ propone y crea las bandas que faltan.
+- **Escala de notas:** teclado de piano bajo la curva, la nota de cada banda, ajuste a la nota más cercana y frecuencias escritas como notas, con afinación ajustable.
+- **Controles propios**, manejables con teclado y con nombres accesibles; **deshacer y rehacer** dentro del plugin.
+- **Presets:** cinco de fábrica (De-esser, Resonance Control, Low-End Cleanup, Vocal y Gentle Master) y los tuyos, en una carpeta del sistema.
+- **Ventana redimensionable**, con tres tamaños predefinidos (S, M, L) en el menú de opciones.
+- 391 parámetros automatizables, con valores legibles en el host ("1.20 kHz", "+3.0 dB").
+
+### Formatos y plataformas
+
+- **Windows (x64):** VST3 y CLAP, con instalador.
+- **macOS 11 o posterior (Apple Silicon e Intel):** VST3, AU y CLAP, binarios universales con firma ad hoc. No están firmados con un certificado de Apple ni notarizados: el archivo `INSTALL.txt` del paquete explica cómo permitir su carga.
+- **Linux (x64):** VST3 y CLAP, para Ubuntu 22.04, Debian 12, Fedora 36 o posteriores (glibc 2.35).
+
+### Compatibilidad con la 0.1.0
+
+Los proyectos y presets guardados con la 0.1.0 (o con las compilaciones de desarrollo de entonces) abren con todos sus valores y **suenan exactamente igual**: abren en *IIR* y con el algoritmo *Classic*, y todo lo nuevo empieza apagado (los tiempos automáticos, la dinámica espectral, la saturación y la compensación automática). El estado guardado pasa de la versión 2 a la 3 (una línea más, `filter_algorithm`, y las preferencias nuevas de la interfaz), y la tabla de parámetros, de 338 a 391, todos añadidos al final: los 338 de la 0.1.0 no cambian. Una versión anterior abre un proyecto de la 0.5.0 con los valores que conoce, pero sin lo nuevo y siempre en *Classic*.
+
+Desde esta versión quedan congelados, como los de la 0.1.0:
+
+- los identificadores, rangos y posiciones de los 391 parámetros;
+- el formato del estado guardado (versión 3; se siguen leyendo las versiones 1 y 2);
+- el nombre y el sonido de los presets de fábrica;
+- el sonido de un proyecto guardado;
+- la identidad del plugin ante el host (VST3, AU y CLAP).
+
+### Limitaciones conocidas
+
+- La dinámica no tiene ratio ni anticipación (lookahead).
+- El analizador muestra la media de los canales, y la curva total suma todas las bandas sin distinguir su canal.
+- Comparar con otras pistas, e igualar a otra instancia, ven solo las instancias que el host carga en el mismo proceso y del mismo formato (VST3 con VST3, CLAP con CLAP).
+- Sin surround: mono y estéreo.
+- El enrutado del sidechain en FL Studio está descrito en el README, pero aún no se ha verificado paso a paso en FL Studio. Los paquetes de macOS y Linux se comprueban en el CI (cargan y pasan pluginval y clap-validator), pero aún no se han probado con hosts reales en esos sistemas.
+
 ### Añadido
 
 - **Saturación.** Una etapa global de saturación tras el ecualizador y la dinámica, antes de la ganancia de salida, para dar color armónico, en el nuevo cajón *Output* (ver «Cambiado»): *Off*, *Soft* (simétrica, solo armónicos impares) o *Warm* (asimétrica, añade los pares), con *Drive* (0 a 24 dB, 6 por defecto) y *Mix* (0 a 100 %, 100 por defecto). El drive no sube el nivel: se compensa para que un seno a −18 dBFS salga igual (±0,0002 dB), así que se compara el color. Contra el aliasing, sobremuestreo hasta unos 384 kHz (×8 a 44,1 y 48 kHz, ×4 hasta 100 kHz, ×2 por encima): con un seno de 10 kHz y 12 dB de drive a 48 kHz, el aliasing queda más de 100 dB por debajo de la fundamental a cualquier nivel hasta 0 dBFS. La mezcla se hace dentro, sin filtro de peine (al 0 %, a menos de 0,001 dB de la entrada hasta 18 kHz), y un bloqueador quita la continua de *Warm*. Cambiar el modo, el drive o la mezcla, también automatizándolos, va con rampas de 20 ms, sin chasquidos. Con *Off*, *Drive* y *Mix* se atenúan: se ajustan, pero no suenan. Cuesta del 0,7 al 1,3 % de un núcleo a 48 kHz en estéreo. Ver la [ADR 0026](docs/decisiones/0026-saturacion.md) y [docs/dsp/saturacion.md](docs/dsp/saturacion.md).
@@ -93,7 +144,7 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## [0.1.0] - 2026-11-12
 
-Primera versión pública.
+No llegó a publicarse: sus paquetes de macOS y Linux tenían los fallos que corrige la 0.5.0. Sus contratos (abajo) se mantienen.
 
 ### Qué es
 

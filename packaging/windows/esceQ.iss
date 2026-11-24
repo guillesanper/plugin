@@ -8,7 +8,7 @@
 ; que son las carpetas donde FL Studio y los demás hosts buscan por defecto.
 ;
 ; El CI lo compila así (ver .github/workflows/ci.yml):
-;   iscc /DAppVersion=0.1.0 /DSourceDir=<carpeta con VST3\ y CLAP\> packaging\windows\esceQ.iss
+;   iscc /DAppVersion=0.5.0 /DSourceDir=<carpeta con VST3\ y CLAP\> packaging\windows\esceQ.iss
 ;
 ; Los textos que ve el usuario van en inglés.
 

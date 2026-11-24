@@ -4,7 +4,7 @@
 # Imprime la sección de CHANGELOG.md de una versión: es el texto de la
 # release de GitHub. Falla si la versión no tiene sección.
 #
-# Uso: tools/release-notes.sh 0.1.0
+# Uso: tools/release-notes.sh 0.5.0
 set -euo pipefail
 
 version="${1:?uso: release-notes.sh VERSION}"

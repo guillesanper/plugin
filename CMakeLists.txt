@@ -7,7 +7,7 @@ cmake_minimum_required(VERSION 3.24)
 # SDK. El CI comprueba la que pide cada binario (ADR 0022).
 set(CMAKE_OSX_DEPLOYMENT_TARGET "11.0" CACHE STRING "Versión mínima de macOS")
 
-project(esceQ VERSION 0.1.0 LANGUAGES C CXX)
+project(esceQ VERSION 0.5.0 LANGUAGES C CXX)
 
 # ESCEQ_BUILD_PLUGIN=OFF compila solo dsp/ y core/ (sin descargar JUCE).
 # El CI lo usa para garantizar que esos módulos no dependen del framework.
