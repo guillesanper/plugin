@@ -2,10 +2,11 @@
 #
 # esceq_bench: coste del hilo de audio (dsp::PhaseEqualizer) con
 # configuraciones fijas, del ajuste de la igualación (--match) y de la
-# saturación (--saturation). Solo depende de dsp/: se compila también sin JUCE.
+# saturación (--saturation), y una banda modulada (--modulation). Depende de
+# dsp/ y core/: se compila también sin JUCE.
 # Ver la cabecera de main.cpp y la ADR 0020.
 add_executable(esceq_bench main.cpp)
-target_link_libraries(esceq_bench PRIVATE esceq_dsp esceq_warnings)
+target_link_libraries(esceq_bench PRIVATE esceq_dsp esceq_core esceq_warnings)
 
 # Que la herramienta funcione en todas las plataformas del CI: una medida
 # muy corta de cada escenario y modo, y de la convolución.
@@ -18,4 +19,6 @@ if(ESCEQ_BUILD_TESTS)
              COMMAND esceq_bench --match --rate 48000 --repeat 1)
     add_test(NAME esceq_bench_saturation_smoke
              COMMAND esceq_bench --saturation --rate 48000 --block 64 --seconds 0.02 --repeat 1)
+    add_test(NAME esceq_bench_modulation_smoke
+             COMMAND esceq_bench --modulation --rate 48000 --block 256 --seconds 0.05 --repeat 1)
 endif()

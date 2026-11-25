@@ -2,7 +2,8 @@
 //
 // esceq_bench: mide el coste del hilo de audio de esceQ (dsp::PhaseEqualizer)
 // con configuraciones fijas, para decidir optimizaciones con números
-// (ADR 0020). Solo depende de dsp/.
+// (ADR 0020). Depende de dsp/ y, para --modulation, del hilo de control de
+// core/ (core::ControlThread); no de JUCE.
 //
 // Uso: esceq_bench [opciones]
 //   --scenario A,B   campanas, cortes, dinamicas, mezcla, espectral, mezcla-esp,
@@ -24,6 +25,11 @@
 //                    docs/dsp/saturacion.md): las alternativas contra el
 //                    aliasing comparadas a 48 kHz y el coste del motor, con
 //                    --rate, --block, --seconds y --repeat
+//   --modulation     en vez del ecualizador, una banda modulada (como un
+//                    automation clip) en cada modo de --mode: el render sin
+//                    tiempo real y el tiempo real, con --rate, --block,
+//                    --seconds (del render; el tiempo real, como mucho 2 s)
+//                    y --repeat
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
@@ -80,6 +86,18 @@
 // de drive: el mismo aliasing, el nivel de un seno de −18 dBFS a 1 kHz y la
 // mezcla al 0 % a 18 kHz; y su coste (Soft y Warm, filtros IIR y de fase
 // lineal) con --rate y --block.
+//
+// Con --modulation (ADR 0028, bloque 7.1): una campana a 1 kHz con la
+// ganancia a ±6 dB y 2 Hz, ajustada en cada bloque. En el render, lo que
+// tarda sin modular, modulada diseñando en cada bloque (como hasta la 0.5.0) y
+// modulada al ritmo de core::ControlThread::renderBlock() (como mucho un
+// diseño por cada 10 ms de audio o por bloque de la convolución), los diseños
+// de cada uno y si dos renders al ritmo salen bit a bit iguales. En tiempo
+// real, los bloques al ritmo del reloj con el hilo de control propio: el %
+// de un núcleo del hilo de audio, su llamada más lenta, los diseños por
+// segundo, lo que tarda uno, y el % de un núcleo que ocupa el hilo de control.
+#include "esceq/core/control_thread.h"
+#include "esceq/dsp/auto_gain.h"
 #include "esceq/dsp/curve_match.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/partitioned_convolver.h"
@@ -99,6 +117,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 namespace {
@@ -125,6 +144,7 @@ struct Options
     bool match = false;
     bool spectral = false;
     bool saturation = false;
+    bool modulation = false;
 };
 
 std::vector<std::string> splitList(std::string_view text)
@@ -165,6 +185,11 @@ bool parse(std::span<char* const> args, Options& options)
         if (name == "--saturation")
         {
             options.saturation = true;
+            continue;
+        }
+        if (name == "--modulation")
+        {
+            options.modulation = true;
             continue;
         }
         if (i + 1 >= args.size())
@@ -1062,6 +1087,218 @@ void runSaturation(const Options& options)
                 }
 }
 
+/// Cómo se diseña el FIR en el render del escenario de modulación.
+enum class RenderDesign
+{
+    Static,     ///< Sin modular: los diseños de cada bloque no hacen nada.
+    EachBlock,  ///< Como hasta la 0.5.0: flush() en cada bloque.
+    Paced,      ///< Como ahora: core::ControlThread::renderBlock().
+};
+
+struct RenderMeasure
+{
+    double seconds = 0.0;         ///< Lo que tarda el render.
+    std::uint64_t designs = 0;    ///< Veces que el hilo de control ha hecho algo.
+    std::vector<float> output;    ///< El canal izquierdo, para comparar dos renders.
+};
+
+/// La ganancia de la campana del escenario de modulación en el instante `t`.
+double modulatedGainDb(double t)
+{
+    return 6.0 * std::sin(2.0 * std::numbers::pi * 2.0 * t);
+}
+
+/// Renderiza `options.seconds` de la campana modulada sin tiempo real, como el
+/// procesador: los ajustes de cada bloque, el diseño y el audio.
+RenderMeasure renderModulated(PhaseMode mode, double rate, int block, double seconds, RenderDesign design,
+                              bool keepOutput)
+{
+    esceq::dsp::PhaseEqualizer eq;
+    esceq::dsp::AutoGain autoGain;
+    BandSettings band = bell(1000.0, 0.0, 1.0, FilterAlgorithm::Classic);
+    eq.setBand(0, band);
+    eq.setPhaseMode(mode);
+    eq.prepare(rate, 2);
+    esceq::core::ControlThread control(eq, autoGain, esceq::core::ControlThread::Threading::Manual);
+    control.flush();
+    eq.update();
+    const std::uint64_t before = control.serviceCount();
+
+    const auto length = static_cast<int>(seconds * rate);
+    const std::vector<float> left = noise(length, 1u), right = noise(length, 2u);
+    std::vector<float> l(static_cast<std::size_t>(block)), r(l.size());
+    RenderMeasure measure;
+    if (keepOutput)
+        measure.output.reserve(static_cast<std::size_t>(length));
+    const auto start = Clock::now();
+    for (int pos = 0; pos + block <= length; pos += block)
+    {
+        std::copy_n(left.begin() + pos, block, l.begin());
+        std::copy_n(right.begin() + pos, block, r.begin());
+        if (design != RenderDesign::Static)
+        {
+            band.filter.gainDb = modulatedGainDb(pos / rate);
+            eq.setBand(0, band);
+        }
+        if (design == RenderDesign::EachBlock)
+            control.flush();
+        control.renderBlock(block, rate);
+        float* channels[2] = {l.data(), r.data()};
+        eq.process(channels, 2, block);
+        if (keepOutput)
+            measure.output.insert(measure.output.end(), l.begin(), l.end());
+    }
+    measure.seconds = std::chrono::duration<double>(Clock::now() - start).count();
+    measure.designs = control.serviceCount() - before;
+    return measure;
+}
+
+/// Mediana, en ms, de lo que tarda un diseño de la campana en ese modo.
+double designMs(PhaseMode mode, double rate, int repeat)
+{
+    esceq::dsp::PhaseEqualizer eq;
+    BandSettings band = bell(1000.0, 0.0, 1.0, FilterAlgorithm::Classic);
+    eq.setBand(0, band);
+    eq.setPhaseMode(mode);
+    eq.prepare(rate, 2);
+    while (eq.serviceDesigns())
+    {
+    }
+    eq.update();
+    std::vector<float> l(64, 0.0f), r(64, 0.0f);
+    float* channels[2] = {l.data(), r.data()};
+    std::vector<double> times;
+    for (int i = 0; i < std::max(repeat, 1) * 10; ++i)
+    {
+        band.filter.gainDb = modulatedGainDb(i * 0.01);
+        eq.setBand(0, band);
+        eq.process(channels, 2, 64); // pide el diseño
+        const auto start = Clock::now();
+        while (eq.serviceDesigns())
+        {
+        }
+        times.push_back(1.0e3 * std::chrono::duration<double>(Clock::now() - start).count());
+    }
+    return median(times);
+}
+
+/// En tiempo real, al ritmo del reloj, durante `seconds`: el % de un núcleo
+/// del hilo de audio (con el hilo de control diseñando a la vez), su llamada
+/// más lenta y los diseños por segundo del hilo de control.
+void realtimeModulated(PhaseMode mode, double rate, int block, double seconds, double& audioLoad,
+                       double& slowestMs, double& designsPerSecond)
+{
+    esceq::dsp::PhaseEqualizer eq;
+    esceq::dsp::AutoGain autoGain;
+    BandSettings band = bell(1000.0, 0.0, 1.0, FilterAlgorithm::Classic);
+    eq.setBand(0, band);
+    eq.setPhaseMode(mode);
+    eq.prepare(rate, 2);
+    esceq::core::ControlThread control(eq, autoGain);
+    control.flush();
+    eq.update();
+    const std::uint64_t before = control.serviceCount();
+
+    const auto length = static_cast<int>(seconds * rate);
+    const std::vector<float> left = noise(length, 1u), right = noise(length, 2u);
+    std::vector<float> l(static_cast<std::size_t>(block)), r(l.size());
+    double busy = 0.0;
+    slowestMs = 0.0;
+    const auto begin = Clock::now();
+    for (int pos = 0; pos + block <= length; pos += block)
+    {
+        // El bloque llega cuando le toca, como desde la tarjeta de sonido.
+        std::this_thread::sleep_until(begin + std::chrono::duration_cast<Clock::duration>(
+                                                  std::chrono::duration<double>(pos / rate)));
+        std::copy_n(left.begin() + pos, block, l.begin());
+        std::copy_n(right.begin() + pos, block, r.begin());
+        const auto start = Clock::now();
+        band.filter.gainDb = modulatedGainDb(pos / rate);
+        eq.setBand(0, band);
+        control.realtimeBlock();
+        float* channels[2] = {l.data(), r.data()};
+        eq.process(channels, 2, block);
+        const double ms = 1.0e3 * std::chrono::duration<double>(Clock::now() - start).count();
+        busy += ms;
+        slowestMs = std::max(slowestMs, ms);
+    }
+    const double elapsed = std::chrono::duration<double>(Clock::now() - begin).count();
+    audioLoad = 100.0 * busy * 1.0e-3 / (length / rate);
+    designsPerSecond = static_cast<double>(control.serviceCount() - before) / elapsed;
+}
+
+void runModulation(const Options& options)
+{
+    std::printf("Modulación: una campana a 1 kHz, Q 1, con la ganancia a ±6 dB y 2 Hz (como un automation\n"
+                "clip), %.1f s de audio estéreo.\n\n", options.seconds);
+    std::printf("Render sin tiempo real: lo que tarda, y en %% de la duración del audio; diseños hechos.\n");
+    std::printf("%-7s %7s %6s  %-16s %-26s %-26s %8s %8s\n", "modo", "Hz", "bloque", "sin modular",
+                "cada bloque (hasta 0.5.0)", "al ritmo (renderBlock)", "/sin mod.", "iguales");
+    for (const std::string& modeName : options.modes)
+    {
+        PhaseMode mode{};
+        if (!parseMode(modeName, mode))
+        {
+            std::fprintf(stderr, "modo desconocido: %s\n", modeName.c_str());
+            continue;
+        }
+        for (const double rate : options.rates)
+            for (const int block : options.blocks)
+            {
+                auto timed = [&](RenderDesign design)
+                {
+                    std::vector<double> times;
+                    RenderMeasure last;
+                    for (int i = 0; i < options.repeat; ++i)
+                    {
+                        last = renderModulated(mode, rate, block, options.seconds, design, false);
+                        times.push_back(last.seconds);
+                    }
+                    last.seconds = median(times);
+                    return last;
+                };
+                const RenderMeasure still = timed(RenderDesign::Static);
+                const RenderMeasure each = timed(RenderDesign::EachBlock);
+                const RenderMeasure paced = timed(RenderDesign::Paced);
+                // Dos renders al ritmo, bit a bit iguales.
+                const bool same =
+                    renderModulated(mode, rate, block, options.seconds, RenderDesign::Paced, true).output ==
+                    renderModulated(mode, rate, block, options.seconds, RenderDesign::Paced, true).output;
+                auto percent = [&](double s) { return 100.0 * s / options.seconds; };
+                std::printf("%-7s %7.0f %6d  %6.2f s (%5.1f %%) %7.2f s (%6.1f %%) %6llu  %7.2f s (%6.1f %%) %6llu "
+                            "%8.1f %8s\n",
+                            modeName.c_str(), rate, block, still.seconds, percent(still.seconds), each.seconds,
+                            percent(each.seconds), static_cast<unsigned long long>(each.designs), paced.seconds,
+                            percent(paced.seconds), static_cast<unsigned long long>(paced.designs),
+                            paced.seconds / std::max(still.seconds, 1.0e-9), same ? "sí" : "NO");
+                std::fflush(stdout);
+            }
+    }
+
+    const double realtimeSeconds = std::min(options.seconds, 2.0);
+    std::printf("\nTiempo real, al ritmo del reloj (%.1f s): %% de un núcleo del hilo de audio, su llamada más\n"
+                "lenta, y el hilo de control: diseños por segundo, lo que tarda uno y su %% de un núcleo.\n",
+                realtimeSeconds);
+    std::printf("%-7s %7s %6s  %8s %14s  %10s %10s %8s\n", "modo", "Hz", "bloque", "% audio", "más lenta, ms",
+                "diseños/s", "ms/diseño", "% ctrl");
+    for (const std::string& modeName : options.modes)
+    {
+        PhaseMode mode{};
+        if (!parseMode(modeName, mode))
+            continue;
+        for (const double rate : options.rates)
+            for (const int block : options.blocks)
+            {
+                double load = 0.0, slowest = 0.0, perSecond = 0.0;
+                realtimeModulated(mode, rate, block, realtimeSeconds, load, slowest, perSecond);
+                const double ms = mode == PhaseMode::Iir ? 0.0 : designMs(mode, rate, options.repeat);
+                std::printf("%-7s %7.0f %6d  %8.2f %14.3f  %10.1f %10.3f %8.1f\n", modeName.c_str(), rate, block,
+                            load, slowest, perSecond, ms, perSecond * ms / 10.0);
+                std::fflush(stdout);
+            }
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -1072,7 +1309,9 @@ int main(int argc, char** argv)
         std::fprintf(stderr, "Opciones no válidas. Ver la cabecera de tools/bench/main.cpp.\n");
         return 1;
     }
-    if (options.match)
+    if (options.modulation)
+        runModulation(options);
+    else if (options.match)
         runMatch(options);
     else if (options.spectral)
         runSpectral(options);
