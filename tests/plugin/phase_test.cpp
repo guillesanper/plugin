@@ -195,7 +195,8 @@ TEST_CASE("Fase: el hilo de control avisa solo del cambio de latencia")
 TEST_CASE("Fase: sin tiempo real el render no depende del hilo de diseno")
 {
     // Con una automatización que cambia la banda en mitad del render, dos
-    // renders dan exactamente lo mismo: cada FIR se diseña en su bloque.
+    // renders dan exactamente lo mismo: cada FIR se diseña en el bloque del
+    // cambio (los cambios están a más de un periodo de 10 ms).
     const auto input = noise(48000);
     std::vector<float> first;
     for (int run = 0; run < 2; ++run)
@@ -216,6 +217,75 @@ TEST_CASE("Fase: sin tiempo real el render no depende del hilo de diseno")
             first = out;
         else
             CHECK(out == first);
+    }
+}
+
+TEST_CASE("Fase: sin tiempo real, con una banda modulada en cada bloque, dos renders dan lo mismo")
+{
+    // Criterio de PLAN.md 5.9 (bloque 7.1): la ganancia de una banda modulada
+    // a 2 Hz, en cada modo de fase y con la compensación encendida. El FIR se
+    // diseña como mucho una vez por cada 10 ms de audio (o por bloque de la
+    // convolución), contado en muestras: no depende de la velocidad del render.
+    const auto input = noise(24000, 5u);
+    for (const float mode : {0.0f, 1.0f, 2.0f, 3.0f})
+    {
+        INFO("modo " << mode);
+        std::vector<float> first;
+        for (int run = 0; run < 2; ++run)
+        {
+            auto p = makeProcessor();
+            p->setNonRealtime(true);
+            bellAt1k(*p, 0.0f);
+            drag(*p, core::kPhaseMode, {mode});
+            drag(*p, core::kAutoGain, {1.0f});
+            prepare(*p);
+            auto& gain = p->parameter(core::bandParameter(0, core::BandParam::Gain));
+            const auto out = render(*p, input,
+                                    [&](int block)
+                                    {
+                                        // Como un automation clip: sin gestos.
+                                        const double t = block * kBlock / kRate;
+                                        const double db = 6.0 * std::sin(2.0 * std::numbers::pi * 2.0 * t);
+                                        gain.setValueNotifyingHost(gain.convertTo0to1(static_cast<float>(db)));
+                                    });
+            if (run == 0)
+                first = out;
+            else
+                CHECK(out == first);
+        }
+    }
+}
+
+TEST_CASE("Fase: sin tiempo real, los cambios espaciados suenan como al disenar en cada bloque")
+{
+    // Lo que no se mueve sin parar sale bit a bit como antes del bloque 7.1,
+    // cuando se diseñaba en cada bloque con cambios (lo que hace aquí
+    // flushControlThread() antes de cada bloque).
+    const auto input = noise(36000, 11u);
+    for (const float mode : {1.0f, 3.0f})
+    {
+        INFO("modo " << mode);
+        std::vector<float> outputs[2];
+        for (int eachBlock = 0; eachBlock < 2; ++eachBlock)
+        {
+            auto p = makeProcessor();
+            p->setNonRealtime(true);
+            bellAt1k(*p, 2.0f);
+            drag(*p, core::kPhaseMode, {mode});
+            drag(*p, core::kAutoGain, {1.0f});
+            prepare(*p);
+            outputs[eachBlock] =
+                render(*p, input,
+                       [&](int block)
+                       {
+                           if (eachBlock == 1)
+                               p->flushControlThread();
+                           if (block % 9 == 4)
+                               drag(*p, core::bandParameter(0, core::BandParam::Gain),
+                                    {static_cast<float>(block % 13) - 6.0f});
+                       });
+        }
+        CHECK(outputs[0] == outputs[1]);
     }
 }
 

@@ -4,7 +4,9 @@
 #include "esceq/dsp/auto_gain.h"
 #include "esceq/dsp/phase_equalizer.h"
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <condition_variable>
 #include <functional>
 #include <mutex>
@@ -55,17 +57,38 @@ public:
 
     /// Hace ya, en el hilo que llama, todo lo pendiente (y el aviso de
     /// latencia, si ha cambiado), y vuelve cuando está entregado. Para cuando
-    /// hace falta el resultado enseguida: al preparar el audio y al
-    /// renderizar sin tiempo real. Bloquea (espera al trabajo en
-    /// curso del hilo, si lo hay): nunca desde el hilo de audio en tiempo
-    /// real. Se puede llamar desde cualquier hilo.
+    /// hace falta el resultado enseguida, como al preparar el audio. Bloquea
+    /// (espera al trabajo en curso del hilo, si lo hay): nunca desde el hilo
+    /// de audio en tiempo real. Se puede llamar desde cualquier hilo. Después,
+    /// renderBlock() hace lo pendiente en el bloque siguiente.
     void flush();
+
+    /// Al renderizar sin tiempo real, antes de procesar cada bloque (en el
+    /// hilo de audio, con los ajustes del bloque ya entregados al ecualizador):
+    /// hace lo que flush(), pero como mucho una vez por periodo de audio,
+    /// contado en muestras. El periodo es kPeriod o, si es más largo, el
+    /// bloque de la convolución del modo pedido (un FIR nuevo no puede entrar
+    /// más a menudo). Si ha pasado un periodo desde lo último que hizo (o es el
+    /// primer bloque del render, o el primero tras flush()), lo pendiente se
+    /// hace ya; si no, en el primer bloque en que se cumpla. Mientras se
+    /// renderiza, el hilo propio no trabaja: el resultado depende solo de los
+    /// ajustes de cada bloque y de cómo se trocea el audio, no de lo rápido
+    /// que vaya. Bloquea como flush(). Ver docs/dsp/fase-lineal.md y la ADR 0028.
+    void renderBlock(int numSamples, double sampleRate);
+
+    /// En tiempo real, antes de procesar cada bloque: el hilo propio vuelve
+    /// a trabajar si se estaba renderizando. Seguro en tiempo real.
+    void realtimeBlock() noexcept ESCEQ_NONBLOCKING;
+
+    /// Cuántas veces ha hecho algo (diseñar y entregar, o calcular la
+    /// compensación), desde cualquier hilo. Para tests y esceq_bench.
+    std::uint64_t serviceCount() const noexcept { return serviceCount_.load(std::memory_order_relaxed); }
 
 private:
     void run();
     /// Diseña y calcula hasta que no quede nada, y avisa si ha cambiado la
-    /// latencia. Con serviceMutex_ tomado.
-    void serviceAll();
+    /// latencia. Con serviceMutex_ tomado. true si ha hecho algo.
+    bool serviceAll();
 
     dsp::PhaseEqualizer& equalizer_;
     dsp::AutoGain& autoGain_;
@@ -75,6 +98,12 @@ private:
     std::mutex wakeMutex_;
     std::condition_variable wake_;
     bool stopping_ = false; ///< Con wakeMutex_.
+    std::atomic<bool> rendering_{false}; ///< Se renderiza: el hilo propio no trabaja.
+    /// Muestras renderizadas desde lo último que hizo renderBlock()
+    /// (kDue: lo pendiente se hace en el bloque siguiente).
+    std::atomic<std::int64_t> samplesSinceService_{kDue};
+    std::atomic<std::uint64_t> serviceCount_{0};
+    static constexpr std::int64_t kDue = std::int64_t{1} << 40;
     std::thread thread_;
 };
 

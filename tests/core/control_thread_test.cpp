@@ -238,3 +238,134 @@ TEST_CASE("Hilo de control: el hilo propio avisa del cambio de latencia")
         std::this_thread::sleep_for(core::ControlThread::kPeriod);
     CHECK(notified.load() == expected);
 }
+
+namespace
+{
+
+/// Renderiza `numBlocks` bloques de `size` muestras sin tiempo real, como el
+/// plugin: los ajustes del bloque (la ganancia de la banda 0, que cambia en
+/// cada uno si `modulate`), renderBlock() y el audio. Devuelve la salida.
+std::vector<float> render(dsp::PhaseEqualizer& eq, core::ControlThread& designer, int numBlocks, int size,
+                          bool modulate)
+{
+    std::vector<float> out;
+    std::uint32_t seed = 3u;
+    std::vector<float> left(static_cast<std::size_t>(size)), right(static_cast<std::size_t>(size));
+    for (int block = 0; block < numBlocks; ++block)
+    {
+        if (modulate)
+            eq.setBand(0, bell(1000.0, 6.0 * std::sin(0.05 * block)));
+        designer.renderBlock(size, kFs);
+        for (std::size_t i = 0; i < left.size(); ++i)
+        {
+            seed = seed * 1664525u + 1013904223u;
+            left[i] = right[i] = 0.3f * (static_cast<float>(seed >> 8) / 8388608.0f - 1.0f);
+        }
+        float* channels[2] = {left.data(), right.data()};
+        eq.process(channels, 2, size);
+        out.insert(out.end(), left.begin(), left.end());
+    }
+    return out;
+}
+
+} // namespace
+
+TEST_CASE("Hilo de control: al renderizar disena como mucho una vez por periodo")
+{
+    // PLAN.md 5.9 (bloque 7.1): el periodo es kPeriod (480 muestras a 48 kHz)
+    // o el bloque de la convolución del modo, si es más largo.
+    struct Case
+    {
+        dsp::PhaseMode mode;
+        int period;
+    };
+    for (const auto [mode, period] : {Case{dsp::PhaseMode::LinearLow, 480}, Case{dsp::PhaseMode::LinearMedium, 512},
+                                      Case{dsp::PhaseMode::LinearHigh, 1024}})
+        for (const int size : {32, 64, 100, 256})
+        {
+            CAPTURE(static_cast<int>(mode), size);
+            dsp::PhaseEqualizer eq;
+            dsp::AutoGain autoGain;
+            eq.setBand(0, bell(1000.0, 3.0));
+            eq.setPhaseMode(mode);
+            eq.prepare(kFs);
+            core::ControlThread designer(eq, autoGain, core::ControlThread::Threading::Manual);
+            designer.flush();
+            eq.update();
+            const auto before = designer.serviceCount();
+
+            const int numBlocks = 48000 / size;
+            (void)render(eq, designer, numBlocks, size, true);
+            const auto services = designer.serviceCount() - before;
+            // Uno en el primer bloque y después uno en cuanto pasa un periodo
+            // entero: cada ceil(period / size) bloques.
+            const int every = (period + size - 1) / size;
+            CHECK(services == static_cast<std::uint64_t>((numBlocks + every - 1) / every));
+        }
+}
+
+TEST_CASE("Hilo de control: al renderizar, un cambio tras un periodo sin cambios se disena en su bloque")
+{
+    // Lo que no se mueve sin parar sale como al diseñar en cada bloque.
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    eq.setBand(0, bell(1000.0, 3.0));
+    eq.setPhaseMode(dsp::PhaseMode::LinearHigh);
+    eq.prepare(kFs);
+    core::ControlThread designer(eq, autoGain, core::ControlThread::Threading::Manual);
+    designer.flush();
+    eq.update();
+
+    for (int round = 0; round < 3; ++round)
+    {
+        (void)render(eq, designer, 4, 256, false); // 1024 muestras sin cambios
+        const auto before = designer.serviceCount();
+        eq.setBand(0, bell(1000.0, -2.0 - round));
+        designer.renderBlock(256, kFs);
+        CHECK(designer.serviceCount() == before + 1);
+    }
+    // Sin nada pendiente, no se cuenta nada.
+    const auto before = designer.serviceCount();
+    (void)render(eq, designer, 20, 256, false);
+    CHECK(designer.serviceCount() == before);
+}
+
+TEST_CASE("Hilo de control: al renderizar con el hilo propio, dos renders dan lo mismo")
+{
+    // Mientras se renderiza, el hilo propio no diseña: el resultado no
+    // depende de cuándo despierte.
+    std::vector<float> first;
+    for (int run = 0; run < 3; ++run)
+    {
+        dsp::PhaseEqualizer eq;
+        dsp::AutoGain autoGain;
+        eq.setBand(0, bell(1000.0, 3.0));
+        eq.setPhaseMode(dsp::PhaseMode::LinearMedium);
+        eq.prepare(kFs);
+        core::ControlThread designer(eq, autoGain);
+        designer.flush();
+        eq.update();
+        const auto out = render(eq, designer, 400, 96, true);
+        if (run == 0)
+            first = out;
+        else
+            CHECK(out == first);
+    }
+}
+
+TEST_CASE("Hilo de control: al volver al tiempo real, el hilo propio disena otra vez")
+{
+    dsp::PhaseEqualizer eq;
+    dsp::AutoGain autoGain;
+    eq.setBand(0, bell(1000.0, 3.0));
+    eq.setPhaseMode(dsp::PhaseMode::LinearLow);
+    eq.prepare(kFs);
+    core::ControlThread designer(eq, autoGain);
+    designer.flush();
+    eq.update();
+    (void)render(eq, designer, 10, 256, true);
+
+    designer.realtimeBlock();
+    eq.setBand(0, bell(2000.0, -6.0));
+    CHECK(processUntil(eq, [&] { return eq.isSettled(); }));
+}

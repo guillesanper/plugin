@@ -362,11 +362,15 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     preFifo_.writeMix(channels, numChannels, numSamples);
 
     pushParametersToEngine();
-    // Sin tiempo real (al renderizar), el FIR y la compensación de los ajustes
-    // de este bloque se calculan aquí mismo: el resultado no depende de lo
-    // rápido que vaya el render ni de lo que tarde el hilo de control.
+    // Sin tiempo real (al renderizar), el FIR y la compensación se calculan
+    // aquí mismo, como mucho una vez por cada 10 ms de audio (o por cada bloque
+    // de la convolución, si es más largo), contados en muestras: el resultado
+    // no depende de lo rápido que vaya el render ni del hilo de control, y una
+    // banda modulada no pide un diseño en cada bloque (ADR 0028).
     if (isNonRealtime())
-        control_.flush();
+        control_.renderBlock(numSamples, currentSampleRate());
+    else
+        control_.realtimeBlock();
     equalizer_.process(channels, numChannels, numSamples, sidechain, sidechainChannels);
 
     for (int band = 0; band < core::kNumBands; ++band)
