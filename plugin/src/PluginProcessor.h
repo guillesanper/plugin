@@ -74,6 +74,8 @@ public:
 
     /// Valores actuales de todos los parámetros.
     core::ParameterValues currentValues() const noexcept;
+    /// Valor actual de un parámetro (el de currentValues()). Cualquier hilo.
+    float currentValue(std::size_t index) const noexcept;
 
     /// Pone todos los parámetros a `values`, avisando al host. Cada parámetro
     /// que cambia va en su propio gesto, para que el host lo registre.
@@ -105,9 +107,11 @@ public:
     /// Lo que deshace el historial: los parámetros y el algoritmo actuales.
     core::EditState currentEditState() const noexcept;
 
-    /// Aplica una instantánea del historial: los parámetros con applyValues()
-    /// y el algoritmo con setFilterAlgorithm(). Hilo de mensajes.
-    void applyEditState(const core::EditState& state);
+    /// Aplica lo que devuelve el historial: cada parámetro de la acción a su
+    /// valor `after`, en su gesto si cambia (como applyValues()), y el
+    /// algoritmo con setFilterAlgorithm() si la acción lo cambia. Los demás
+    /// parámetros no se tocan. Hilo de mensajes.
+    void applyEdit(const core::EditAction& action);
 
     /// Deshacer y rehacer, y presets.
     EditHistory& history() noexcept { return *history_; }
@@ -189,6 +193,8 @@ private:
     /// Pasa los parámetros al ecualizador si han cambiado desde la última vez
     /// (o siempre, con `force`) y, con la compensación encendida, pide la suya.
     void pushParametersToEngine(bool force = false) noexcept;
+    /// Pone un parámetro a `value` (saneado) en su propio gesto, si cambia.
+    void setWithGesture(std::size_t index, float value);
     /// Compensación que se aplica ahora, en dB: la última calculada para lo
     /// pasado con la compensación encendida, o 0. Solo el hilo de audio.
     float autoGainDb() const noexcept;

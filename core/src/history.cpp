@@ -2,65 +2,106 @@
 #include "esceq/core/history.h"
 
 #include <algorithm>
+#include <utility>
 
 namespace esceq::core {
 
-namespace {
-
-/// Los valores se comparan ya saneados: dos estados que suenan igual son el mismo.
-EditState sanitized(EditState state) noexcept
+EditAction EditAction::inverse() const
 {
-    for (std::size_t i = 0; i < kNumParameters; ++i)
-        state.parameters[i] = sanitize(parameters()[i], state.parameters[i]);
-    return state;
+    EditAction result;
+    result.parameters.reserve(parameters.size());
+    for (const auto& change : parameters)
+        result.parameters.push_back({change.index, change.after, change.before});
+    result.algorithmBefore = algorithmAfter;
+    result.algorithmAfter = algorithmBefore;
+    return result;
 }
 
-} // namespace
+void PendingAction::touch(std::size_t index, float value) noexcept
+{
+    if (index >= kNumParameters || touched_[index])
+        return;
+    touched_[index] = true;
+    before_[index] = value;
+    any_ = true;
+}
+
+void PendingAction::touchAlgorithm(dsp::FilterAlgorithm current) noexcept
+{
+    if (!algorithmBefore_)
+        algorithmBefore_ = current;
+    any_ = true;
+}
+
+EditAction PendingAction::finish(const EditState& current)
+{
+    EditAction action;
+    for (std::size_t i = 0; i < kNumParameters; ++i)
+    {
+        if (!touched_[i])
+            continue;
+        // Saneados: dos valores que suenan igual son el mismo.
+        const float before = sanitize(parameters()[i], before_[i]);
+        const float after = sanitize(parameters()[i], current.parameters[i]);
+        if (before < after || before > after)
+            action.parameters.push_back({i, before, after});
+    }
+    if (algorithmBefore_ && *algorithmBefore_ != current.filterAlgorithm)
+    {
+        action.algorithmBefore = algorithmBefore_;
+        action.algorithmAfter = current.filterAlgorithm;
+    }
+    clear();
+    return action;
+}
+
+void PendingAction::clear() noexcept
+{
+    touched_.fill(false);
+    algorithmBefore_.reset();
+    any_ = false;
+}
 
 UndoHistory::UndoHistory(std::size_t capacity)
     : capacity_(std::max<std::size_t>(capacity, 1))
 {
-    states_.reserve(capacity_ + 1);
-    states_.push_back(EditState{});
 }
 
-void UndoHistory::reset(const EditState& current)
+void UndoHistory::clear()
 {
-    states_.clear();
-    states_.push_back(sanitized(current));
+    actions_.clear();
     index_ = 0;
 }
 
-bool UndoHistory::commit(const EditState& current)
+bool UndoHistory::commit(EditAction action)
 {
-    const EditState next = sanitized(current);
-    if (next == states_[index_])
+    if (action.empty())
         return false;
 
-    states_.resize(index_ + 1); // lo que se podía rehacer deja de existir
-    states_.push_back(next);
+    actions_.resize(index_); // lo que se podía rehacer deja de existir
+    actions_.push_back(std::move(action));
     ++index_;
 
-    if (states_.size() > capacity_ + 1)
+    if (actions_.size() > capacity_)
     {
-        states_.erase(states_.begin());
+        actions_.erase(actions_.begin());
         --index_;
     }
     return true;
 }
 
-std::optional<EditState> UndoHistory::undo()
+std::optional<EditAction> UndoHistory::undo()
 {
     if (!canUndo())
         return std::nullopt;
-    return states_[--index_];
+    return actions_[--index_].inverse();
 }
 
-std::optional<EditState> UndoHistory::redo()
+std::optional<EditAction> UndoHistory::redo()
 {
     if (!canRedo())
         return std::nullopt;
-    return states_[++index_];
+    return actions_[index_++];
 }
 
 } // namespace esceq::core

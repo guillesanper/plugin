@@ -155,6 +155,65 @@ TEST_CASE("Deshacer: los cambios del host (automatizacion) no crean acciones")
     CHECK_FALSE(p->history().canUndo());
 }
 
+namespace {
+
+/// Cuenta los gestos que el plugin abre en un parámetro (lo que el host podría
+/// grabar como un cambio del usuario).
+struct GestureCounter final : juce::AudioProcessorParameter::Listener
+{
+    void parameterValueChanged(int, float) override {}
+    void parameterGestureChanged(int, bool starting) override { count += starting ? 1 : 0; }
+    int count = 0;
+};
+
+/// El host mueve un parámetro sin gestos (un automation clip o un controlador de FL).
+void hostMoves(PluginProcessor& p, std::size_t index, float value)
+{
+    auto& parameter = p.parameter(index);
+    parameter.setValueNotifyingHost(parameter.convertTo0to1(value));
+}
+
+} // namespace
+
+TEST_CASE("Deshacer: con el host moviendo un parametro, deshacer y rehacer no lo tocan")
+{
+    // Criterio de PLAN.md 5.9 (bloque 7.1): deshacer por diferencias.
+    const auto band = core::bandParameter(1, core::BandParam::Gain);
+    const auto automated = core::bandParameter(2, core::BandParam::Gain);
+    auto p = makeProcessor();
+    GestureCounter gestures;
+    p->parameter(automated).addListener(&gestures);
+
+    hostMoves(*p, automated, 1.0f);
+    drag(*p, band, {2.0f, 4.0f});
+    hostMoves(*p, automated, 2.0f);
+    hostMoves(*p, core::kOutputGain, -3.0f);
+    settle();
+    drag(*p, core::kOutputGain, {-1.0f}); // el usuario toca también la salida
+    hostMoves(*p, automated, 3.0f);
+    settle();
+    REQUIRE(p->history().canUndo());
+
+    hostMoves(*p, automated, 4.0f);
+    p->history().undo();
+    CHECK(valueOf(*p, core::kOutputGain) == -3.0f); // lo de antes del gesto, aunque lo pusiera el host
+    CHECK(valueOf(*p, automated) == 4.0f);
+    p->history().undo();
+    CHECK(valueOf(*p, band) == 0.0f);
+    CHECK(valueOf(*p, automated) == 4.0f);
+    hostMoves(*p, automated, 5.0f);
+    p->history().redo();
+    CHECK(valueOf(*p, band) == 4.0f);
+    CHECK(valueOf(*p, automated) == 5.0f);
+    p->history().redo();
+    CHECK(valueOf(*p, core::kOutputGain) == -1.0f);
+    CHECK(valueOf(*p, automated) == 5.0f);
+    settle();
+    CHECK(gestures.count == 0); // ni un gesto en lo que mueve el host
+    CHECK_FALSE(p->history().canRedo());
+    p->parameter(automated).removeListener(&gestures);
+}
+
 TEST_CASE("Deshacer: cargar un estado desde el host borra el historial")
 {
     auto p = makeProcessor();
@@ -193,10 +252,12 @@ TEST_CASE("Deshacer: la automatizacion durante un deshacer no crea acciones ni b
     CHECK(valueOf(*p, core::bandParameter(1, core::BandParam::Gain)) == 0.0f);
     CHECK(valueOf(*p, core::bandParameter(2, core::BandParam::Gain)) == 0.0f);
     CHECK(valueOf(*p, core::bandParameter(3, core::BandParam::Gain)) == 0.0f);
+    CHECK(valueOf(*p, core::kOutputGain) == automated); // deshacer no la toca
     REQUIRE(p->history().canRedo());
 
     p->history().redo();
     CHECK(valueOf(*p, core::bandParameter(1, core::BandParam::Gain)) == 6.0f);
+    CHECK(valueOf(*p, core::kOutputGain) == automated);
 }
 
 TEST_CASE("Deshacer: un gesto abandonado no bloquea el historial")

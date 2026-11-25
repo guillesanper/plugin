@@ -8,7 +8,6 @@ namespace esceq {
 EditHistory::EditHistory(PluginProcessor& processor)
     : processor_(processor)
 {
-    history_.reset(processor_.currentEditState());
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
         processor_.parameter(i).addListener(this);
 }
@@ -49,6 +48,10 @@ void EditHistory::parameterGestureChanged(int parameterIndex, bool gestureIsStar
             return; // un principio repetido o un final sin principio no cambian nada
         open = gestureIsStarting;
         numOpenGestures_ += gestureIsStarting ? 1 : -1;
+        // El valor de antes del gesto: aún no ha cambiado.
+        if (gestureIsStarting)
+            pending_.touch(static_cast<std::size_t>(parameterIndex),
+                           processor_.currentValue(static_cast<std::size_t>(parameterIndex)));
         allClosed = numOpenGestures_ == 0;
     }
     if (allClosed)
@@ -80,7 +83,21 @@ void EditHistory::timerCallback()
     const juce::ScopedLock lock(lock_);
     if (numOpenGestures_ > 0)
         return; // hay un gesto en curso: se registrará cuando termine
-    history_.commit(processor_.currentEditState());
+    commitPending();
+}
+
+void EditHistory::commitPending()
+{
+    history_.commit(pending_.finish(processor_.currentEditState()));
+    for (std::size_t i = 0; i < core::kNumParameters; ++i)
+        if (openGestures_[i])
+            pending_.touch(i, processor_.currentValue(i));
+}
+
+void EditHistory::touchFilterAlgorithm()
+{
+    const juce::ScopedLock lock(lock_);
+    pending_.touchAlgorithm(processor_.filterAlgorithm());
 }
 
 void EditHistory::flushPending()
@@ -90,7 +107,7 @@ void EditHistory::flushPending()
     cancelPendingUpdate();
     stopTimer();
     const juce::ScopedLock lock(lock_);
-    history_.commit(processor_.currentEditState());
+    commitPending();
 }
 
 void EditHistory::commitNow()
@@ -98,38 +115,38 @@ void EditHistory::commitNow()
     cancelPendingUpdate();
     stopTimer();
     const juce::ScopedLock lock(lock_);
-    history_.commit(processor_.currentEditState());
+    commitPending();
 }
 
-void EditHistory::apply(const core::EditState& state)
+void EditHistory::apply(const core::EditAction& action)
 {
     applying_.store(true);
-    processor_.applyEditState(state);
+    processor_.applyEdit(action);
     applying_.store(false);
 }
 
 void EditHistory::undo()
 {
     flushPending();
-    std::optional<core::EditState> state;
+    std::optional<core::EditAction> action;
     {
         const juce::ScopedLock lock(lock_);
-        state = history_.undo();
+        action = history_.undo();
     }
-    if (state)
-        apply(*state);
+    if (action)
+        apply(*action);
 }
 
 void EditHistory::redo()
 {
     flushPending();
-    std::optional<core::EditState> state;
+    std::optional<core::EditAction> action;
     {
         const juce::ScopedLock lock(lock_);
-        state = history_.redo();
+        action = history_.redo();
     }
-    if (state)
-        apply(*state);
+    if (action)
+        apply(*action);
 }
 
 void EditHistory::reset()
@@ -139,7 +156,8 @@ void EditHistory::reset()
     const juce::ScopedLock lock(lock_);
     openGestures_.fill(false);
     numOpenGestures_ = 0;
-    history_.reset(processor_.currentEditState());
+    pending_.clear();
+    history_.clear();
 }
 
 } // namespace esceq

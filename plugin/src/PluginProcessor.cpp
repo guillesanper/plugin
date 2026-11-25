@@ -180,6 +180,11 @@ core::ParameterValues PluginProcessor::currentValues() const noexcept
     return values;
 }
 
+float PluginProcessor::currentValue(std::size_t index) const noexcept
+{
+    return index < core::kNumParameters ? raw_[index]->load(std::memory_order_relaxed) : 0.0f;
+}
+
 float PluginProcessor::dynamicGainDb(int band) const noexcept
 {
     if (band < 0 || band >= core::kNumBands)
@@ -187,18 +192,21 @@ float PluginProcessor::dynamicGainDb(int band) const noexcept
     return dynamicGains_[static_cast<std::size_t>(band)].load(std::memory_order_relaxed);
 }
 
+void PluginProcessor::setWithGesture(std::size_t index, float value)
+{
+    const float target = core::sanitize(core::parameters()[index], value);
+    const float now = raw_[index]->load(std::memory_order_relaxed);
+    if (!(target < now) && !(target > now))
+        return; // ya tiene ese valor
+    params_[index]->beginChangeGesture();
+    params_[index]->setValueNotifyingHost(params_[index]->convertTo0to1(target));
+    params_[index]->endChangeGesture();
+}
+
 void PluginProcessor::applyValues(const core::ParameterValues& values)
 {
     for (std::size_t i = 0; i < core::kNumParameters; ++i)
-    {
-        const float target = core::sanitize(core::parameters()[i], values[i]);
-        const float now = raw_[i]->load(std::memory_order_relaxed);
-        if (!(target < now) && !(target > now))
-            continue; // ya tiene ese valor
-        params_[i]->beginChangeGesture();
-        params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1(target));
-        params_[i]->endChangeGesture();
-    }
+        setWithGesture(i, values[i]);
 }
 
 void PluginProcessor::applyAction(const core::ParameterValues& values)
@@ -226,6 +234,7 @@ void PluginProcessor::changeFilterAlgorithm(dsp::FilterAlgorithm algorithm)
     // Lo que el usuario acaba de hacer (un arrastre que aún espera su
     // registro) es una acción aparte: deshacer el algoritmo no lo deshace.
     history_->flushPending();
+    history_->touchFilterAlgorithm();
     setFilterAlgorithm(algorithm);
     history_->commitNow();
 }
@@ -235,10 +244,13 @@ core::EditState PluginProcessor::currentEditState() const noexcept
     return {currentValues(), filterAlgorithm()};
 }
 
-void PluginProcessor::applyEditState(const core::EditState& state)
+void PluginProcessor::applyEdit(const core::EditAction& action)
 {
-    applyValues(state.parameters);
-    setFilterAlgorithm(state.filterAlgorithm);
+    for (const auto& change : action.parameters)
+        if (change.index < core::kNumParameters)
+            setWithGesture(change.index, change.after);
+    if (action.algorithmAfter)
+        setFilterAlgorithm(*action.algorithmAfter);
 }
 
 core::UiSettings PluginProcessor::uiSettings() const
