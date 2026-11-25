@@ -34,7 +34,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Elegir el canal de una banda | Selector ST / L / R / M / S del panel inferior, o clic derecho en el nodo |
 | Ajustar un potenciómetro | Arrastrar; Mayús para ajuste fino; rueda; doble clic o Ctrl/Cmd + clic para el valor por defecto |
 | Escribir un valor | Clic en el número bajo el potenciómetro ("1.2k", "-3", "350 Hz") |
-| Deshacer y rehacer | Flechas de la barra superior, o Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z. Un arrastre es una sola acción |
+| Deshacer y rehacer | Flechas de la barra superior, o Ctrl/Cmd+Z y Ctrl/Cmd+Mayús+Z. Un arrastre es una sola acción, y deshacer no toca lo que mueve la automatización (ver abajo) |
 | Cargar o guardar un preset | Nombre del preset en la barra superior; las flechas de los lados pasan al anterior o al siguiente |
 | Elegir el modo de fase | Desplegable de la barra superior (ver abajo); su ayuda dice la latencia |
 | Elegir la precisión en agudos | Botón de opciones (tres deslizadores) de la barra superior → *HF accuracy*: *Classic* o *Matched* (ver abajo). Se puede deshacer |
@@ -50,7 +50,7 @@ FL Studio carga el VST3 por defecto; el CLAP también funciona (FL Studio 2024.1
 | Cambiar el tamaño de la ventana | Botón de opciones → *Window size*: *Small*, *Medium* o *Large*; o arrastrar la esquina |
 | Teclado | Tabulador recorre los controles; flechas para cambiar el valor; en la curva, izquierda y derecha eligen banda |
 
-Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host.
+Tipos: campana, shelf de graves y de agudos, corte de graves y de agudos (6 a 96 dB/oct), notch, paso banda, paso todo y tilt. Todo es automatizable desde el host (ver *Automatizar y controlar desde FL Studio*, abajo).
 
 ### Modos de fase
 
@@ -130,6 +130,26 @@ Para dar color armónico, como una cinta o un previo empujados. Va después del 
 - ***Mix*** (0 a 100 %, 100 por defecto): la saturada frente a la limpia, sin filtro de peine.
 
 Contra el aliasing (los armónicos que pasarían de la mitad de la frecuencia de muestreo y volverían como ruido inarmónico) se trabaja sobremuestreada a unos 384 kHz. En IIR no añade latencia; en fase lineal añade 47 muestras (0,98 ms a 48 kHz; la ayuda del selector dice la de la frecuencia de muestreo actual), y encenderla o apagarla, también al automatizarla o al cargar un preset, deja un hueco corto, como cambiar el modo de fase. Con *Off*, *Drive* y *Mix* se atenúan: se pueden ajustar, pero no suenan hasta elegir *Soft* o *Warm*. Detalles en [docs/dsp/saturacion.md](docs/dsp/saturacion.md) y en la [ADR 0026](docs/decisiones/0026-saturacion.md); el cajón, en la [ADR 0027](docs/decisiones/0027-cajon-de-la-etapa-de-salida.md).
+
+### Automatizar y controlar desde FL Studio
+
+Los 391 parámetros son parámetros del host, con nombre legible ("Band 3 Gain", "Output Gain", "Phase Mode") y su valor en su unidad ("1.20 kHz", "-3.0 dB"), así que FL los automatiza como los de cualquier plugin. Estos pasos son los habituales de FL y **aún no se han comprobado con esceQ en FL Studio** (están en la lista de pruebas manuales):
+
+- **Automation clip:** mueve el control en esceQ y, en FL, *Tools → Last tweaked → Create automation clip*. También desde el navegador de parámetros del plugin (menú del envoltorio → *Browse parameters*). El clic derecho dentro de esceQ es de esceQ, no de FL.
+- ***Last tweaked*:** los controles de esceQ avisan al host al empezar y al terminar cada gesto, así que el último que mueves es el que ve FL.
+- **Link to controller, con el *Peak Controller*:** pon *Fruity Peak Controller* en la pista que debe mandar (un bombo, por ejemplo), mueve en esceQ el parámetro que quieres que siga (la ganancia de una banda) y, en FL, *Tools → Last tweaked → Link to controller…*, eligiendo el controlador del *Peak Controller*. Lo mismo con *Fruity Formula Controller*, *Fruity LFO* o un controlador MIDI. Cada enlace mueve un solo parámetro.
+
+**Deshacer y la automatización.** Deshacer y rehacer cambian solo los parámetros que tocaste tú en esa acción, y los devuelven al valor que tenían cuando empezaste a moverlos. Lo que mueve un automation clip o un controlador no entra en ninguna acción y se queda como lo deja el host, aunque deshagas mientras suena. Cargar un preset, el *Apply* de la igualación y cambiar la precisión en agudos son una acción cada uno. El Ctrl+Z de FL es su propio historial, no el de esceQ: si FL se queda la tecla, usa las flechas de la barra superior de esceQ.
+
+**Lo que no conviene automatizar**, porque cada cambio deja un hueco corto (la salida baja a silencio, cambia la latencia y vuelve a subir, en unos 20 ms más la latencia del modo nuevo):
+
+- el modo de fase;
+- *Spectral* cuando enciende la primera banda espectral o apaga la última (53 ms de latencia a 48 kHz);
+- la saturación en fase lineal al pasar de *Off* a *Soft* o *Warm*, o al revés (47 muestras de latencia). Entre *Soft* y *Warm*, y *Drive* y *Mix*, van con rampas de 20 ms, sin hueco.
+
+**Fase lineal y modulación.** Una banda que se mueve sin parar en fase lineal hace diseñar su filtro una y otra vez, como mucho cada 10 ms (cada FIR nuevo entra con un fundido, sin saltos). Con la ganancia de una banda modulada a 2 Hz, a 48 kHz, el hilo de control de la instancia ocupa en torno al 1,5 % de un núcleo en *Linear Low*, el 6,5 % en *Linear Medium* y del 17 al 22 % en *Linear High* (y el de audio, como mucho un 1,5 %). Al exportar, el filtro se diseña como mucho una vez por cada 10 ms de audio (o por cada bloque de la convolución, 21 ms en *Linear High*): exportar 60 s con esa banda modulada en *Linear High* tarda unos 10 s, frente a 18 a 35 s hasta la 0.5.0 (y 0,3 s sin modular). Dos exportaciones con el mismo búfer salen bit a bit iguales; frente a lo que suena en directo, la modulación es igual de suave, pero no tiene por qué ser idéntica muestra a muestra. Detalles en [docs/dsp/fase-lineal.md](docs/dsp/fase-lineal.md) y en la [ADR 0028](docs/decisiones/0028-automatizacion-macros-y-sidechain.md).
+
+El sidechain en FL tampoco está comprobado todavía (ver *Sidechain en FL Studio*, arriba).
 
 ## Compilar
 

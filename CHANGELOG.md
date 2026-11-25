@@ -4,6 +4,16 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## Sin publicar
 
+### Cambiado
+
+- **Deshacer y rehacer respetan la automatización.** Cada acción guarda solo los parámetros que tocaron tus gestos, con su valor de antes y de después (y el algoritmo de filtro, si cambia), y deshacer o rehacer cambian solo esos. Lo que mueve un automation clip o un controlador del host (en FL Studio, *Link to controller*, *Peak Controller*, *Fruity LFO*…) no entra en ninguna acción, y deshacer ya no lo devuelve a un valor antiguo ni abre gestos sobre él (el host podía grabarlo como un cambio tuyo). Siguen siendo una sola acción un arrastre, una ráfaga de rueda, añadir una banda, crear una desde un pico, el *Apply* de la igualación, cargar un preset (aparte del último cambio, como en la 0.5.0) y cambiar la precisión en agudos. Ver la [ADR 0028](docs/decisiones/0028-automatizacion-macros-y-sidechain.md).
+  *Compatibilidad:* no cambia el estado guardado, ni los parámetros, ni el sonido; el historial no se guarda con el proyecto.
+
+### Rendimiento
+
+- **Exportar con una banda modulada en fase lineal es mucho más rápido.** Al renderizar sin tiempo real, el filtro de fase lineal y la compensación automática se recalculan como mucho una vez por cada 10 ms de audio (o por cada bloque de la convolución, si es más largo: 21 ms en *Linear High* a 48 kHz), contados en muestras, y no en cada bloque con cambios. Con la ganancia de una banda modulada a 2 Hz, 60 s a 48 kHz en *Linear High* pasan de 34,9 a 9,6 s con bloques de 256 muestras, y de 18,2 a 9,8 s con bloques de 512; a 192 kHz, en *Linear High* y con bloques de 256, de 12,8 veces más lento que el tiempo real al 85 % del tiempo real. Sigue sin depender de lo rápido que vaya: dos exportaciones con los mismos bloques salen bit a bit iguales. Medidas en `esceq_bench --modulation` y en la ADR 0028.
+  *Compatibilidad:* un render sin automatización, o con cambios separados más de ese intervalo, sale bit a bit igual que con la 0.5.0. Con un parámetro moviéndose sin parar en fase lineal (o con la compensación automática), el render cambia algo: el filtro sigue a la modulación en pasos de 10 a 21 ms, como en directo, en vez de en cada bloque.
+
 ## [0.5.0] - 2026-11-24
 
 Primera versión pública. La 0.1.0 se cerró pero no llegó a publicarse: sus paquetes de macOS y Linux no habrían cargado en muchos sistemas (ver «Cambiado»). Esta versión trae todo lo de la 0.1.0 y lo que se detalla debajo.
