@@ -1,6 +1,6 @@
 # 0028. Integración con el host: deshacer por diferencias, macros que modulan sin escribir en los parámetros, y el sidechain con ganancia, filtro del detector propio y escucha
 
-**Estado:** Propuesta (noviembre de 2026), con la sección 5.9 del [plan](../../PLAN.md). El alcance lo ha decidido el usuario; cada bloque de la fase 7 la acepta en lo que le toca, con sus medidas. **Aceptadas las decisiones 1 y 2** con el bloque 7.1 (noviembre de 2026; la 2, con un cambio decidido con el usuario: ver la nota del final); el resto sigue propuesto.
+**Estado:** Propuesta (noviembre de 2026), con la sección 5.9 del [plan](../../PLAN.md). El alcance lo ha decidido el usuario; cada bloque de la fase 7 la acepta en lo que le toca, con sus medidas. **Aceptadas las decisiones 1 y 2** con el bloque 7.1 (noviembre de 2026; la 2, con un cambio decidido con el usuario: ver su nota) **y las 3 y 4** con el bloque 7.2 (noviembre de 2026; con el criterio de la profundidad corregido y los presets decididos con el usuario: ver su nota); el resto sigue propuesto.
 
 ## Contexto
 
@@ -31,7 +31,7 @@ El usuario quiere manejar esceQ desde FL Studio con automation clips y con sus c
 
 ## Consecuencias
 
-- 81 parámetros nuevos (472), todos al final y con un valor por defecto que no cambia el sonido, y el estado en la versión 4: los contratos de la 0.1.0 y la 0.5.0 se mantienen, y la versión que cierre la fase (0.6.0) añade el suyo.
+- 81 parámetros nuevos (472; con el 7.2, 399), todos al final y con un valor por defecto que no cambia el sonido, y el estado en la versión 4: los contratos de la 0.1.0 y la 0.5.0 se mantienen, y la versión que cierre la fase (0.6.0) añade el suyo.
 - El historial deja de ser una pila de instantáneas: hay que migrar sus tests, y la acción de *Apply* de la igualación y la carga de un preset pasan a ser diferencias de muchos parámetros.
 - El procesador aplica las macros al traducir los parámetros en cada bloque: sin asignaciones, no cuesta nada; con ellas, unos microsegundos, y la fase lineal rediseña al ritmo de la modulación.
 - Queda por comprobar con el usuario, en FL: el enrutado del sidechain (VST3 y CLAP, mono y estéreo), los controladores enlazados a un parámetro y a una macro, y qué ve *Last tweaked*.
@@ -69,3 +69,29 @@ Con el ritmo nuevo, ningún caso medido va más lento que el tiempo real (el peo
 
 En tiempo real (bloques al ritmo del reloj, 2 s, 48 kHz, bloques de 256 y 512), con la misma banda modulada, el hilo de control diseña unas 90 veces por segundo en *Low* y *Medium* y de 54 a 68 en *High* (cada diseño tarda más que el periodo), y ocupa un 1,5 %, un 6,5 % y del 17 al 22 % de un núcleo; el hilo de audio, del 0,1 % (IIR) al 1,5 % (*High*), con la llamada más lenta por debajo de 0,75 ms. Eso no cambia con este bloque; está en el README (*Automatizar y controlar desde FL Studio*), con lo que no conviene automatizar.
 
+
+## Nota del bloque 7.2 (noviembre de 2026): las macros, sin ventana
+
+**Ocho macros que modulan sin escribir (decisión 3), hecha como se propuso.** `macro_1` a `macro_8` ("Macro 1"…, de 0 a 100 %, 0 por defecto) van al final de la tabla (índices 391 a 398: 399 parámetros). `core/macros.h` guarda las asignaciones en `MacroAssignments`: 8 huecos por macro, cada uno con su destino y su profundidad en % (de −100 a +100), de tamaño fijo (768 bytes) para copiarse sin asignar; un destino aparece como mucho una vez en cada macro, y en varias se suma. `isMacroTarget()` es la lista de la sección 5.9 (195 destinos: frecuencia, ganancia y Q de las 24 bandas; umbral, rango, ataque, relajación y rodilla de su dinámica; drive y mezcla de la saturación; ganancia de salida). `applyMacros()`, segura en tiempo real (`ESCEQ_NONBLOCKING`, pasa `rtsan`), suma para cada destino valor de la macro × profundidad en la posición 0..1 del host, limita a 0..1 y vuelve al valor con `fromNormalized()`: el valor que suena es exactamente el que el host daría en esa posición, así que una macro suena bit a bit como un automation clip que pusiera el parámetro en lo que suena (`tests/plugin/macros_test.cpp`, también en fase lineal al renderizar, donde la modulación llega al diseño al ritmo del control del 7.1). Un destino con la modulación en 0 (sus macros en 0, o profundidades que se anulan) se queda bit a bit como estaba.
+
+En el procesador, las asignaciones viven en el hilo de mensajes con su cerrojo y llegan al de audio por un `dsp::TripleBuffer`; `pushParametersToEngine()` las mira una vez por bloque y, si hay alguna, modula los valores antes de traducirlos (también la ganancia de salida, que antes se leía del parámetro). El valor de los parámetros no cambia. Sin asignaciones, `applyMacros()` ni se llama: un proyecto o preset anterior suena bit a bit igual (los contratos de la 0.1 y la 0.5 pasan sin cambios). `soundingValues()` da lo que suena, para la interfaz del 7.3.
+
+**El criterio de la profundidad, corregido** (decidido con el usuario). El plan pedía que una macro al 100 % con +50 % llevara una ganancia de −12 a 0 dB, pero la ganancia va de −30 a +30 dB y la regla (sumar en la posición del potenciómetro) da +18 dB. Se queda la regla, y el criterio pasa a ser: **al 100 %, +20 % lleva una ganancia de −12 a 0 dB, y +50 %, de −30 a 0 dB.**
+
+Medido con `esceq_bench --macros` (Release, 4 núcleos; µs por llamada a `applyMacros`, con las ocho macros moviéndose):
+
+| Destinos | GCC | Clang |
+|---|---|---|
+| 1 | 0,30 | 0,16 |
+| 8 | 1,87 | 1,10 |
+| 64 (todas las macros llenas) | 19,4 | 15,9 |
+
+Solo se paga en los bloques en los que cambia algún parámetro (una macro moviéndose, por ejemplo). Casi todo se va en el redondeo de `fromNormalized()` (hasta siete intentos, con `pow` y `log` en las frecuencias); es lo que hace que la modulación sea equivalente a la automatización, así que se deja. Con 64 destinos y bloques de 256 muestras a 48 kHz es un 0,4 % de un núcleo.
+
+**Las asignaciones, en el estado versión 4 (decisión 4), hecha como se propuso.** Tras `filter_algorithm`, una línea por hueco ocupado, `macro.N.M <id del destino> <profundidad en %>` (N la macro y M el hueco, de 1 a 8), escrita con la precisión de los parámetros, así que un estado v4 se vuelve a escribir idéntico (`tests/fixtures/state/v4_macros.txt`; los fixtures antiguos no se tocan). `migrate3to4` descarta las líneas `macro.*` de un estado que dice ser anterior: los v1 a v3 cargan sin asignaciones, y un v3 (o el proyecto de la 0.5) se vuelve a escribir igual salvo la cabecera y las líneas de los parámetros nuevos. Una asignación que no se entiende (macro o hueco que no existen, destino desconocido o que no se modula, profundidad ilegible, destino repetido en la misma macro) se descarta sola; la profundidad se limita a ±100 %. Lo que ve una versión anterior se comprobó con el código de la 0.5.0 (compilado en un worktree): lee el fixture v4 con sus 391 parámetros idénticos, el algoritmo y las preferencias, e ignora `macro_N` y `macro.*`.
+
+**Presets** (decidido con el usuario): los de usuario guardan las asignaciones (y los valores de las macros, que son parámetros); los de fábrica no llevan ninguna. **Cargar un preset sustituye siempre las asignaciones por las suyas**, también si no trae ninguna (los de fábrica, los anteriores a la versión 4, y volver a los valores por defecto): unas asignaciones que sobrevivieran moverían bandas que el preset usa para otra cosa. Contrapartida: un controlador de FL enlazado a una macro deja de mover nada al cargar un preset de fábrica. Un preset cuenta como modificado también si cambian las asignaciones.
+
+**Deshacer:** `core::EditAction` lleva las asignaciones de antes y de después si cambian (enteras: son de tamaño fijo), `PendingAction::touchMacros()` guarda las de antes del primer cambio, y `PluginProcessor::changeMacroAssignments()` (lo que usará la interfaz del 7.3) es una acción propia, como el algoritmo. Cargar un preset cambia parámetros y asignaciones en la misma acción. Mover una macro desde el host no es una acción.
+
+Sin interfaz, las asignaciones solo vienen de un proyecto o un preset que las lleve: la sección 12c de la lista de pruebas en FL usa un preset escrito a mano. La interfaz (dónde van las macros, *Link to Macro*, el anillo de modulación y la curva con lo que suena) es el bloque 7.3.

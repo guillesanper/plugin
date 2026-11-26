@@ -4,7 +4,15 @@ Formato basado en [Keep a Changelog](https://keepachangelog.com/es-ES/1.1.0/). E
 
 ## Sin publicar
 
+### Añadido
+
+- **Ocho macros, Macro 1 a Macro 8** (de 0 a 100 %, en 0 por defecto), como parámetros del host: un automation clip o un controlador de FL Studio (*Link to controller*, *Peak Controller*…) enlazado a una macro mueve a la vez todos sus destinos. Cada macro mueve hasta 8 destinos, con una profundidad de −100 a +100 %: la frecuencia, la ganancia y el Q de una banda; el umbral, el rango, el ataque, la relajación y la rodilla de su dinámica; el drive y la mezcla de la saturación; y la ganancia de salida. La modulación se suma en el recorrido del potenciómetro (con la macro al 100 %, +20 % mueve una ganancia 12 dB, y una frecuencia, las mismas octavas en graves que en agudos) y se limita a su rango. **El valor del parámetro no cambia**: el host sigue viendo y automatizando el suyo, y una macro y un automation clip sobre el mismo destino se suman. Cambiar una asignación se deshace; mover una macro desde el host, no. Los presets de usuario guardan las asignaciones (y los valores de las macros); cargar un preset cambia las asignaciones por las suyas, y uno de fábrica, o uno guardado antes de esta versión, las quita. **Aún no hay interfaz para asignarlas** (llega en la siguiente entrega): por ahora solo vienen de un proyecto o un preset que las lleve. Ver la [ADR 0028](docs/decisiones/0028-automatizacion-macros-y-sidechain.md).
+  *Compatibilidad:* sin asignaciones, las macros no suenan en ningún valor: un proyecto o un preset anterior suena bit a bit igual. Los parámetros nuevos van al final (399 en total), así que la automatización guardada de los demás no cambia.
+
 ### Cambiado
+
+- **El estado guardado pasa a la versión 4**, con las asignaciones de las macros (líneas `macro.N.M`).
+  *Compatibilidad:* los proyectos y presets de la 0.5.0 (versión 3) abren igual, sin asignaciones. Un proyecto guardado con esta versión se abre en la 0.5.0 con todos sus parámetros, sin las macros (las ignora, y lo que movían suena en su valor de base).
 
 - **Deshacer y rehacer respetan la automatización.** Cada acción guarda solo los parámetros que tocaron tus gestos, con su valor de antes y de después (y el algoritmo de filtro, si cambia), y deshacer o rehacer cambian solo esos. Lo que mueve un automation clip o un controlador del host (en FL Studio, *Link to controller*, *Peak Controller*, *Fruity LFO*…) no entra en ninguna acción, y deshacer ya no lo devuelve a un valor antiguo ni abre gestos sobre él (el host podía grabarlo como un cambio tuyo). Siguen siendo una sola acción un arrastre, una ráfaga de rueda, añadir una banda, crear una desde un pico, el *Apply* de la igualación, cargar un preset (aparte del último cambio, como en la 0.5.0) y cambiar la precisión en agudos. Ver la [ADR 0028](docs/decisiones/0028-automatizacion-macros-y-sidechain.md).
   *Compatibilidad:* no cambia el estado guardado, ni los parámetros, ni el sonido; el historial no se guarda con el proyecto.
