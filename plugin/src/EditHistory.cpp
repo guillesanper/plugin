@@ -100,6 +100,12 @@ void EditHistory::touchFilterAlgorithm()
     pending_.touchAlgorithm(processor_.filterAlgorithm());
 }
 
+void EditHistory::touchMacroAssignments()
+{
+    const juce::ScopedLock lock(lock_);
+    pending_.touchMacros(processor_.macroAssignments());
+}
+
 void EditHistory::flushPending()
 {
     if (!isTimerRunning() && !isUpdatePending())

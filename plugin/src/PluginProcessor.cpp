@@ -239,9 +239,47 @@ void PluginProcessor::changeFilterAlgorithm(dsp::FilterAlgorithm algorithm)
     history_->commitNow();
 }
 
-core::EditState PluginProcessor::currentEditState() const noexcept
+core::MacroAssignments PluginProcessor::macroAssignments() const
 {
-    return {currentValues(), filterAlgorithm()};
+    const juce::ScopedLock lock(macrosLock_);
+    return macros_;
+}
+
+void PluginProcessor::setMacroAssignments(const core::MacroAssignments& macros)
+{
+    {
+        const juce::ScopedLock lock(macrosLock_);
+        if (macros == macros_)
+            return;
+        macros_ = macros;
+        macroBuffer_.publish(macros_);
+    }
+    // No son parámetros: como con el algoritmo, el host no sabría que el
+    // proyecto ha cambiado.
+    updateHostDisplay(ChangeDetails().withNonParameterStateChanged(true));
+}
+
+void PluginProcessor::changeMacroAssignments(const core::MacroAssignments& macros)
+{
+    if (macros == macroAssignments())
+        return;
+    // Como changeFilterAlgorithm(): lo anterior es una acción aparte.
+    history_->flushPending();
+    history_->touchMacroAssignments();
+    setMacroAssignments(macros);
+    history_->commitNow();
+}
+
+core::ParameterValues PluginProcessor::soundingValues() const
+{
+    auto values = currentValues();
+    core::applyMacros(macroAssignments(), values);
+    return values;
+}
+
+core::EditState PluginProcessor::currentEditState() const
+{
+    return {currentValues(), filterAlgorithm(), macroAssignments()};
 }
 
 void PluginProcessor::applyEdit(const core::EditAction& action)
@@ -251,6 +289,8 @@ void PluginProcessor::applyEdit(const core::EditAction& action)
             setWithGesture(change.index, change.after);
     if (action.algorithmAfter)
         setFilterAlgorithm(*action.algorithmAfter);
+    if (action.macrosAfter)
+        setMacroAssignments(*action.macrosAfter);
 }
 
 core::UiSettings PluginProcessor::uiSettings() const
@@ -283,12 +323,27 @@ void PluginProcessor::pushParametersToEngine(bool force) noexcept
     // Traducir los parámetros cuesta unos 2 µs: con bloques muy pequeños (FL
     // Studio los entrega a veces de pocas muestras) se nota. Si no ha cambiado
     // ninguno, el ecualizador ya tiene sus ajustes.
-    const auto values = currentValues();
+    auto values = currentValues();
     const auto algorithm = filterAlgorithm();
-    if (!force && values == pushedValues_ && algorithm == pushedAlgorithm_)
+    // Las asignaciones de las macros, si han cambiado (ADR 0028). Sin
+    // asignaciones, solo esta lectura de un atómico.
+    bool macrosChanged = false;
+    if (const auto* fresh = macroBuffer_.read())
+    {
+        audioMacros_ = *fresh;
+        audioMacrosActive_ = !fresh->empty();
+        macrosChanged = true;
+    }
+    if (!force && !macrosChanged && values == pushedValues_ && algorithm == pushedAlgorithm_)
         return;
     pushedValues_ = values;
     pushedAlgorithm_ = algorithm;
+    // Lo que suena es el valor de cada parámetro más la modulación de las
+    // macros; el del host no cambia. Solo depende de los valores y las
+    // asignaciones, así que lo de arriba sigue valiendo para saber si cambia.
+    if (audioMacrosActive_)
+        core::applyMacros(audioMacros_, values);
+    outputGainDb_ = values[core::kOutputGain];
     const auto bands = core::allBandSettings(values, algorithm);
     for (int band = 0; band < core::kNumBands; ++band)
         equalizer_.setBand(band, bands[static_cast<std::size_t>(band)]);
@@ -331,7 +386,7 @@ void PluginProcessor::prepareToPlay(double sampleRate, int)
 
     const bool bypassed = raw_[core::kBypass]->load() >= 0.5f;
     outputGain_.prepare(sampleRate, kGainRampSeconds);
-    outputGain_.reset(bypassed ? 1.0f : dsp::dbToGain(raw_[core::kOutputGain]->load() + autoGainDb()));
+    outputGain_.reset(bypassed ? 1.0f : dsp::dbToGain(outputGainDb_ + autoGainDb()));
 }
 
 void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&)
@@ -382,7 +437,8 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
     const bool bypassed = raw_[core::kBypass]->load(std::memory_order_relaxed) >= 0.5f;
     // La compensación se suma a la ganancia de salida; con bypass, ninguna de
     // las dos. Apagada, o con la curva plana, suma exactamente 0.
-    const float gainDb = raw_[core::kOutputGain]->load(std::memory_order_relaxed) + autoGainDb();
+    // La que suena: la del parámetro con la modulación de las macros.
+    const float gainDb = outputGainDb_ + autoGainDb();
     outputGain_.setTarget(bypassed ? 1.0f : dsp::dbToGain(gainDb));
     outputGain_.process(channels, numChannels, numSamples);
 
@@ -407,10 +463,12 @@ void PluginProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiB
 
 // El estado se guarda en el formato propio de core, no en el de JUCE:
 // así sigue siendo legible aunque cambie el framework. Lleva los parámetros,
-// el algoritmo de filtro y las preferencias de la interfaz.
+// el algoritmo de filtro, las asignaciones de las macros y las preferencias
+// de la interfaz.
 void PluginProcessor::getStateInformation(juce::MemoryBlock& destData)
 {
-    const std::string text = core::serializePluginState({currentValues(), filterAlgorithm(), uiSettings()});
+    const std::string text =
+        core::serializePluginState({currentValues(), filterAlgorithm(), uiSettings(), macroAssignments()});
     destData.replaceAll(text.data(), text.size());
 }
 
@@ -428,6 +486,14 @@ void PluginProcessor::setStateInformation(const void* data, int sizeInBytes)
         params_[i]->setValueNotifyingHost(params_[i]->convertTo0to1(state->parameters[i]));
     // Sin avisar al host: es el estado que acaba de darnos.
     filterAlgorithm_.store(state->filterAlgorithm, std::memory_order_relaxed);
+    {
+        const juce::ScopedLock lock(macrosLock_);
+        if (!(state->macros == macros_))
+        {
+            macros_ = state->macros;
+            macroBuffer_.publish(macros_);
+        }
+    }
 
     setUiSettings(state->ui);
     // Lo que había antes de cargar ya no se puede deshacer.

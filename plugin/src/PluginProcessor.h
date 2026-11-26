@@ -5,6 +5,7 @@
 #include "PresetManager.h"
 
 #include "esceq/core/history.h"
+#include "esceq/core/macros.h"
 #include "esceq/core/parameters.h"
 #include "esceq/core/control_thread.h"
 #include "esceq/core/match.h"
@@ -13,6 +14,7 @@
 #include "esceq/core/state.h"
 #include "esceq/dsp/auto_gain.h"
 #include "esceq/dsp/gain_ramp.h"
+#include "esceq/dsp/handoff.h"
 #include "esceq/dsp/phase_equalizer.h"
 #include "esceq/dsp/spsc_fifo.h"
 
@@ -104,13 +106,34 @@ public:
     /// cambia como una acción propia, que se puede deshacer. Hilo de mensajes.
     void changeFilterAlgorithm(dsp::FilterAlgorithm algorithm);
 
-    /// Lo que deshace el historial: los parámetros y el algoritmo actuales.
-    core::EditState currentEditState() const noexcept;
+    /// Asignaciones de las macros (core/macros.h, ADR 0028). No son
+    /// parámetros: se guardan en el estado (versión 4) y en los presets de
+    /// usuario. Una instancia nueva no tiene ninguna. Cualquier hilo.
+    core::MacroAssignments macroAssignments() const;
+
+    /// Cambia las asignaciones y, si cambian, avisa al host de que el estado ha
+    /// cambiado. El audio las usa desde el bloque siguiente. No crea una
+    /// acción de deshacer: para eso, changeMacroAssignments(). Hilo de mensajes.
+    void setMacroAssignments(const core::MacroAssignments& macros);
+
+    /// Lo que hará el usuario al asignar o quitar un destino en la interfaz:
+    /// las cambia como una acción propia, que se puede deshacer. Hilo de mensajes.
+    void changeMacroAssignments(const core::MacroAssignments& macros);
+
+    /// Lo que suena: los valores de los parámetros con la modulación de las
+    /// macros (core::applyMacros()). Los del host (currentValues()) no
+    /// cambian. Hilo de mensajes.
+    core::ParameterValues soundingValues() const;
+
+    /// Lo que deshace el historial: los parámetros, el algoritmo y las
+    /// asignaciones de las macros actuales.
+    core::EditState currentEditState() const;
 
     /// Aplica lo que devuelve el historial: cada parámetro de la acción a su
     /// valor `after`, en su gesto si cambia (como applyValues()), y el
-    /// algoritmo con setFilterAlgorithm() si la acción lo cambia. Los demás
-    /// parámetros no se tocan. Hilo de mensajes.
+    /// algoritmo y las asignaciones (setFilterAlgorithm() y
+    /// setMacroAssignments()) si la acción los cambia. Los demás parámetros no
+    /// se tocan. Hilo de mensajes.
     void applyEdit(const core::EditAction& action);
 
     /// Deshacer y rehacer, y presets.
@@ -225,12 +248,22 @@ private:
     /// autoGain_ y latencyReporter_ para destruirse antes.
     core::ControlThread control_{equalizer_, autoGain_, core::ControlThread::Threading::Background,
                                  [this](int) { latencyReporter_.triggerAsyncUpdate(); }};
-    core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador. Solo el hilo de audio.
+    core::ParameterValues pushedValues_{}; ///< Lo último que se pasó al ecualizador, sin modular. Solo audio.
     dsp::FilterAlgorithm pushedAlgorithm_ = core::kNewInstanceFilterAlgorithm; ///< Ídem.
     bool autoGainPushed_ = false; ///< Con la compensación encendida en lo último pasado. Ídem.
     int engineChannels_ = 2;      ///< Canales con los que se preparó el ecualizador. Ídem.
     std::atomic<dsp::FilterAlgorithm> filterAlgorithm_{core::kNewInstanceFilterAlgorithm};
     static_assert(std::atomic<dsp::FilterAlgorithm>::is_always_lock_free);
+
+    /// Asignaciones de las macros: la copia del hilo de mensajes, con su
+    /// cerrojo (que también hace de un solo escritor a macroBuffer_), y la del
+    /// hilo de audio, que llega por macroBuffer_ sin bloqueos.
+    core::MacroAssignments macros_;
+    mutable juce::CriticalSection macrosLock_;
+    dsp::TripleBuffer<core::MacroAssignments> macroBuffer_;
+    core::MacroAssignments audioMacros_;    ///< Solo el hilo de audio.
+    bool audioMacrosActive_ = false;        ///< audioMacros_ tiene algún destino. Ídem.
+    float outputGainDb_ = 0.0f;             ///< La ganancia de salida que suena (modulada). Ídem.
     dsp::GainRamp outputGain_;
     dsp::SpscFifo preFifo_{1 << 15};
     dsp::SpscFifo postFifo_{1 << 15};

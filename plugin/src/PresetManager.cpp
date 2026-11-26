@@ -62,15 +62,34 @@ std::vector<PresetManager::Entry> PresetManager::presets() const
     return entries;
 }
 
-std::optional<core::ParameterValues> PresetManager::read(const Entry& entry) const
+std::optional<core::PresetContents> PresetManager::read(const Entry& entry) const
 {
     if (entry.factory)
-        return core::loadFactoryPreset(entry.name.toStdString());
+    {
+        for (const auto& preset : core::factoryPresets())
+            if (preset.name == entry.name.toStdString())
+                return core::deserializePreset(preset.state);
+        return std::nullopt;
+    }
 
     const auto file = fileFor(entry.name);
     if (!file || !file->existsAsFile())
         return std::nullopt;
-    return core::deserializeState(file->loadFileAsString().toStdString());
+    return core::deserializePreset(file->loadFileAsString().toStdString());
+}
+
+void PresetManager::apply(const core::PresetContents& contents)
+{
+    // Lo que el usuario acaba de hacer (un gesto que aún espera su registro)
+    // es una acción aparte: deshacer la carga no lo deshace.
+    processor_.history().flushPending();
+    processor_.history().touchMacroAssignments();
+    // El modo de fase y la compensación no son parte del preset
+    // (core::kParametersOutsidePresets). Las asignaciones, sí, siempre: un
+    // preset sin ninguna las quita (ADR 0028).
+    processor_.applyValues(core::applyPreset(contents.parameters, processor_.currentValues()));
+    processor_.setMacroAssignments(contents.macros);
+    processor_.history().commitNow();
 }
 
 void PresetManager::setCurrent(const juce::String& name)
@@ -82,20 +101,14 @@ void PresetManager::setCurrent(const juce::String& name)
 
 bool PresetManager::load(const Entry& entry)
 {
-    const auto values = read(entry);
-    if (!values)
+    const auto contents = read(entry);
+    if (!contents)
         return false;
 
-    // Lo que el usuario acaba de hacer (un gesto que aún espera su registro)
-    // es una acción aparte: deshacer la carga no lo deshace.
-    processor_.history().flushPending();
-    // El modo de fase y la compensación no son parte del preset
-    // (core::kParametersOutsidePresets).
-    processor_.applyValues(core::applyPreset(*values, processor_.currentValues()));
-    cachedName_ = entry.name;
-    cachedValues_ = processor_.currentValues();
     setCurrent(entry.name);
-    processor_.history().commitNow();
+    apply(*contents);
+    cachedName_ = entry.name;
+    cachedValues_ = core::PresetContents{processor_.currentValues(), processor_.macroAssignments()};
     return true;
 }
 
@@ -116,12 +129,10 @@ void PresetManager::step(int direction)
 
 void PresetManager::loadDefault()
 {
-    processor_.history().flushPending(); // Como en load().
-    processor_.applyValues(core::applyPreset(core::defaultValues(), processor_.currentValues()));
+    setCurrent({});
+    apply(core::PresetContents{});
     cachedName_.clear();
     cachedValues_.reset();
-    setCurrent({});
-    processor_.history().commitNow();
 }
 
 bool PresetManager::saveUser(const juce::String& name)
@@ -134,13 +145,14 @@ bool PresetManager::saveUser(const juce::String& name)
     if (!directory.isDirectory() && directory.createDirectory().failed())
         return false;
 
-    const auto values = processor_.currentValues();
+    const core::PresetContents contents{processor_.currentValues(), processor_.macroAssignments()};
     const auto file = fileFor(clean);
-    if (!file || !file->replaceWithText(toJuce(core::serializePreset(values)), false, false, "\n"))
+    if (!file ||
+        !file->replaceWithText(toJuce(core::serializePreset(contents.parameters, contents.macros)), false, false, "\n"))
         return false;
 
     cachedName_ = clean;
-    cachedValues_ = values;
+    cachedValues_ = contents;
     setCurrent(clean);
     return true;
 }
@@ -199,12 +211,12 @@ bool PresetManager::isModified() const
     // preset a estos efectos, ni el modo de fase y la compensación, que ni
     // siquiera se guardan en él: tocarlos no lo marca como modificado.
     auto a = processor_.currentValues();
-    auto b = *cachedValues_;
+    auto b = cachedValues_->parameters;
     for (const auto index : {core::kBypass, core::kOutputGain})
         a[index] = b[index];
     for (const auto index : core::kParametersOutsidePresets)
         a[index] = b[index];
-    return a != b;
+    return a != b || !(processor_.macroAssignments() == cachedValues_->macros);
 }
 
 } // namespace esceq

@@ -2,6 +2,7 @@
 #pragma once
 
 #include "esceq/core/parameters.h"
+#include "esceq/core/presets.h"
 
 #include <juce_core/juce_core.h>
 
@@ -14,7 +15,9 @@ class PluginProcessor;
 
 /// Presets de fábrica (los de core::factoryPresets()) y de usuario (archivos
 /// en una carpeta del sistema). Un preset es un estado de esceQ con solo
-/// parámetros; cargarlo es una acción que se puede deshacer.
+/// parámetros y las asignaciones de las macros (los de fábrica no llevan
+/// ninguna); cargarlo sustituye las asignaciones por las suyas, y es una
+/// acción que se puede deshacer.
 ///
 /// Carpeta de los presets de usuario:
 ///  - Windows: %APPDATA%\esceQ\Presets
@@ -47,11 +50,13 @@ public:
     /// Carga el anterior (-1) o el siguiente (+1) de la lista, dando la vuelta.
     void step(int direction);
 
-    /// Vuelve todos los parámetros a su valor por defecto.
+    /// Vuelve todos los parámetros a su valor por defecto y quita las
+    /// asignaciones de las macros.
     void loadDefault();
 
-    /// Guarda los parámetros actuales como preset de usuario. Devuelve false
-    /// si el nombre no sirve o no se puede escribir el archivo.
+    /// Guarda los parámetros actuales y las asignaciones de las macros como
+    /// preset de usuario. Devuelve false si el nombre no sirve o no se puede
+    /// escribir el archivo.
     bool saveUser(const juce::String& name);
     bool userPresetExists(const juce::String& name) const;
     bool deleteUser(const juce::String& name);
@@ -59,7 +64,7 @@ public:
     /// Preset cargado (según el nombre guardado en el estado), si lo hay.
     std::optional<Entry> current() const;
 
-    /// true si los parámetros ya no son los del preset cargado.
+    /// true si los parámetros o las asignaciones ya no son los del preset cargado.
     bool isModified() const;
 
 private:
@@ -67,15 +72,18 @@ private:
     /// preset válido. El nombre puede venir de un estado guardado (ui.preset):
     /// uno con rutas ("../x", "/x") o caracteres reservados nunca llega al disco.
     static std::optional<juce::File> fileFor(const juce::String& name);
-    std::optional<core::ParameterValues> read(const Entry& entry) const;
+    std::optional<core::PresetContents> read(const Entry& entry) const;
+    /// Carga `contents` como una acción: los parámetros (salvo
+    /// core::kParametersOutsidePresets) y las asignaciones.
+    void apply(const core::PresetContents& contents);
     void setCurrent(const juce::String& name);
 
     PluginProcessor& processor_;
 
-    // Valores del preset cargado, para saber si se ha modificado. Se leen
-    // del archivo la primera vez que hacen falta (tras cargar un proyecto).
+    // Lo que tiene el preset cargado, para saber si se ha modificado. Se lee
+    // del archivo la primera vez que hace falta (tras cargar un proyecto).
     mutable juce::String cachedName_;
-    mutable std::optional<core::ParameterValues> cachedValues_;
+    mutable std::optional<core::PresetContents> cachedValues_;
 };
 
 } // namespace esceq

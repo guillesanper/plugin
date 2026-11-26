@@ -13,8 +13,8 @@ namespace esceq {
 class PluginProcessor;
 
 /// Deshacer y rehacer dentro del plugin, con las acciones agrupadas por gesto.
-/// Deshace los parámetros y el algoritmo de filtro, por diferencias
-/// (core::UndoHistory, ADR 0028).
+/// Deshace los parámetros, el algoritmo de filtro y las asignaciones de las
+/// macros, por diferencias (core::UndoHistory, ADR 0028).
 ///
 /// Escucha el principio y el final de los gestos de todos los parámetros
 /// (los marca la interfaz con beginChangeGesture/endChangeGesture). Al
@@ -67,6 +67,11 @@ public:
     /// El algoritmo de filtro va a cambiar como parte de la acción en curso:
     /// guarda el de ahora. Ver PluginProcessor::changeFilterAlgorithm().
     void touchFilterAlgorithm();
+
+    /// Las asignaciones de las macros van a cambiar como parte de la acción
+    /// en curso: guarda las de ahora. Ver PluginProcessor::changeMacroAssignments()
+    /// y PresetManager::load().
+    void touchMacroAssignments();
 
     /// Si hay una acción esperando su registro (un gesto terminado hace menos
     /// de kCoalesceMs), la registra ya. Se llama antes de un cambio que no es
