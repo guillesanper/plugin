@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "esceq/core/macros.h"
 #include "esceq/core/parameters.h"
 #include "esceq/core/state.h"
 
@@ -11,13 +12,14 @@
 
 namespace esceq::core {
 
-/// Lo que el usuario edita y suena: los parámetros y el algoritmo de filtro
-/// de la instancia. Es lo que deshace el historial. (Las preferencias de la
-/// interfaz no se deshacen.)
+/// Lo que el usuario edita y suena: los parámetros, el algoritmo de filtro de
+/// la instancia y las asignaciones de las macros. Es lo que deshace el
+/// historial. (Las preferencias de la interfaz no se deshacen.)
 struct EditState
 {
     ParameterValues parameters = defaultValues();
     dsp::FilterAlgorithm filterAlgorithm = kNewInstanceFilterAlgorithm;
+    MacroAssignments macros{};
 
     friend bool operator==(const EditState&, const EditState&) = default;
 };
@@ -34,16 +36,20 @@ struct ParameterChange
 };
 
 /// Una acción del historial: los parámetros que tocaron los gestos del
-/// usuario y cambiaron, en orden de índice, y el algoritmo de filtro si
-/// cambió (los dos valores, o ninguno). Aplicarla es poner cada parámetro en
-/// su valor `after` (y el algoritmo en `algorithmAfter`); lo demás no se toca.
+/// usuario y cambiaron, en orden de índice, el algoritmo de filtro si cambió y
+/// las asignaciones de las macros si cambiaron (de cada uno, los dos valores, o
+/// ninguno; las asignaciones, enteras: son pocas y de tamaño fijo). Aplicarla
+/// es poner cada parámetro en su valor `after` (y el algoritmo y las
+/// asignaciones en los suyos); lo demás no se toca.
 struct EditAction
 {
     std::vector<ParameterChange> parameters;
     std::optional<dsp::FilterAlgorithm> algorithmBefore;
     std::optional<dsp::FilterAlgorithm> algorithmAfter;
+    std::optional<MacroAssignments> macrosBefore;
+    std::optional<MacroAssignments> macrosAfter;
 
-    bool empty() const noexcept { return parameters.empty() && !algorithmAfter; }
+    bool empty() const noexcept { return parameters.empty() && !algorithmAfter && !macrosAfter; }
     /// La misma acción al revés: lo que la deshace.
     EditAction inverse() const;
 
@@ -51,8 +57,9 @@ struct EditAction
 };
 
 /// La acción que se está haciendo: de cada parámetro que toca un gesto, el
-/// valor que tenía al empezar el primero (touch()), y el algoritmo de antes de
-/// cambiarlo (touchAlgorithm()). finish() la cierra con los valores de ahora.
+/// valor que tenía al empezar el primero (touch()), el algoritmo de antes de
+/// cambiarlo (touchAlgorithm()) y las asignaciones de antes de cambiarlas
+/// (touchMacros()). finish() la cierra con los valores de ahora.
 /// Lo que no se toca (lo que mueve el host sin gestos) no entra.
 class PendingAction
 {
@@ -64,6 +71,9 @@ public:
     /// El algoritmo va a cambiar; ahora es `current` (si ya estaba tocado, se
     /// queda el de antes).
     void touchAlgorithm(dsp::FilterAlgorithm current) noexcept;
+    /// Las asignaciones de las macros van a cambiar; ahora son `current` (si
+    /// ya estaban tocadas, se quedan las de antes).
+    void touchMacros(const MacroAssignments& current) noexcept;
     /// true si se ha tocado algo desde el último finish() o clear().
     bool touched() const noexcept { return any_; }
 
@@ -76,11 +86,12 @@ private:
     std::array<bool, kNumParameters> touched_{};
     ParameterValues before_{};
     std::optional<dsp::FilterAlgorithm> algorithmBefore_;
+    std::optional<MacroAssignments> macrosBefore_;
     bool any_ = false;
 };
 
-/// Historial de deshacer y rehacer de los parámetros del plugin y su
-/// algoritmo de filtro, por diferencias (ADR 0028).
+/// Historial de deshacer y rehacer de los parámetros del plugin, su
+/// algoritmo de filtro y las asignaciones de las macros, por diferencias (ADR 0028).
 ///
 /// Cada acción guarda solo lo que cambió (EditAction): deshacer y rehacer
 /// devuelven lo que hay que aplicar, y no tocan nada más. Así, un parámetro

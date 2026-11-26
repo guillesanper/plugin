@@ -14,6 +14,8 @@ EditAction EditAction::inverse() const
         result.parameters.push_back({change.index, change.after, change.before});
     result.algorithmBefore = algorithmAfter;
     result.algorithmAfter = algorithmBefore;
+    result.macrosBefore = macrosAfter;
+    result.macrosAfter = macrosBefore;
     return result;
 }
 
@@ -30,6 +32,13 @@ void PendingAction::touchAlgorithm(dsp::FilterAlgorithm current) noexcept
 {
     if (!algorithmBefore_)
         algorithmBefore_ = current;
+    any_ = true;
+}
+
+void PendingAction::touchMacros(const MacroAssignments& current) noexcept
+{
+    if (!macrosBefore_)
+        macrosBefore_ = current;
     any_ = true;
 }
 
@@ -51,6 +60,11 @@ EditAction PendingAction::finish(const EditState& current)
         action.algorithmBefore = algorithmBefore_;
         action.algorithmAfter = current.filterAlgorithm;
     }
+    if (macrosBefore_ && !(*macrosBefore_ == current.macros))
+    {
+        action.macrosBefore = macrosBefore_;
+        action.macrosAfter = current.macros;
+    }
     clear();
     return action;
 }
@@ -59,6 +73,7 @@ void PendingAction::clear() noexcept
 {
     touched_.fill(false);
     algorithmBefore_.reset();
+    macrosBefore_.reset();
     any_ = false;
 }
 

@@ -25,6 +25,8 @@ EditState applied(EditState state, const EditAction& action)
         state.parameters[c.index] = c.after;
     if (action.algorithmAfter)
         state.filterAlgorithm = *action.algorithmAfter;
+    if (action.macrosAfter)
+        state.macros = *action.macrosAfter;
     return state;
 }
 
@@ -260,4 +262,81 @@ TEST_CASE("Historial: la inversa de una accion intercambia antes y despues")
     CHECK(inverse.algorithmBefore == FilterAlgorithm::Matched);
     CHECK(inverse.algorithmAfter == FilterAlgorithm::Classic);
     CHECK(inverse.inverse() == action);
+}
+
+TEST_CASE("Historial: cambiar las asignaciones de las macros es una accion que se deshace")
+{
+    // PLAN.md 5.9: cambiar una asignación es una acción de deshacer, y puede ir
+    // en la misma acción que los parámetros (cargar un preset).
+    EditState state;
+    PendingAction pending;
+    UndoHistory history;
+
+    MacroAssignments first;
+    REQUIRE(first.assign(0, kGain0, 50.0f));
+    pending.touchMacros(state.macros);
+    state.macros = first;
+    // Tocadas otra vez en la misma acción: se quedan las de antes del primer cambio.
+    pending.touchMacros(state.macros);
+    REQUIRE(state.macros.assign(0, kGain1, -25.0f));
+    auto action = pending.finish(state);
+    CHECK(action.parameters.empty());
+    CHECK_FALSE(action.algorithmAfter.has_value());
+    CHECK(action.macrosBefore == MacroAssignments{});
+    CHECK(action.macrosAfter == state.macros);
+    CHECK_FALSE(action.empty());
+    CHECK(history.commit(action));
+
+    // Dejarlas como estaban no es una acción.
+    pending.touchMacros(state.macros);
+    CHECK(pending.finish(state).empty());
+
+    // Una carga de preset: parámetros y asignaciones juntos.
+    const EditState beforeLoad = state;
+    pending.touch(kOutputGain, state.parameters[kOutputGain]);
+    pending.touchMacros(state.macros);
+    state.parameters[kOutputGain] = -3.0f;
+    state.macros.clear();
+    const auto load = pending.finish(state);
+    CHECK(load.parameters.size() == 1);
+    CHECK(load.macrosAfter == MacroAssignments{});
+    CHECK(history.commit(load));
+
+    const auto undoLoad = history.undo();
+    REQUIRE(undoLoad.has_value());
+    state = applied(state, *undoLoad);
+    CHECK(state == beforeLoad);
+
+    const auto undoAssign = history.undo();
+    REQUIRE(undoAssign.has_value());
+    state = applied(state, *undoAssign);
+    CHECK(state.macros.empty());
+    CHECK(state == EditState{});
+
+    // Deshacer un cambio de parámetros no toca las asignaciones.
+    history.redo();
+    const auto redoLoad = history.redo();
+    REQUIRE(redoLoad.has_value());
+    CHECK(redoLoad->macrosAfter == MacroAssignments{});
+    CHECK(change(kGain0, 1.0f, 2.0f).inverse().macrosAfter == std::nullopt);
+}
+
+TEST_CASE("Historial: la inversa de una accion intercambia tambien las asignaciones")
+{
+    EditAction action;
+    MacroAssignments after;
+    REQUIRE(after.assign(7, kOutputGain, 10.0f));
+    action.macrosBefore = MacroAssignments{};
+    action.macrosAfter = after;
+    CHECK_FALSE(action.empty());
+    const auto inverse = action.inverse();
+    CHECK(inverse.macrosBefore == after);
+    CHECK(inverse.macrosAfter == MacroAssignments{});
+    CHECK(inverse.inverse() == action);
+
+    PendingAction pending;
+    pending.touchMacros(after);
+    CHECK(pending.touched());
+    pending.clear();
+    CHECK_FALSE(pending.touched());
 }
