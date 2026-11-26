@@ -2,8 +2,8 @@
 //
 // esceq_bench: mide el coste del hilo de audio de esceQ (dsp::PhaseEqualizer)
 // con configuraciones fijas, para decidir optimizaciones con números
-// (ADR 0020). Depende de dsp/ y, para --modulation, del hilo de control de
-// core/ (core::ControlThread); no de JUCE.
+// (ADR 0020). Depende de dsp/ y, para --modulation y --macros, de core/
+// (core::ControlThread y core::applyMacros); no de JUCE.
 //
 // Uso: esceq_bench [opciones]
 //   --scenario A,B   campanas, cortes, dinamicas, mezcla, espectral, mezcla-esp,
@@ -30,6 +30,8 @@
 //                    tiempo real y el tiempo real, con --rate, --block,
 //                    --seconds (del render; el tiempo real, como mucho 2 s)
 //                    y --repeat
+//   --macros         en vez del ecualizador, lo que cuesta aplicar las macros
+//                    (core::applyMacros) en un bloque, con --repeat
 //
 // Imprime, por configuración, la mediana (y el mínimo y el máximo) del
 // tiempo de proceso en % de la duración del audio: el % de un núcleo que
@@ -96,7 +98,15 @@
 // real, los bloques al ritmo del reloj con el hilo de control propio: el %
 // de un núcleo del hilo de audio, su llamada más lenta, los diseños por
 // segundo, lo que tarda uno, y el % de un núcleo que ocupa el hilo de control.
+//
+// Con --macros (ADR 0028, bloque 7.2): lo que tarda core::applyMacros, que el
+// procesador llama en cada bloque en el que cambia algún parámetro (una macro
+// moviéndose, por ejemplo), sin asignaciones y con 1, 8 y 64 destinos (todas
+// las macros llenas: ganancias, frecuencias, en escala logarítmica, y
+// umbrales), con las ocho macros moviéndose. Sin asignaciones el procesador
+// ni la llama.
 #include "esceq/core/control_thread.h"
+#include "esceq/core/macros.h"
 #include "esceq/dsp/auto_gain.h"
 #include "esceq/dsp/curve_match.h"
 #include "esceq/dsp/linear_phase.h"
@@ -145,6 +155,7 @@ struct Options
     bool spectral = false;
     bool saturation = false;
     bool modulation = false;
+    bool macros = false;
 };
 
 std::vector<std::string> splitList(std::string_view text)
@@ -190,6 +201,11 @@ bool parse(std::span<char* const> args, Options& options)
         if (name == "--modulation")
         {
             options.modulation = true;
+            continue;
+        }
+        if (name == "--macros")
+        {
+            options.macros = true;
             continue;
         }
         if (i + 1 >= args.size())
@@ -1299,6 +1315,61 @@ void runModulation(const Options& options)
     }
 }
 
+void runMacros(const Options& options)
+{
+    using namespace esceq::core;
+    std::printf("Macros: core::applyMacros en un bloque, con las ocho macros moviéndose; µs por llamada\n"
+                "(mediana de %d medidas de 20000 llamadas).\n\n", options.repeat);
+    std::printf("%-10s %10s\n", "destinos", "µs");
+    for (const int count : {0, 1, 8, 64})
+    {
+        MacroAssignments macros;
+        for (int i = 0; i < count; ++i)
+        {
+            // Por orden: 24 ganancias, 24 frecuencias y 16 umbrales.
+            const std::size_t target = i < 24   ? bandParameter(i, BandParam::Gain)
+                                       : i < 48 ? bandParameter(i - 24, BandParam::Frequency)
+                                                : dynamicParameter(i - 48, DynParam::Threshold);
+            macros.setSlot(i / kMaxMacroTargets, i % kMaxMacroTargets, target, static_cast<float>(10 + i % 40));
+        }
+        ParameterValues base = defaultValues();
+        constexpr int kCalls = 20000;
+        std::vector<double> times;
+        float sink = 0.0f;
+        for (int r = 0; r < options.repeat; ++r)
+        {
+            const auto begin = Clock::now();
+            for (int call = 0; call < kCalls; ++call)
+            {
+                ParameterValues values = base;
+                for (int macro = 0; macro < kNumMacros; ++macro)
+                    values[macroParameter(macro)] = static_cast<float>((call + 13 * macro) % 100);
+                applyMacros(macros, values);
+                sink += values[bandParameter(0, BandParam::Gain)];
+            }
+            times.push_back(std::chrono::duration<double, std::micro>(Clock::now() - begin).count() / kCalls);
+        }
+        // Lo mismo sin applyMacros: la copia de los valores, que no es suya.
+        std::vector<double> copies;
+        for (int r = 0; r < options.repeat; ++r)
+        {
+            const auto begin = Clock::now();
+            for (int call = 0; call < kCalls; ++call)
+            {
+                ParameterValues values = base;
+                for (int macro = 0; macro < kNumMacros; ++macro)
+                    values[macroParameter(macro)] = static_cast<float>((call + 13 * macro) % 100);
+                sink += values[bandParameter(0, BandParam::Gain)];
+            }
+            copies.push_back(std::chrono::duration<double, std::micro>(Clock::now() - begin).count() / kCalls);
+        }
+        std::printf("%-10d %10.3f\n", count, std::max(0.0, median(times) - median(copies)));
+        if (sink == 12345.0f)
+            std::printf(" \n"); // que el compilador no quite el bucle
+        std::fflush(stdout);
+    }
+}
+
 } // namespace
 
 int main(int argc, char** argv)
@@ -1311,6 +1382,8 @@ int main(int argc, char** argv)
     }
     if (options.modulation)
         runModulation(options);
+    else if (options.macros)
+        runMacros(options);
     else if (options.match)
         runMatch(options);
     else if (options.spectral)
