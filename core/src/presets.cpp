@@ -94,6 +94,13 @@ std::optional<ParameterValues> loadFactoryPreset(std::string_view name)
     return std::nullopt;
 }
 
+std::optional<PresetContents> deserializePreset(std::string_view text)
+{
+    if (auto state = deserializePluginState(text))
+        return PresetContents{state->parameters, state->macros};
+    return std::nullopt;
+}
+
 ParameterValues applyPreset(const ParameterValues& preset, const ParameterValues& current) noexcept
 {
     ParameterValues result = preset;
@@ -102,7 +109,7 @@ ParameterValues applyPreset(const ParameterValues& preset, const ParameterValues
     return result;
 }
 
-std::string serializePreset(const ParameterValues& values)
+std::string serializePreset(const ParameterValues& values, const MacroAssignments& macros)
 {
     std::ostringstream out;
     out.imbue(std::locale::classic());
@@ -118,7 +125,7 @@ std::string serializePreset(const ParameterValues& values)
         if (value != spec.defaultValue && !outside)
             out << spec.id << ' ' << value << '\n';
     }
-    return out.str();
+    return out.str() + serializeMacroAssignments(macros);
 }
 
 std::string sanitizePresetName(std::string_view name)

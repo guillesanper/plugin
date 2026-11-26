@@ -33,6 +33,8 @@ constexpr std::string_view kUiAnalyzerPeaks = "ui.analyzer_peaks";
 constexpr std::string_view kUiOutputStage = "ui.output_stage";
 
 constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
+/// Las asignaciones de las macros: `macro.N.M <destino> <profundidad>`.
+constexpr std::string_view kMacroPrefix = "macro.";
 /// kLegacyFilterAlgorithm tal y como se escribe en el estado.
 constexpr std::string_view kLegacyAlgorithmText = "0";
 static_assert(static_cast<int>(kLegacyFilterAlgorithm) == 0);
@@ -99,6 +101,49 @@ void migrate1to2(std::vector<Entry>& entries)
 void migrate2to3(std::vector<Entry>& entries)
 {
     entries.push_back({kFilterAlgorithm, kLegacyAlgorithmText});
+}
+
+/// Migración de la versión 3 a la 4.
+///
+/// La versión 4 añade las asignaciones de las macros. Los estados anteriores
+/// no tenían macros: cargan sin asignaciones, y suenan igual. Una línea
+/// `macro.*` en un estado que dice ser anterior no la escribió esceQ y se
+/// descarta.
+void migrate3to4(std::vector<Entry>& entries)
+{
+    std::erase_if(entries, [](const Entry& entry) { return entry.key.starts_with(kMacroPrefix); });
+}
+
+/// Un número de 1 a 9 escrito con una sola cifra ("1".."9"), o 0.
+int singleDigit(std::string_view text) noexcept
+{
+    return text.size() == 1 && text[0] >= '1' && text[0] <= '9' ? text[0] - '0' : 0;
+}
+
+/// Lee una línea `macro.N.M <destino> <profundidad>` en `macros`. Lo que no se
+/// entienda se descarta (ver deserializePluginState()).
+void readMacroAssignment(const Entry& entry, MacroAssignments& macros)
+{
+    const std::string_view position = entry.key.substr(kMacroPrefix.size());
+    const auto dot = position.find('.');
+    if (dot == std::string_view::npos)
+        return;
+    const int macro = singleDigit(position.substr(0, dot));
+    const int slot = singleDigit(position.substr(dot + 1));
+    if (macro < 1 || macro > kNumMacros || slot < 1 || slot > kMaxMacroTargets)
+        return;
+
+    const Entry target = splitLine(entry.value);
+    const auto index = findParameter(target.key);
+    float depth = 0.0f;
+    if (!index || !parseNumber(target.value, depth))
+    {
+        macros.clearSlot(macro - 1, slot - 1);
+        return;
+    }
+    // Si la línea repite un hueco, sustituye a la anterior.
+    macros.clearSlot(macro - 1, slot - 1);
+    macros.setSlot(macro - 1, slot - 1, *index, depth);
 }
 
 /// Algoritmo a partir de su valor guardado. Lo que no se conozca (un
@@ -179,6 +224,7 @@ std::string serializePluginState(const PluginState& state)
     extra.imbue(std::locale::classic());
     extra << kFilterAlgorithm << ' '
           << static_cast<int>(filterAlgorithmFromStored(static_cast<int>(state.filterAlgorithm))) << '\n';
+    extra << serializeMacroAssignments(state.macros);
     extra << kUiAnalyzer << ' ' << ui.analyzerMode << '\n';
     extra << kUiRange << ' ' << ui.displayRangeDb << '\n';
     if (ui.windowWidth > 0)
@@ -222,6 +268,28 @@ std::string serializeState(const ParameterValues& values)
     return out.str();
 }
 
+std::string serializeMacroAssignments(const MacroAssignments& macros)
+{
+    std::ostringstream out;
+    out.imbue(std::locale::classic());
+    out.precision(std::numeric_limits<float>::max_digits10);
+    for (int macro = 0; macro < kNumMacros; ++macro)
+    {
+        const auto& targets = macros.targets(macro);
+        for (std::size_t slot = 0; slot < targets.size(); ++slot)
+        {
+            const MacroTarget& target = targets[slot];
+            // Solo lo que se puede volver a leer (un MacroAssignments solo
+            // contiene eso, pero el formato no debe depender de ello).
+            if (!target.used() || !isMacroTarget(target.parameter) || !std::isfinite(target.depth))
+                continue;
+            out << kMacroPrefix << macro + 1 << '.' << slot + 1 << ' ' << parameters()[target.parameter].id << ' '
+                << std::clamp(target.depth, -kMaxMacroDepth, kMaxMacroDepth) << '\n';
+        }
+    }
+    return out.str();
+}
+
 std::optional<PluginState> deserializePluginState(std::string_view text)
 {
     const Entry header = splitLine(nextLine(text));
@@ -244,6 +312,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
         migrate1to2(entries);
     if (version < 3)
         migrate2to3(entries);
+    if (version < 4)
+        migrate3to4(entries);
 
     PluginState state;
     for (const Entry& entry : entries)
@@ -253,6 +323,12 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             float value = 0.0f;
             if (parseNumber(entry.value, value))
                 state.parameters[*index] = sanitize(parameters()[*index], value);
+            continue;
+        }
+
+        if (entry.key.starts_with(kMacroPrefix))
+        {
+            readMacroAssignment(entry, state.macros);
             continue;
         }
 

@@ -273,7 +273,7 @@ TEST_CASE("Saturacion: viaja con el estado del proyecto")
     drag(*a, core::kPhaseMode, {2.0f});
     juce::MemoryBlock state;
     a->getStateInformation(state);
-    CHECK(state.toString().startsWith("esceQ-state 3\n"));
+    CHECK(state.toString().startsWith("esceQ-state " + juce::String(core::kStateVersion) + "\n"));
     CHECK(state.toString().contains("sat_mode 2"));
 
     auto b = makeProcessor();

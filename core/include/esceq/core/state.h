@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "esceq/core/macros.h"
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/filter_design.h"
 
@@ -19,7 +20,9 @@ namespace esceq::core {
 ///  - 2: además, preferencias de la interfaz (líneas `ui.*`).
 ///  - 3: además, el algoritmo de filtro de la instancia (línea
 ///    `filter_algorithm`). Ver docs/decisiones/0014-estado-v3-algoritmo-de-filtro.md.
-inline constexpr int kStateVersion = 3;
+///  - 4: además, las asignaciones de las macros (líneas `macro.N.M`). Ver
+///    core/macros.h y docs/decisiones/0028-automatizacion-macros-y-sidechain.md.
+inline constexpr int kStateVersion = 4;
 
 /// Algoritmo de filtro de una instancia nueva.
 inline constexpr dsp::FilterAlgorithm kNewInstanceFilterAlgorithm = dsp::FilterAlgorithm::Matched;
@@ -100,17 +103,23 @@ struct PluginState
     /// lo ve ni lo automatiza) y los presets no lo cambian.
     dsp::FilterAlgorithm filterAlgorithm = kNewInstanceFilterAlgorithm;
     UiSettings ui{};
+    /// Asignaciones de las macros (versión 4). No son parámetros: el host no
+    /// las ve ni las automatiza. Los presets de usuario las llevan.
+    MacroAssignments macros{};
 
     friend bool operator==(const PluginState&, const PluginState&) = default;
 };
 
 /// Serializa el estado completo en texto UTF-8:
 ///
-///     esceQ-state 3
+///     esceQ-state 4
 ///     output_gain 0
 ///     bypass 0
 ///     ...
 ///     filter_algorithm 1
+///     macro.1.1 b03_gain 50
+///     macro.1.2 b03_freq -12.5
+///     macro.4.1 sat_drive 100
 ///     ui.analyzer 1
 ///     ui.range 18
 ///     ui.width 1180
@@ -126,8 +135,11 @@ struct PluginState
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
 /// independientemente de la configuración regional. `filter_algorithm` (el
-/// valor numérico de dsp::FilterAlgorithm) y las claves `ui.*` no son
-/// parámetros. No es segura en tiempo real (asigna memoria).
+/// valor numérico de dsp::FilterAlgorithm), las asignaciones de las macros y
+/// las claves `ui.*` no son parámetros. Cada asignación es una línea
+/// `macro.N.M <id del destino> <profundidad en %>`, con N la macro (1 a 8) y M
+/// el hueco (1 a 8); solo se escriben los huecos ocupados, en orden. No es
+/// segura en tiempo real (asigna memoria).
 std::string serializePluginState(const PluginState& state);
 
 /// Lee un estado escrito por cualquier versión de esceQ.
@@ -140,13 +152,23 @@ std::string serializePluginState(const PluginState& state);
 ///    anteriores a la 3 cargan con kLegacyFilterAlgorithm.
 ///  - Un algoritmo que esta versión no conoce (de una versión más nueva) o
 ///    ilegible: kNewInstanceFilterAlgorithm, el más reciente que conoce.
+///  - Las anteriores a la 4 cargan sin asignaciones. Una asignación que no se
+///    entienda (macro o hueco que no existen, destino desconocido o que no se
+///    puede modular, profundidad ilegible, o un destino repetido en la misma
+///    macro) se descarta; las demás se quedan. Si un hueco se repite, cuenta
+///    la última línea (y si esa no se entiende, el hueco queda libre).
 ///
 /// No es segura en tiempo real.
 std::optional<PluginState> deserializePluginState(std::string_view text);
 
-/// Solo los parámetros, sin algoritmo ni preferencias de la interfaz: es lo
-/// que guarda un preset. Se lee con cualquiera de las dos funciones de lectura.
+/// Solo los parámetros, sin algoritmo, asignaciones ni preferencias de la
+/// interfaz. Se lee con cualquiera de las dos funciones de lectura. (Un
+/// preset es serializePreset(), en core/presets.h.)
 std::string serializeState(const ParameterValues& values);
+
+/// Las líneas `macro.N.M` de `macros`, en orden de macro y de hueco (vacío si
+/// no hay ninguna). Las escriben el estado y los presets.
+std::string serializeMacroAssignments(const MacroAssignments& macros);
 
 /// Como deserializePluginState(), pero devuelve solo los parámetros.
 std::optional<ParameterValues> deserializeState(std::string_view text);

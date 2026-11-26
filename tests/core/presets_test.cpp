@@ -319,3 +319,50 @@ TEST_CASE("Presets: la saturacion va en el preset")
         CHECK(std::find(kParametersOutsidePresets.begin(), kParametersOutsidePresets.end(), index) ==
               kParametersOutsidePresets.end());
 }
+
+TEST_CASE("Presets: las macros y sus asignaciones van en el preset")
+{
+    // PLAN.md 5.9: los valores de las macros son parámetros (en el preset), y
+    // las asignaciones van detrás, en las líneas macro.N.M del estado.
+    auto values = defaultValues();
+    values[macroParameter(2)] = 35.0f;
+    MacroAssignments macros;
+    REQUIRE(macros.assign(2, bandParameter(0, BandParam::Gain), 40.0f));
+    REQUIRE(macros.assign(2, bandParameter(0, BandParam::Frequency), -12.5f));
+    const std::string text = serializePreset(values, macros);
+    CHECK(text == "esceQ-state " + std::to_string(kStateVersion) +
+                      "\nmacro_3 35\nmacro.3.1 b01_gain 40\nmacro.3.2 b01_freq -12.5\n");
+    const auto restored = deserializePreset(text);
+    REQUIRE(restored.has_value());
+    CHECK(restored->parameters == values);
+    CHECK(restored->macros == macros);
+
+    // Sin asignaciones, ninguna línea; y lo de siempre se lee igual.
+    CHECK(serializePreset(values) == "esceQ-state " + std::to_string(kStateVersion) + "\nmacro_3 35\n");
+    CHECK(deserializeState(text) == values);
+}
+
+TEST_CASE("Presets de fabrica: ninguno lleva asignaciones ni mueve las macros")
+{
+    for (const auto& preset : factoryPresets())
+    {
+        INFO(preset.name);
+        const auto contents = deserializePreset(preset.state);
+        REQUIRE(contents.has_value());
+        CHECK(contents->macros.empty());
+        CHECK(contents->parameters == *loadFactoryPreset(preset.name));
+        for (int macro = 0; macro < kNumMacros; ++macro)
+            CHECK(contents->parameters[macroParameter(macro)] == 0.0f);
+    }
+}
+
+TEST_CASE("Presets: un preset anterior a la version 4 se lee sin asignaciones")
+{
+    // Un preset de usuario guardado con la 0.5 (versión 3): sus parámetros, y
+    // ninguna asignación (cargarlo quita las que hubiera).
+    const auto contents = deserializePreset("esceQ-state 3\nb01_on 1\nb01_gain -4\nmacro.1.1 b01_gain 50\n");
+    REQUIRE(contents.has_value());
+    CHECK(contents->parameters[bandParameter(0, BandParam::Gain)] == -4.0f);
+    CHECK(contents->macros.empty());
+    CHECK_FALSE(deserializePreset("esto no es un preset").has_value());
+}
