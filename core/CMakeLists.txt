@@ -7,6 +7,7 @@ add_library(esceq_core STATIC
     src/band_model.cpp
     src/control_thread.cpp
     src/history.cpp
+    src/macros.cpp
     src/match.cpp
     src/parameters.cpp
     src/presets.cpp

@@ -390,3 +390,11 @@ b24_spectral toggle linear 0 1 0
 sat_mode choice linear 0 2 3
 sat_drive continuous linear 0 24 0
 sat_mix continuous linear 0 100 0
+macro_1 continuous linear 0 100 0
+macro_2 continuous linear 0 100 0
+macro_3 continuous linear 0 100 0
+macro_4 continuous linear 0 100 0
+macro_5 continuous linear 0 100 0
+macro_6 continuous linear 0 100 0
+macro_7 continuous linear 0 100 0
+macro_8 continuous linear 0 100 0

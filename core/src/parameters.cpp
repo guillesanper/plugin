@@ -146,6 +146,12 @@ struct Table
             {.unit = "dB", .kind = Continuous, .min = 0.0f, .max = 24.0f, .defaultValue = 6.0f});
         set(kSaturationMix, "sat_mix", "Saturation Mix",
             {.unit = "%", .kind = Continuous, .min = 0.0f, .max = 100.0f, .defaultValue = 100.0f});
+
+        // Macros (fase 7): al final, globales. En 0 no modulan nada, y sin
+        // asignaciones no suenan en ningún valor (core/macros.h).
+        for (int macro = 0; macro < 8; ++macro)
+            set(macroParameter(macro), "macro_" + std::to_string(macro + 1), "Macro " + std::to_string(macro + 1),
+                {.unit = "%", .kind = Continuous, .min = 0.0f, .max = 100.0f, .defaultValue = 0.0f});
     }
 };
 

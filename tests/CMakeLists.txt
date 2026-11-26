@@ -29,6 +29,7 @@ add_executable(esceq_tests
     core/band_model_test.cpp
     core/control_thread_test.cpp
     core/history_test.cpp
+    core/macros_test.cpp
     core/match_test.cpp
     core/parameters_test.cpp
     core/presets_test.cpp

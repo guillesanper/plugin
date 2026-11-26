@@ -119,7 +119,7 @@ TEST_CASE("Parametros: la tabla es coherente")
 
 TEST_CASE("Parametros: indices de banda")
 {
-    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2 + 24 + 24 + 3);
+    CHECK(kNumParameters == 2 + 24 * 6 + 24 * 7 + 24 + 2 + 24 + 24 + 3 + 8);
     CHECK(parameters()[bandParameter(0, BandParam::Enabled)].id == "b01_on");
     CHECK(parameters()[bandParameter(0, BandParam::Slope)].id == "b01_slope");
     CHECK(parameters()[bandParameter(9, BandParam::Frequency)].id == "b10_freq");
@@ -406,13 +406,13 @@ TEST_CASE("Parametros: dinamica espectral, uno por banda, tras los tiempos autom
     }
 }
 
-TEST_CASE("Parametros: saturacion, global, los ultimos")
+TEST_CASE("Parametros: saturacion, global, tras la dinamica espectral")
 {
-    // PLAN.md 5.8: tres parámetros al final de la tabla (388 a 390).
-    CHECK(kNumParameters == 391);
+    // PLAN.md 5.8: tres parámetros tras la dinámica espectral (388 a 390).
     CHECK(kSaturationMode == 388);
     CHECK(kSaturationDrive == 389);
-    CHECK(kSaturationMix == kNumParameters - 1);
+    CHECK(kSaturationMix == 390);
+    CHECK(kSaturationMix + 1 == kFirstMacroParameter);
 
     const auto& mode = parameters()[kSaturationMode];
     CHECK(mode.id == "sat_mode");

@@ -92,7 +92,10 @@ enum ParameterIndex : std::size_t
     kSaturationMode = kFirstSpectralParameter + static_cast<std::size_t>(kNumBands),
     kSaturationDrive,
     kSaturationMix,
-    kNumParameters,
+    /// Macros (fase 7, ADR 0028): ocho, globales, tras la saturación. Ver
+    /// core/macros.h.
+    kFirstMacroParameter,
+    kNumParameters = kFirstMacroParameter + 8,
 };
 
 /// Índice en parameters() del parámetro `param` de la banda `band` (0..kNumBands-1).
@@ -126,6 +129,12 @@ constexpr std::size_t autoTimingParameter(int band) noexcept
 constexpr std::size_t spectralParameter(int band) noexcept
 {
     return kFirstSpectralParameter + static_cast<std::size_t>(band);
+}
+
+/// Índice en parameters() de la macro `macro` (0..7), `macro_1` a `macro_8`.
+constexpr std::size_t macroParameter(int macro) noexcept
+{
+    return kFirstMacroParameter + static_cast<std::size_t>(macro);
 }
 
 /// Tipos de filtro. El índice coincide con dsp::FilterType (lo comprueba band_model.cpp).
