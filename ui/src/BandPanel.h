@@ -8,6 +8,8 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <vector>
+
 #include <array>
 
 namespace esceq {
@@ -45,6 +47,12 @@ public:
     /// escritas en la frecuencia, y si se ve el teclado; entonces la etiqueta
     /// de la frecuencia dice su nota ("A3 +0 ct").
     void setNoteScale(bool visible, double a4Hz);
+
+    /// Los potenciómetros (todos destinos de las macros), para MacroLinks.
+    std::vector<ParamControl*> knobs() noexcept
+    {
+        return {&frequency_, &gain_, &q_, &threshold_, &range_, &attack_, &release_, &knee_};
+    }
 
     void paint(juce::Graphics& g) override;
     void resized() override;

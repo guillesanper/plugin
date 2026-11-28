@@ -8,6 +8,7 @@
 #include "esceq/core/macros.h"
 #include "esceq/core/presets.h"
 #include "esceq/core/state.h"
+#include "esceq/ui/macros.h"
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -343,6 +344,42 @@ TEST_CASE("Macros en el plugin: cambiar las asignaciones es una accion que se de
     p->history().undo();
     CHECK(p->currentValue(kGain1) == 0.0f);
     CHECK_FALSE(p->history().canUndo());
+}
+
+TEST_CASE("Macros en el plugin: Link to Macro, cambiar la profundidad y quitar, una accion cada una")
+{
+    // Lo que manda el menu de la interfaz (ui/logic/macros.h) al elegir.
+    auto p = makeProcessor();
+    automate(*p, kMacro1, 100.0f);
+
+    auto link = ui::withLink(p->macroAssignments(), 0, kGain1, 20.0f);
+    REQUIRE(link.has_value());
+    p->changeMacroAssignments(*link);
+    // Lo que suena (el anillo y la curva): la posicion +20 %, de 0 a +12 dB; el host sigue en 0.
+    CHECK(p->soundingValues()[kGain1] == 12.0f);
+    CHECK(p->currentValue(kGain1) == 0.0f);
+
+    auto deeper = ui::withLink(p->macroAssignments(), 0, kGain1, -50.0f);
+    REQUIRE(deeper.has_value());
+    p->changeMacroAssignments(*deeper);
+    CHECK(p->soundingValues()[kGain1] == -30.0f);
+    CHECK(p->macroAssignments().targets(0)[0].parameter == kGain1); // el mismo hueco
+
+    p->changeMacroAssignments(ui::withoutLink(p->macroAssignments(), 0, kGain1));
+    CHECK(p->macroAssignments().empty());
+    CHECK(p->soundingValues()[kGain1] == 0.0f);
+
+    // Tres acciones, que se deshacen de una en una.
+    p->history().undo();
+    CHECK(p->macroAssignments().depth(0, kGain1) == -50.0f);
+    p->history().undo();
+    CHECK(p->macroAssignments().depth(0, kGain1) == 20.0f);
+    p->history().undo();
+    CHECK(p->macroAssignments().empty());
+    CHECK_FALSE(p->history().canUndo());
+    p->history().redo();
+    CHECK(p->macroAssignments().depth(0, kGain1) == 20.0f);
+    CHECK(p->currentValue(kMacro1) == 100.0f); // la macro es del host: deshacer no la toca
 }
 
 TEST_CASE("Macros en el plugin: el host moviendo una macro no crea acciones ni se deshace")

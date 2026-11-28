@@ -380,6 +380,38 @@ void drawerToggle(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::
         focusRing(g, bounds, radius::control);
 }
 
+void modulationRing(juce::Graphics& g, juce::Rectangle<float> bounds, float from, float to, const ControlState& state)
+{
+    // Entre el arco de valor (de outer - stroke::arc a outer) y el cuerpo (outer - stroke::arc - 3).
+    const float alpha = alphaFor(state) * (state.enabled ? 1.0f : 0.5f);
+    const auto centre = bounds.getCentre();
+    const float outer = 0.5f * std::min(bounds.getWidth(), bounds.getHeight());
+    const float ringRadius = outer - stroke::arc - 1.5f;
+    g.setColour(colour::curve.withMultipliedAlpha(0.85f * alpha));
+    if (std::abs(to - from) > 0.01f)
+        g.strokePath(arcPath(centre, ringRadius, from, to),
+                     juce::PathStrokeType(stroke::thin, juce::PathStrokeType::curved, juce::PathStrokeType::butt));
+    g.setColour(colour::curve.withMultipliedAlpha(alpha));
+    g.fillEllipse(juce::Rectangle<float>(4.0f, 4.0f).withCentre(centre.getPointOnCircumference(ringRadius, to)));
+}
+
+void tab(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& title, bool selected,
+         const ControlState& state)
+{
+    const float alpha = alphaFor(state);
+    const auto textColour = selected ? colour::text : (state.hover ? colour::textMuted : colour::textDim);
+    caption(g, title, bounds, juce::Justification::centred, textColour.withMultipliedAlpha(alpha));
+    if (selected)
+    {
+        g.setColour(colour::accent.withMultipliedAlpha(alpha));
+        const float width = std::min(bounds.getWidth() - 8.0f, 28.0f);
+        const juce::Point<float> centre{bounds.getCentreX(), bounds.getBottom() - 1.0f};
+        g.fillRoundedRectangle(juce::Rectangle<float>(width, 2.0f).withCentre(centre), 1.0f);
+    }
+    if (state.focused)
+        focusRing(g, bounds.expanded(2.0f, 1.0f), radius::control);
+}
+
 void field(juce::Graphics& g, juce::Rectangle<float> bounds, const ControlState& state)
 {
     const float alpha = alphaFor(state);

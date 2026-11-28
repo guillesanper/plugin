@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "esceq/ui/output_stage.h"
 
+#include "esceq/ui/macros.h"
+
 #include "esceq/core/band_model.h"
 #include "esceq/dsp/phase_equalizer.h"
 
@@ -67,20 +69,20 @@ std::string saturationMixTooltip(dsp::SaturationMode mode)
     return text;
 }
 
-bool outputStageActive(const core::ParameterValues& values) noexcept
+bool outputStageActive(const core::ParameterValues& values, const core::MacroAssignments& macros) noexcept
 {
     const auto& specs = core::parameters();
     return saturationAmountActive(core::saturationModeFromChoice(values[core::kSaturationMode])) ||
            std::abs(core::sanitize(specs[core::kOutputGain], values[core::kOutputGain])) >= 0.05f ||
-           values[core::kAutoGain] >= 0.5f;
+           values[core::kAutoGain] >= 0.5f || macrosActive(macros, values);
 }
 
-std::string outputStageTooltip(const core::ParameterValues& values, bool open)
+std::string outputStageTooltip(const core::ParameterValues& values, bool open, const core::MacroAssignments& macros)
 {
     if (open)
-        return "Hide the output stage (saturation, output gain and Auto gain)";
+        return "Hide the output stage (saturation, output gain, Auto gain and macros)";
 
-    std::string text = "Show the output stage: saturation, output gain and Auto gain";
+    std::string text = "Show the output stage: saturation, output gain, Auto gain and macros";
     const auto& specs = core::parameters();
     const auto mode = core::saturationModeFromChoice(values[core::kSaturationMode]);
     if (saturationAmountActive(mode))
@@ -93,6 +95,8 @@ std::string outputStageTooltip(const core::ParameterValues& values, bool open)
         text += std::string(kDot) + "Output " + formatted(core::kOutputGain, gain);
     if (values[core::kAutoGain] >= 0.5f)
         text += std::string(kDot) + "Auto gain on";
+    if (const auto summary = macrosSummary(macros, values); !summary.empty())
+        text += std::string(kDot) + summary;
     return text;
 }
 

@@ -84,8 +84,8 @@ TEST_CASE("Etapa de salida: la pestana marca lo que cambia el sonido")
 {
     auto values = core::defaultValues();
     CHECK_FALSE(outputStageActive(values));
-    CHECK(outputStageTooltip(values, true) == "Hide the output stage (saturation, output gain and Auto gain)");
-    CHECK(outputStageTooltip(values, false) == "Show the output stage: saturation, output gain and Auto gain");
+    CHECK(outputStageTooltip(values, true) == "Hide the output stage (saturation, output gain, Auto gain and macros)");
+    CHECK(outputStageTooltip(values, false) == "Show the output stage: saturation, output gain, Auto gain and macros");
 
     // El drive y la mezcla, con Off, no cuentan.
     values[core::kSaturationDrive] = 18.0f;
@@ -111,5 +111,25 @@ TEST_CASE("Etapa de salida: la pestana marca lo que cambia el sonido")
     // Abierto se ve todo: la ayuda no lo repite.
     values[core::kSaturationMode] = 1.0f;
     values[core::kOutputGain] = 6.0f;
-    CHECK(outputStageTooltip(values, true) == "Hide the output stage (saturation, output gain and Auto gain)");
+    CHECK(outputStageTooltip(values, true) == "Hide the output stage (saturation, output gain, Auto gain and macros)");
+}
+
+TEST_CASE("Etapa de salida: plegado, la pestana marca tambien las macros que mueven algo")
+{
+    auto values = core::defaultValues();
+    core::MacroAssignments macros;
+    REQUIRE(macros.assign(0, core::bandParameter(2, core::BandParam::Gain), 25.0f));
+    // Con destinos pero en 0, no cambian el sonido.
+    CHECK_FALSE(outputStageActive(values, macros));
+    CHECK_FALSE(contains(outputStageTooltip(values, false, macros), "Macros"));
+
+    values[core::macroParameter(0)] = 60.0f;
+    CHECK(outputStageActive(values, macros));
+    CHECK(contains(outputStageTooltip(values, false, macros), "Macros: 1 link moving"));
+    // Sin las asignaciones (o sin destinos), la macro no cuenta.
+    CHECK_FALSE(outputStageActive(values));
+    CHECK_FALSE(outputStageActive(values, core::MacroAssignments{}));
+    // Abierto se ve: la ayuda no lo repite.
+    CHECK(outputStageTooltip(values, true, macros) ==
+          "Hide the output stage (saturation, output gain, Auto gain and macros)");
 }

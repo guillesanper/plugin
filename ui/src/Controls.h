@@ -27,8 +27,9 @@ namespace esceq::ui {
 ///
 /// Gestos: arrastrar (vertical u horizontal), Mayús para ajuste fino, rueda,
 /// doble clic o Ctrl/Cmd+clic para volver al valor por defecto, clic en el
-/// valor para escribirlo. Teclado: flechas (Mayús = fino), Intro para
-/// escribir el valor, Supr o Retroceso para el valor por defecto.
+/// valor para escribirlo; clic derecho, el menú (onPopupMenu). Teclado:
+/// flechas (Mayús = fino), Intro para escribir el valor, Supr o Retroceso
+/// para el valor por defecto, Mayús+F10 para el menú.
 class ParamControl final : public juce::Component, public juce::SettableTooltipClient
 {
 public:
@@ -83,6 +84,19 @@ public:
     /// en un parámetro en Hz ("A3"), ver esceq/ui/notes.h.
     void setA4(double a4Hz) noexcept { a4Hz_ = a4Hz; }
 
+    /// Menú contextual (clic derecho, o Mayús+F10 con el foco): lo pide a
+    /// quien lo pone (las macros, ui/src/MacroLinks.h). Sin él, no hay menú.
+    std::function<void(ParamControl&)> onPopupMenu;
+
+    /// Lo que suena del parámetro si alguna macro lo mueve (el anillo de
+    /// modulación, de su valor a ese), o nullopt si ninguna lo mueve.
+    void setModulation(std::optional<float> sounding);
+    std::optional<float> modulation() const noexcept { return modulation_; }
+
+    /// Índice del parámetro del host enlazado (en core::parameters()), o
+    /// nullopt sin parámetro del host (bindLocal, o sin enlazar).
+    std::optional<std::size_t> parameterIndex() const noexcept;
+
     void paint(juce::Graphics& g) override;
     void resized() override;
     void enablementChanged() override { repaint(); }
@@ -134,6 +148,7 @@ private:
     std::function<void(float)> onLocalChange_;
     TextFormat format_;
     float value_ = 0.0f;
+    std::optional<float> modulation_;
 
     bool hover_ = false;
     bool dragging_ = false;

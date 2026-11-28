@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "esceq/core/macros.h"
 #include "esceq/core/parameters.h"
 #include "esceq/dsp/linear_phase.h"
 #include "esceq/dsp/saturation.h"
@@ -39,14 +40,16 @@ std::string saturationDriveTooltip(dsp::SaturationMode mode);
 std::string saturationMixTooltip(dsp::SaturationMode mode);
 
 /// Si algo del cajón cambia ahora el sonido: la saturación fuera de Off, una
-/// ganancia de salida distinta de 0 dB o la compensación automática
-/// encendida. Plegado, la pestaña lo marca con un punto.
-bool outputStageActive(const core::ParameterValues& values) noexcept;
+/// ganancia de salida distinta de 0 dB, la compensación automática
+/// encendida o una macro con destinos fuera de 0 (esceq/ui/macros.h,
+/// macrosActive). Plegado, la pestaña lo marca con un punto.
+bool outputStageActive(const core::ParameterValues& values, const core::MacroAssignments& macros = {}) noexcept;
 
-/// Texto de ayuda de la cabecera (abierto) o de la pestaña (plegado). Plegado
+/// Texto de ayuda de la flecha (abierto) o de la pestaña (plegado). Plegado
 /// dice además lo que está cambiando el sonido, porque no se ve: "Show the
 /// output stage ... · Saturation Soft, drive 6.0 dB, mix 100% · Output -3.0
-/// dB · Auto gain on".
-std::string outputStageTooltip(const core::ParameterValues& values, bool open);
+/// dB · Auto gain on · Macros: 2 links moving".
+std::string outputStageTooltip(const core::ParameterValues& values, bool open,
+                               const core::MacroAssignments& macros = {});
 
 } // namespace esceq::ui

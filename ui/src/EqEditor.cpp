@@ -34,6 +34,7 @@ juce::Rectangle<int> toInt(const Rect& r)
 EqEditor::EqEditor(PluginProcessor& owner)
     : AudioProcessorEditor(owner),
       processor_(owner),
+      links_(owner, *this),
       curve_(owner),
       meter_(owner),
       panel_(owner),
@@ -89,7 +90,20 @@ EqEditor::EqEditor(PluginProcessor& owner)
     addAndMakeVisible(redo_);
 
     drawer_.onToggle = [this] { setDrawerOpen(!drawer_.isOpen()); };
+    // La pestaña elegida, como plegarlo: una preferencia de la interfaz que no se deshace.
+    drawer_.onPageChanged = [this](bool) { storeUiSettings(); };
     addAndMakeVisible(drawer_);
+
+    // Macros: Link to Macro en los potenciómetros que son destino y en los
+    // nodos, el menú de cada macro y los anillos de modulación.
+    for (auto* knob : panel_.knobs())
+        links_.add(*knob);
+    for (auto* knob : drawer_.targetKnobs())
+        links_.add(*knob);
+    for (int m = 0; m < core::kNumMacros; ++m)
+        links_.addMacro(drawer_.macroKnob(m), m);
+    curve_.setMacroLinks(&links_);
+    links_.refresh();
     updateAutoGain();
 
     bypass_.attach(owner.parameter(core::kBypass));
@@ -154,6 +168,7 @@ void EqEditor::applyUiSettings()
     range_.setSelectedId(ui.displayRangeDb, juce::sendNotificationSync);
     setNoteScale(ui.pianoKeyboard, ui.a4Hz);
     setDrawerOpen(ui.outputStageOpen);
+    drawer_.setMacrosPage(ui.outputStageMacros);
     // La congelación no se guarda: se conserva la de la vista.
     curve_.setAnalyzerView({ui.analyzerFftSize, ui.analyzerFallMs, ui.analyzerTiltDbPerOctave, ui.analyzerPeakHold,
                             curve_.analyzerView().frozen});
@@ -175,6 +190,7 @@ void EqEditor::storeUiSettings()
     ui.pianoKeyboard = showKeyboard_;
     ui.a4Hz = a4Hz_;
     ui.outputStageOpen = drawer_.isOpen();
+    ui.outputStageMacros = drawer_.isMacrosPage();
     const auto& analyzer = curve_.analyzerView();
     ui.analyzerFftSize = analyzer.fftSize;
     ui.analyzerFallMs = analyzer.fallMs;
@@ -288,11 +304,12 @@ void EqEditor::timerCallback()
     if (processor_.stateRevision() != stateRevision_)
         applyUiSettings();
 
+    links_.refresh(); // las asignaciones y lo que suena: los anillos, y el cajón y el menú los usan
     curve_.refresh(); // vacía la cola "pre": con el panel Match abierto, también para aprender
     updateMatch(true);
     meter_.refresh();
     panel_.refresh();
-    drawer_.refresh();
+    drawer_.refresh(links_.assignments());
     presets_.refresh();
     updateCompareButton(); // la curva quita de la selección las instancias que se van
     updatePhaseTooltip();

@@ -30,6 +30,18 @@ void card(juce::Graphics& g, juce::Rectangle<float> bounds);
 void knob(juce::Graphics& g, juce::Rectangle<float> bounds, const ValueArc& arc, bool bipolar, juce::Colour accent,
           const ControlState& state);
 
+/// Anillo de modulación de un potenciómetro (las macros, PLAN.md 5.9): un
+/// arco fino del color de la curva total, por dentro del arco de valor, de
+/// la posición del valor (`from`) a la de lo que suena (`to`), con un punto
+/// en lo que suena. Sin modulación (`from` == `to`), solo el punto: el
+/// potenciómetro está enlazado a una macro. `bounds`, los del potenciómetro.
+void modulationRing(juce::Graphics& g, juce::Rectangle<float> bounds, float from, float to, const ControlState& state);
+
+/// Pestaña de la cabecera de una tarjeta ("OUTPUT", "MACROS"): el título y,
+/// elegida, una raya del color de acento debajo.
+void tab(juce::Graphics& g, juce::Rectangle<float> bounds, const juce::String& title, bool selected,
+         const ControlState& state);
+
 /// Barra horizontal de valor (deslizador de salida).
 void bar(juce::Graphics& g, juce::Rectangle<float> bounds, const ValueSpan& span, bool bipolar, juce::Colour accent,
          const ControlState& state);

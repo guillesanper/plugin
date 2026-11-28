@@ -5,6 +5,7 @@
 
 #include "esceq/ui/control_logic.h"
 #include "esceq/ui/layout.h"
+#include "esceq/ui/macros.h"
 
 #include <cmath>
 
@@ -266,7 +267,14 @@ void ParamControl::paint(juce::Graphics& g)
         draw::caption(g, label_, toJuce(layout.label), juce::Justification::centred,
                       (hover_ || dragging_ ? colour::textMuted : colour::textDim).withMultipliedAlpha(textAlpha));
         if (spec_ != nullptr)
+        {
             draw::knob(g, toJuce(layout.knob), valueArc(*spec_, value_), isBipolar(*spec_), accent_, state);
+            if (modulation_)
+            {
+                const auto ring = modulationArc(*spec_, value_, *modulation_);
+                draw::modulationRing(g, toJuce(layout.knob), ring.from, ring.to, state);
+            }
+        }
     }
     else if (style_ == Style::Field)
     {
@@ -298,9 +306,35 @@ void ParamControl::mouseExit(const juce::MouseEvent&)
     repaint();
 }
 
+void ParamControl::setModulation(std::optional<float> sounding)
+{
+    // Igualdad exacta a propósito: solo se repinta si cambia.
+    if (sounding.has_value() == modulation_.has_value() &&
+        (!sounding || juce::exactlyEqual(*sounding, *modulation_)))
+        return;
+    modulation_ = sounding;
+    repaint();
+}
+
+std::optional<std::size_t> ParamControl::parameterIndex() const noexcept
+{
+    if (attachment_ == nullptr || spec_ == nullptr)
+        return std::nullopt;
+    const auto& specs = core::parameters();
+    if (spec_ < specs.data() || spec_ >= specs.data() + specs.size())
+        return std::nullopt;
+    return static_cast<std::size_t>(spec_ - specs.data());
+}
+
 void ParamControl::mouseDown(const juce::MouseEvent& e)
 {
-    if (!bound() || spec_ == nullptr || e.mods.isPopupMenu())
+    if (e.mods.isPopupMenu())
+    {
+        if (bound() && spec_ != nullptr && onPopupMenu)
+            onPopupMenu(*this);
+        return;
+    }
+    if (!bound() || spec_ == nullptr)
         return;
 
     if (e.mods.isCommandDown())
@@ -399,6 +433,12 @@ bool ParamControl::keyPressed(const juce::KeyPress& key)
     if (key.isKeyCode(juce::KeyPress::returnKey))
     {
         showEditor();
+        return true;
+    }
+    if (key == juce::KeyPress(juce::KeyPress::F10Key, juce::ModifierKeys::shiftModifier, 0) && onPopupMenu)
+    {
+        keyboardFocus_ = true;
+        onPopupMenu(*this);
         return true;
     }
     if (key.isKeyCode(juce::KeyPress::deleteKey) || key.isKeyCode(juce::KeyPress::backspaceKey))

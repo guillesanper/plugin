@@ -3,10 +3,12 @@
 
 #include "Draw.h"
 #include "JuceConvert.h"
+#include "MacroLinks.h"
 #include "PluginProcessor.h"
 #include "Theme.h"
 
 #include "esceq/ui/control_logic.h"
+#include "esceq/ui/macros.h"
 #include "esceq/ui/meter_logic.h"
 #include "esceq/ui/notes.h"
 #include "esceq/ui/spectral_mask.h"
@@ -65,6 +67,8 @@ CurveView::CurveView(PluginProcessor& processor)
     preAnalyzer_->setTiltDbPerOctave(analyzerView_.tiltDbPerOctave);
     postAnalyzer_->setTiltDbPerOctave(analyzerView_.tiltDbPerOctave);
     values_ = processor_.currentValues();
+    macros_ = processor_.macroAssignments();
+    updateSounding();
     // Con el editor cerrado, las colas del analizador se llenan y se quedan con
     // el audio de cuando se cerró. Se vacían para no dibujarlo al abrir.
     for (auto* fifo : {&processor_.preAnalyzerFifo(), &processor_.postAnalyzerFifo()})
@@ -190,7 +194,13 @@ CurveMapping CurveView::mapping() const
 
 dsp::BandSettings CurveView::soundingSettings(int band) const
 {
-    return soundingBandSettings(values_, band, algorithm_, dynamicGains_[static_cast<std::size_t>(band)]);
+    return soundingBandSettings(sounding_, band, algorithm_, dynamicGains_[static_cast<std::size_t>(band)]);
+}
+
+void CurveView::updateSounding()
+{
+    sounding_ = values_;
+    core::applyMacros(macros_, sounding_);
 }
 
 void CurveView::resized()
@@ -209,9 +219,12 @@ void CurveView::refresh()
     // en una ventana grande cuesta varios milisegundos.
     const double sampleRate = processor_.currentSampleRate(); // cambia la curva cerca de Nyquist
     const auto algorithm = processor_.filterAlgorithm();
-    bool changed = values != values_ || algorithm != algorithm_ || gains != dynamicGains_ ||
+    const auto macros = processor_.macroAssignments();
+    bool changed = values != values_ || macros != macros_ || algorithm != algorithm_ || gains != dynamicGains_ ||
                    !juce::exactlyEqual(sampleRate, lastSampleRate_);
     values_ = values;
+    macros_ = macros;
+    updateSounding();
     algorithm_ = algorithm;
     dynamicGains_ = gains;
     lastSampleRate_ = sampleRate;
@@ -864,7 +877,8 @@ void CurveView::updateCurveCache(const CurveMapping& m)
     for (int band = 0; band < core::kNumBands; ++band)
     {
         auto& curve = cache.bands[static_cast<std::size_t>(band)];
-        const auto settings = core::bandSettings(values_, band, algorithm_);
+        // Lo que suena (con las macros): la curva de la banda y su referencia estática.
+        const auto settings = core::bandSettings(sounding_, band, algorithm_);
         if (!settings.enabled)
         {
             curve.valid = false;
@@ -1027,6 +1041,22 @@ void CurveView::drawNodes(juce::Graphics& g, const CurveMapping& m) const
             order[static_cast<std::size_t>(count++)] = band;
     if (top >= 0 && core::bandSettings(values_, top).enabled)
         order[static_cast<std::size_t>(count++)] = top;
+
+    // Macros: el nodo se queda en el valor de base y, si la banda suena en
+    // otro sitio, una línea fina lleva hasta lo que suena, con un punto.
+    for (int n = 0; n < count; ++n)
+    {
+        const int band = order[static_cast<std::size_t>(n)];
+        if (!bandModulated(values_, sounding_, band))
+            continue;
+        const auto from = nodePosition(m, core::bandSettings(values_, band), kNodeEdgeMargin);
+        const auto to = nodePosition(m, core::bandSettings(sounding_, band), kNodeEdgeMargin);
+        const auto colour = colour::curve.withAlpha(bypassed ? 0.3f : 0.75f);
+        g.setColour(colour.withMultipliedAlpha(0.6f));
+        g.drawLine(juce::Line<float>({from.x, from.y}, {to.x, to.y}), stroke::hairline);
+        g.setColour(colour);
+        g.drawEllipse(juce::Rectangle<float>(7.0f, 7.0f).withCentre({to.x, to.y}), stroke::thin);
+    }
 
     for (int n = 0; n < count; ++n)
     {
@@ -1312,6 +1342,7 @@ void CurveView::setParameter(int band, core::BandParam param, float value)
     auto& p = processor_.parameter(index);
     p.setValueNotifyingHost(p.convertTo0to1(value));
     values_[index] = core::sanitize(core::parameters()[index], value);
+    updateSounding();
 }
 
 void CurveView::setParameterAsGesture(std::size_t index, float value)
@@ -1321,6 +1352,7 @@ void CurveView::setParameterAsGesture(std::size_t index, float value)
     p.setValueNotifyingHost(p.convertTo0to1(value));
     p.endChangeGesture();
     values_[index] = core::sanitize(core::parameters()[index], value);
+    updateSounding();
     repaint();
 }
 
@@ -1618,6 +1650,7 @@ void CurveView::applyChanges(const std::vector<ParameterChange>& changes, std::o
             p.endChangeGesture();
         values_[change.index] = change.value;
     }
+    updateSounding();
 }
 
 void CurveView::addBandAt(juce::Point<float> position)
@@ -1695,12 +1728,21 @@ void CurveView::showBandMenu(int band)
     constexpr int kDeleteId = 100;
     const auto settings = core::bandSettings(values_, band);
     menu.addItem(kDynamicId, "Dynamic", core::usesDynamics(settings.filter.type), settings.dynamics.enabled);
+    if (links_ != nullptr)
+    {
+        // Link to Macro: la frecuencia, y la ganancia y el Q si el tipo los usa.
+        // Sus elementos hacen lo suyo (devuelven -1, que aquí no hace nada).
+        menu.addSeparator();
+        links_->refresh();
+        links_->addNodeMenu(menu, values_, band);
+        menu.addSeparator();
+    }
     menu.addItem(kDeleteId, "Delete band");
 
     juce::Component::SafePointer<CurveView> safe(this);
     menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(this).withMousePosition(),
                        [safe, band](int result) {
-                           if (safe == nullptr || result == 0)
+                           if (safe == nullptr || result <= 0) // -1: un elemento de Link to Macro
                                return;
                            if (result == kDeleteId)
                            {

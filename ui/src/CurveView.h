@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 
+#include "esceq/core/macros.h"
 #include "esceq/core/parameters.h"
 #include "esceq/core/spectral_mask.h"
 #include "esceq/core/state.h"
@@ -24,6 +25,8 @@ class PluginProcessor;
 }
 
 namespace esceq::ui {
+
+class MacroLinks;
 
 enum class AnalyzerMode
 {
@@ -122,6 +125,10 @@ public:
     /// o no. nullptr al cerrarlo.
     void setMatch(MatchController* controller);
 
+    /// Las macros del editor: el menú del nodo ofrece Link to Macro. Sin
+    /// ellas, no (tools/snapshot sin editor).
+    void setMacroLinks(MacroLinks* links) noexcept { links_ = links; }
+
     /// Tras cada refresco del controlador: con 10 s útiles, se dibujan los
     /// espectros aprendidos (la referencia con `referenceColour`), la curva
     /// objetivo y la propuesta con sus nodos en fantasma. Repinta si cambia algo.
@@ -199,7 +206,15 @@ private:
     void drawCollisionLabels(juce::Graphics& g, const CurveMapping& m) const;
 
     PluginProcessor& processor_;
+    /// Los valores del host (los nodos, el panel, los gestos) y lo que suena
+    /// con las macros (core::applyMacros, PLAN.md 5.9): la curva se dibuja con
+    /// lo que suena y el nodo se queda en el valor de base.
     core::ParameterValues values_{};
+    core::ParameterValues sounding_{};
+    core::MacroAssignments macros_{};
+    MacroLinks* links_ = nullptr;
+    /// Pone sounding_ al día tras cambiar values_ o macros_.
+    void updateSounding();
     dsp::FilterAlgorithm algorithm_ = dsp::FilterAlgorithm::Classic; ///< El de la instancia, leído en refresh().
     std::array<float, core::kNumBands> dynamicGains_{};
     /// Forma de la máscara de las bandas espectrales, la última que ha

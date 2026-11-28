@@ -2,6 +2,7 @@
 #pragma once
 
 #include "BandPanel.h"
+#include "MacroLinks.h"
 #include "Controls.h"
 #include "CurveView.h"
 #include "EsceqLookAndFeel.h"
@@ -103,6 +104,8 @@ private:
 
     PluginProcessor& processor_;
     EsceqLookAndFeel lookAndFeel_;
+    /// Las macros en los controles: antes que los controles que la usan.
+    MacroLinks links_;
     EditorLayout layout_{};
     TopBarLayout topBar_{};
 

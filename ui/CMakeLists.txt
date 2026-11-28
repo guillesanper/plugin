@@ -43,6 +43,8 @@ set(ESCEQ_UI_SOURCES
     ${ESCEQ_UI_DIR}/EqEditor.h
     ${ESCEQ_UI_DIR}/EsceqLookAndFeel.cpp
     ${ESCEQ_UI_DIR}/EsceqLookAndFeel.h
+    ${ESCEQ_UI_DIR}/MacroLinks.cpp
+    ${ESCEQ_UI_DIR}/MacroLinks.h
     ${ESCEQ_UI_DIR}/MatchPanel.cpp
     ${ESCEQ_UI_DIR}/MatchPanel.h
     ${ESCEQ_UI_DIR}/OutputDrawer.cpp
