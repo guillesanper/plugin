@@ -97,24 +97,32 @@ struct TopBarLayout
 
 TopBarLayout topBarLayout(Rect bounds) noexcept;
 
-/// Cajón de la etapa de salida (PLAN.md 5.8, ADR 0027), en el orden de la
-/// señal: la saturación arriba (modo, drive y mezcla) y la salida abajo
-/// (ganancia y compensación automática), junto al medidor.
+inline constexpr int kNumMacroKnobs = 8;
+
+/// Cajón de la etapa de salida (PLAN.md 5.8, ADR 0027), con dos pestañas en
+/// la cabecera (bloque 7.3, ADR 0029). Output, en el orden de la señal: la
+/// saturación arriba (modo, drive y mezcla) y la salida abajo (ganancia y
+/// compensación automática), junto al medidor. Macros: los ocho
+/// potenciómetros de las macros, en dos columnas y cuatro filas.
 struct OutputDrawerLayout
 {
     Rect card;   ///< Todo el cajón: la tarjeta abierta o la pestaña plegada.
-    Rect toggle; ///< Lo que lo abre y lo pliega: la cabecera abierto, la pestaña entera plegado.
+    Rect toggle; ///< Lo que lo abre y lo pliega: la flecha de la cabecera abierto, la pestaña entera plegado.
+    Rect outputTab; ///< Las pestañas, a la izquierda de la cabecera.
+    Rect macrosTab;
     Rect saturationTitle;
     Rect saturationMode; ///< Off, Soft, Warm.
     Rect drive;          ///< Celdas de potenciómetro.
     Rect mix;
     Rect gain;
     Rect autoGain; ///< "Auto -2.3 dB".
+    std::array<Rect, kNumMacroKnobs> macros; ///< Celdas de potenciómetro: 1 2 / 3 4 / 5 6 / 7 8.
 };
 
 /// `drawer` es EditorLayout::drawer. Plegado, solo hay pestaña (los demás,
-/// vacíos). Abierto, la saturación se queda arriba y la salida abajo; si
-/// sobra alto, queda entre las dos.
+/// vacíos). Abierto, se calculan las dos pestañas (quien pinta muestra una):
+/// en Output, la saturación se queda arriba y la salida abajo, y si sobra
+/// alto, queda entre las dos; en Macros, las filas van arriba.
 OutputDrawerLayout outputDrawerLayout(Rect drawer, bool open) noexcept;
 
 inline constexpr int kNumEqKnobs = 3;
@@ -202,6 +210,8 @@ inline constexpr float kMaxKnobDiameter = 56.0f;
 /// larga ("RELEASE") y el valor más largo ("-48.0 dB", "12.5 kHz").
 inline constexpr float kMinKnobCellWidth = 66.0f;
 
+/// Entre la etiqueta, el potenciómetro y el valor van 4 px, salvo que la
+/// celda mida menos de 74 de alto: entonces encogen hasta 0 (66 px, el mínimo).
 KnobCellLayout knobCellLayout(Rect cell) noexcept;
 
 } // namespace esceq::ui

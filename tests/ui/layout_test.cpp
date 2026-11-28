@@ -475,7 +475,9 @@ TEST_CASE("Disposicion: el cajon de la etapa de salida cabe abierto en todos los
 
             const auto drawer = outputDrawerLayout(editor.drawer, true);
             CHECK(same(drawer.card, editor.drawer));
-            checkDisjointInside({{"cabecera", drawer.toggle},
+            checkDisjointInside({{"plegar", drawer.toggle},
+                                 {"pestana output", drawer.outputTab},
+                                 {"pestana macros", drawer.macrosTab},
                                  {"titulo", drawer.saturationTitle},
                                  {"modo", drawer.saturationMode},
                                  {"drive", drawer.drive},
@@ -528,7 +530,88 @@ TEST_CASE("Disposicion: plegado, el cajon es una pestana y la curva recupera el 
         const auto tab = outputDrawerLayout(folded.drawer, false);
         CHECK(same(tab.card, folded.drawer));
         CHECK(same(tab.toggle, folded.drawer));
-        for (const Rect& r : {tab.saturationTitle, tab.saturationMode, tab.drive, tab.mix, tab.gain, tab.autoGain})
+        for (const Rect& r : {tab.saturationTitle, tab.saturationMode, tab.drive, tab.mix, tab.gain, tab.autoGain,
+                              tab.outputTab, tab.macrosTab})
+            CHECK(same(r, {}));
+        for (const Rect& r : tab.macros)
             CHECK(same(r, {}));
     }
+}
+
+TEST_CASE("Disposicion: la pestana Macros, ocho potenciometros en el cajon en todos los tamanos")
+{
+    for (const auto size : sizesToCheck())
+        for (const bool keyboard : {false, true})
+        {
+            INFO(size.width << " x " << size.height << ", teclado: " << keyboard);
+            const auto editor = editorLayout(static_cast<float>(size.width), static_cast<float>(size.height), keyboard);
+            const auto drawer = outputDrawerLayout(editor.drawer, true);
+
+            // La cabecera: las dos pestanas a la izquierda y el boton de plegar a la derecha, en una fila.
+            CHECK(drawer.outputTab.x < drawer.macrosTab.x);
+            CHECK(drawer.macrosTab.x + drawer.macrosTab.width < drawer.toggle.x);
+            CHECK(drawer.outputTab.y == drawer.toggle.y);
+            CHECK(drawer.macrosTab.y == drawer.toggle.y);
+            CHECK(drawer.outputTab.height == drawer.toggle.height);
+            CHECK(drawer.outputTab.width == drawer.macrosTab.width);
+            // "OUTPUT" y "MACROS" en la letra de los titulos (unos 44 px) caben.
+            CHECK(drawer.outputTab.width >= 52.0f);
+
+            std::vector<Named> cells{{"plegar", drawer.toggle},
+                                     {"pestana output", drawer.outputTab},
+                                     {"pestana macros", drawer.macrosTab}};
+            for (std::size_t m = 0; m < drawer.macros.size(); ++m)
+                cells.emplace_back("macro " + std::to_string(m + 1), drawer.macros[m]);
+            checkDisjointInside(cells, drawer.card);
+
+            // Dos columnas y cuatro filas, en orden: 1 2 / 3 4 / 5 6 / 7 8, bajo la cabecera.
+            for (std::size_t m = 0; m < drawer.macros.size(); ++m)
+            {
+                INFO("macro " << m + 1);
+                const Rect& cell = drawer.macros[m];
+                const Rect& row = drawer.macros[m - m % 2];
+                CHECK(cell.y == row.y);
+                CHECK(cell.y > drawer.toggle.y + drawer.toggle.height);
+                if (m % 2 == 1)
+                    CHECK(cell.x > row.x);
+                if (m >= 2)
+                    CHECK(cell.y > drawer.macros[m - 2].y);
+                // Ancho para la etiqueta y el valor, y alto para un potenciometro.
+                CHECK(cell.width >= kMinKnobCellWidth);
+                const auto parts = knobCellLayout(cell);
+                CHECK(parts.knob.width >= kMinKnobDiameter);
+                CHECK(parts.knob.width <= kMaxKnobDiameter);
+                CHECK(inside(parts.label, cell));
+                CHECK(inside(parts.knob, cell));
+                CHECK(inside(parts.value, cell));
+            }
+        }
+}
+
+TEST_CASE("Disposicion: la celda de potenciometro solo encoge sus huecos si no tiene alto")
+{
+    // Con 74 px o mas, 4 px entre la etiqueta, el potenciometro y el valor (la de siempre).
+    for (const float height : {74.0f, 80.0f, 90.0f, 120.0f})
+    {
+        INFO(height);
+        const auto parts = knobCellLayout({10.0f, 20.0f, 80.0f, height});
+        CHECK(parts.knob.y == parts.label.y + kKnobLabelHeight + 4.0f);
+        CHECK(parts.value.y == parts.knob.y + parts.knob.height + 4.0f);
+    }
+    // Mas baja, los huecos encogen hasta 0 y todo cabe con el potenciometro minimo.
+    for (const float height : {66.0f, 68.0f, 70.0f, 73.0f})
+    {
+        INFO(height);
+        const Rect cell{10.0f, 20.0f, 66.0f, height};
+        const auto parts = knobCellLayout(cell);
+        CHECK(parts.knob.width >= kMinKnobDiameter);
+        CHECK(inside(parts.label, cell));
+        CHECK(inside(parts.knob, cell));
+        CHECK(inside(parts.value, cell));
+        CHECK(parts.knob.y >= parts.label.y + kKnobLabelHeight);
+        CHECK(parts.value.y >= parts.knob.y + parts.knob.height);
+    }
+    const auto tight = knobCellLayout({0.0f, 0.0f, 66.0f, 66.0f});
+    CHECK(tight.knob.y == kKnobLabelHeight);
+    CHECK(tight.value.y == kKnobLabelHeight + kMinKnobDiameter);
 }

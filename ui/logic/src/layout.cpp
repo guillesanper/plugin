@@ -196,7 +196,29 @@ OutputDrawerLayout outputDrawerLayout(Rect drawer, bool open) noexcept
     constexpr float kHeaderHeight = 20.0f;
     constexpr float kMaxKnobRow = 90.0f; // la celda con el potenciómetro más grande
     Rect inner = inset(drawer, kS3, kS3);
-    layout.toggle = takeTop(inner, kHeaderHeight);
+    Rect header = takeTop(inner, kHeaderHeight);
+    layout.toggle = takeRight(header, kHeaderHeight);
+    takeRight(header, kS1);
+    const float tab = std::floor(0.5f * std::max(0.0f, header.width - kS1));
+    layout.outputTab = takeLeft(header, tab);
+    layout.macrosTab = takeRight(header, tab);
+
+    // Macros: cuatro filas de dos, con kS1 entre ellas (en la ventana mínima,
+    // justas para las celdas de kMinKnobCellWidth × 66).
+    {
+        Rect grid = inner;
+        takeTop(grid, kS1);
+        const float row = std::clamp(std::floor((grid.height - 3.0f * kS1) / 4.0f), 0.0f, kMaxKnobRow);
+        const float cell = std::floor(0.5f * std::max(0.0f, grid.width - kS1));
+        for (int r = 0; r < kNumMacroKnobs / 2; ++r)
+        {
+            Rect line = takeTop(grid, row);
+            takeTop(grid, kS1);
+            layout.macros[static_cast<std::size_t>(2 * r)] = takeLeft(line, cell);
+            layout.macros[static_cast<std::size_t>(2 * r + 1)] = takeRight(line, cell);
+        }
+    }
+
     takeTop(inner, kS2);
     layout.saturationTitle = takeTop(inner, kGroupTitleHeight);
     takeTop(inner, kS1);
@@ -340,16 +362,21 @@ MatchPanelLayout matchPanelLayout(Rect curve) noexcept
 
 KnobCellLayout knobCellLayout(Rect cell) noexcept
 {
-    constexpr float kGap = kS1;
-    const float available = cell.height - kKnobLabelHeight - kKnobValueHeight - 2.0f * kGap;
+    // Los huecos entre la etiqueta, el potenciómetro y el valor encogen solo
+    // si la celda no tiene alto para ellos (las macros en una ventana baja):
+    // con 74 px o más, la celda es la de siempre.
+    const float spare = cell.height - kKnobLabelHeight - kKnobValueHeight - kMinKnobDiameter;
+    const float gap = std::clamp(std::floor(0.5f * spare), 0.0f, kS1);
+    const float available = cell.height - kKnobLabelHeight - kKnobValueHeight - 2.0f * gap;
     const float diameter = std::clamp(std::floor(std::min(available, cell.width - kS4)), kMinKnobDiameter, kMaxKnobDiameter);
-    const float content = kKnobLabelHeight + kGap + diameter + kGap + kKnobValueHeight;
+    const float content = kKnobLabelHeight + gap + diameter + gap + kKnobValueHeight;
     const float top = cell.y + std::floor(std::max(0.0f, 0.5f * (cell.height - content)));
 
     KnobCellLayout layout;
     layout.label = {cell.x, top, cell.width, kKnobLabelHeight};
-    layout.knob = {cell.x + std::floor(0.5f * (cell.width - diameter)), top + kKnobLabelHeight + kGap, diameter, diameter};
-    layout.value = {cell.x, layout.knob.y + diameter + kGap, cell.width, kKnobValueHeight};
+    layout.knob = {cell.x + std::floor(0.5f * (cell.width - diameter)), top + kKnobLabelHeight + gap, diameter,
+                   diameter};
+    layout.value = {cell.x, layout.knob.y + diameter + gap, cell.width, kKnobValueHeight};
     return layout;
 }
 
