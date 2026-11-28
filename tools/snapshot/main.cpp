@@ -15,6 +15,11 @@
 //                 y la fase lineal (Linear Medium), cuya latencia dice su ayuda.
 //   --drawer-closed
 //                 con el cajón de la etapa de salida plegado en su pestaña.
+//   --macros      con la pestaña Macros del cajón y dos macros asignadas: la 1,
+//                 al 60 %, mueve la ganancia de la banda 3 (+20 %), la frecuencia
+//                 de la 2 (-15 %) y el umbral de la 6 (+25 %); la 2, en 0, el Q
+//                 de la 3 (-10 %). La curva suena con ellas y los nodos se quedan
+//                 en su valor; con --select 3, los anillos en el panel.
 //   --notes       con el teclado de la escala de notas bajo la curva.
 //   --key N       con el teclado, la tecla de la nota N (MIDI, 69 = A4) señalada.
 //   --expanded    en la vista ampliada (como al pulsar F en la curva).
@@ -313,7 +318,7 @@ int main(int argc, char** argv)
     {
         std::cerr << "uso: esceq_snapshot salida.png [ancho alto] [--scale F] [--select N] [--hover N] [--overflow] "
                      "[--bypass] [--auto-gain] [--auto-timing] [--spectral] [--saturation] "
-                     "[--drawer-closed] [--notes] [--key N] [--expanded] [--peaks] "
+                     "[--drawer-closed] [--macros] [--notes] [--key N] [--expanded] [--peaks] "
                      "[--peak HZ] [--gallery] [--compare] [--match] [--bench N]\n";
         return 2;
     }
@@ -324,7 +329,7 @@ int main(int argc, char** argv)
     float scale = 2.0f;
     bool overflow = false, bypass = false, autoGain = false, autoTiming = false, notes = false, gallery = false,
          compare = false, expanded = false, peaks = false, match = false, spectral = false,
-         saturation = false, drawerClosed = false;
+         saturation = false, drawerClosed = false, macros = false;
     std::vector<std::string> positional;
     for (int i = 2; i < argc; ++i)
     {
@@ -350,6 +355,8 @@ int main(int argc, char** argv)
             saturation = true;
         else if (arg == "--drawer-closed")
             drawerClosed = true;
+        else if (arg == "--macros")
+            macros = true;
         else if (arg == "--notes")
             notes = true;
         else if (arg == "--key")
@@ -436,6 +443,18 @@ int main(int argc, char** argv)
         set(esceq::core::kSaturationDrive, 9.0f);
         set(esceq::core::kSaturationMix, 80.0f);
         set(esceq::core::kPhaseMode, 2.0f); // Linear Medium
+    }
+    if (macros)
+    {
+        using esceq::core::BandParam;
+        esceq::core::MacroAssignments links;
+        links.assign(0, esceq::core::bandParameter(2, BandParam::Gain), 20.0f);
+        links.assign(0, esceq::core::bandParameter(1, BandParam::Frequency), -15.0f);
+        links.assign(0, esceq::core::dynamicParameter(5, DynParam::Threshold), 25.0f);
+        links.assign(1, esceq::core::bandParameter(2, BandParam::Q), -10.0f);
+        processor->setMacroAssignments(links);
+        auto& macro = processor->parameter(esceq::core::macroParameter(0));
+        macro.setValueNotifyingHost(macro.convertTo0to1(60.0f));
     }
     if (bench > 0)
     {
@@ -531,6 +550,7 @@ int main(int argc, char** argv)
         ui.pianoKeyboard = ui.pianoKeyboard || notes;
         ui.analyzerPeakHold = ui.analyzerPeakHold || peaks;
         ui.outputStageOpen = ui.outputStageOpen && !drawerClosed;
+        ui.outputStageMacros = ui.outputStageMacros || macros;
         processor->setUiSettings(ui);
     }
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor->createEditor());
