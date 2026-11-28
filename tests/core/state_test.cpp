@@ -404,6 +404,42 @@ TEST_CASE("Estado: el cajon de la etapa de salida, abierto salvo que se pliegue"
     CHECK(open->ui.outputStageOpen);
 }
 
+TEST_CASE("Estado: la pestana del cajon, Output salvo que se elija Macros")
+{
+    // Output por defecto, y entonces no se escribe: el estado es el de antes de las macros en la interfaz.
+    CHECK_FALSE(UiSettings{}.outputStageMacros);
+    CHECK(serializePluginState(PluginState{}).find("ui.output_tab") == std::string::npos);
+
+    PluginState state;
+    state.ui.outputStageMacros = true;
+    state.ui.outputStageOpen = false; // independientes: plegado recuerda la pestana
+    const auto text = serializePluginState(state);
+    CHECK(text.find("\nui.output_tab 1\n") != std::string::npos);
+    const auto restored = deserializePluginState(text);
+    REQUIRE(restored.has_value());
+    CHECK(*restored == state);
+
+    // Los estados anteriores, y lo que no se entiende, eligen Output.
+    for (const char* name : {"v1_default.txt", "v2_ui.txt", "v3_classic.txt", "v4_macros.txt"})
+    {
+        INFO(name);
+        const auto old = deserializePluginState(readFixture(name));
+        REQUIRE(old.has_value());
+        CHECK_FALSE(old->ui.outputStageMacros);
+    }
+    for (const char* bad : {"esceQ-state 4\nui.output_tab 2\n", "esceQ-state 4\nui.output_tab -1\n",
+                            "esceQ-state 4\nui.output_tab abc\n", "esceQ-state 4\nui.output_tab\n"})
+    {
+        INFO(bad);
+        const auto parsed = deserializePluginState(bad);
+        REQUIRE(parsed.has_value());
+        CHECK(parsed->ui == UiSettings{});
+    }
+    const auto output = deserializePluginState("esceQ-state 4\nui.output_tab 0\n");
+    REQUIRE(output.has_value());
+    CHECK_FALSE(output->ui.outputStageMacros);
+}
+
 TEST_CASE("Estado: preferencias de la escala de notas absurdas toman el valor por defecto")
 {
     for (const char* text : {"esceQ-state 3\nui.notes 7\nui.a4 399.9\n", "esceQ-state 3\nui.notes -1\nui.a4 480.1\n",

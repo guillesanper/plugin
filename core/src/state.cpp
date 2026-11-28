@@ -31,6 +31,7 @@ constexpr std::string_view kUiAnalyzerFall = "ui.analyzer_fall";
 constexpr std::string_view kUiAnalyzerTilt = "ui.analyzer_tilt";
 constexpr std::string_view kUiAnalyzerPeaks = "ui.analyzer_peaks";
 constexpr std::string_view kUiOutputStage = "ui.output_stage";
+constexpr std::string_view kUiOutputTab = "ui.output_tab";
 
 constexpr std::string_view kFilterAlgorithm = "filter_algorithm";
 /// Las asignaciones de las macros: `macro.N.M <destino> <profundidad>`.
@@ -253,6 +254,8 @@ std::string serializePluginState(const PluginState& state)
     // El cajón de la etapa de salida, solo plegado: abierto es el de siempre.
     if (!ui.outputStageOpen)
         extra << kUiOutputStage << " 0\n";
+    if (ui.outputStageMacros)
+        extra << kUiOutputTab << " 1\n";
     return out + extra.str();
 }
 
@@ -368,6 +371,8 @@ std::optional<PluginState> deserializePluginState(std::string_view text)
             state.ui.analyzerPeakHold = number == 1;
         else if (entry.key == kUiOutputStage && (number == 0 || number == 1))
             state.ui.outputStageOpen = number == 1;
+        else if (entry.key == kUiOutputTab && (number == 0 || number == 1))
+            state.ui.outputStageMacros = number == 1;
     }
 
     state.ui = sanitize(std::move(state.ui));

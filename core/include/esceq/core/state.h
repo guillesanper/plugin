@@ -68,6 +68,10 @@ struct UiSettings
     /// compensación automática; PLAN.md 5.8, ADR 0027): abierto o plegado en
     /// su pestaña. Línea `ui.output_stage` (0 o 1); solo se escribe plegado.
     bool outputStageOpen = true;
+    /// Pestaña del cajón que se ve: la etapa de salida (false) o las macros
+    /// (true; PLAN.md 5.9, bloque 7.3). Abierto o plegado, se recuerda. Línea
+    /// `ui.output_tab` (0 o 1); solo se escribe con las macros.
+    bool outputStageMacros = false;
 
     /// Igualdad exacta a propósito: a4Hz está redondeada a 0,1 Hz por
     /// sanitize(), y la inclinación es uno de unos pocos valores exactos.
@@ -132,6 +136,7 @@ struct PluginState
 ///     ui.analyzer_tilt 3
 ///     ui.analyzer_peaks 1
 ///     ui.output_stage 0
+///     ui.output_tab 1
 ///
 /// Una línea por dato (`clave valor`), con punto decimal siempre,
 /// independientemente de la configuración regional. `filter_algorithm` (el
