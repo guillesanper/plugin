@@ -11,7 +11,7 @@ Cómo está hecha la interfaz de esceQ y qué reglas sigue. Las decisiones y sus
 | Lógica | `ui/logic/` (C++20 puro, sin JUCE) | De gestos a valores, escalas, disposición de la ventana, geometría de la curva | `tests/ui/` |
 | Tema | `ui/src/Theme.h` | Colores, tipografía, espaciado, radios y grosores | — |
 | Dibujo | `ui/src/Draw.h` | Funciones sin estado que pintan cada pieza en un estado dado | Galería de capturas |
-| Componentes | `ui/src/Controls.h`, `BandPanel`, `CurveView`, `OutputDrawer`, `OutputMeter`, `EqEditor` | Reciben el ratón y el teclado, deciden el estado, llaman a la lógica y al dibujo | Capturas y `pluginval` |
+| Componentes | `ui/src/Controls.h`, `BandPanel`, `CurveView`, `OutputDrawer`, `MacroLinks`, `OutputMeter`, `EqEditor` | Reciben el ratón y el teclado, deciden el estado, llaman a la lógica y al dibujo | Capturas y `pluginval` |
 | Aspecto de JUCE | `ui/src/EsceqLookAndFeel.h` | Viste desplegables, menús, campos de texto y botones de texto | Capturas |
 
 Regla: **si algo se puede calcular sin ventana, va en `ui/logic` con su test.** `ui/src` solo pinta y traduce gestos.
@@ -80,8 +80,9 @@ Cada control tiene seis estados: reposo, ratón encima, arrastre, foco de teclad
 | Flechas | Un 1 % del rango; con Mayús, un 0,1 %. Re Pág / Av Pág, un 10 % |
 | Intro | Abre el valor para escribirlo |
 | Supr o Retroceso | Valor por defecto |
+| Clic derecho, o Mayús+F10 con el foco | Menú *Link to Macro*, en los que pueden ser destino de una macro (ver *Macros*, más abajo) |
 
-El arco de valor sale **del centro** en los parámetros bipolares (ganancia, rango, salida), con un punto que marca el cero, y **del mínimo** en el resto. La lógica está en `esceq/ui/control_logic.h`; el texto se interpreta con `core::parseValue`, el mismo que usa el host.
+El arco de valor sale **del centro** en los parámetros bipolares (ganancia, rango, salida), con un punto que marca el cero, y **del mínimo** en el resto. Si una macro lo mueve, un **anillo de modulación** fino, del color de la curva total, va por dentro del arco: del valor del potenciómetro a lo que suena, con un punto en lo que suena (solo el punto, si las macros que lo mueven están en 0). La lógica está en `esceq/ui/control_logic.h`; el texto se interpreta con `core::parseValue`, el mismo que usa el host.
 
 ### Interruptor, selector y desplegable
 
@@ -137,7 +138,7 @@ Los textos y la correspondencia entre entradas y acciones están en `ui/logic` (
 
 ![El cajón Output con la saturación en Warm](img/ui/saturacion.png)
 
-Entre la curva y el medidor, el cajón **Output** reúne lo que va tras el ecualizador, en el orden de la señal ([ADR 0027](decisiones/0027-cajon-de-la-etapa-de-salida.md)): arriba, *Saturation* (PLAN.md 5.8, [ADR 0026](decisiones/0026-saturacion.md)); abajo, junto al medidor, *Gain* (`output_gain`) y *Auto*. La disposición es `outputDrawerLayout` (en `layout.h`, con sus tests: cabe en todos los tamaños, con y sin teclado de notas, sin solapes y con las celdas de potenciómetro de 66 px como mínimo), y los textos están en `esceq/ui/output_stage.h`.
+Entre la curva y el medidor, el cajón **Output** tiene dos pestañas en la cabecera, *Output* y *Macros* (ver más abajo; [ADR 0029](decisiones/0029-macros-en-el-cajon.md)), y a su derecha la flecha que lo pliega. La pestaña *Output* reúne lo que va tras el ecualizador, en el orden de la señal ([ADR 0027](decisiones/0027-cajon-de-la-etapa-de-salida.md)): arriba, *Saturation* (PLAN.md 5.8, [ADR 0026](decisiones/0026-saturacion.md)); abajo, junto al medidor, *Gain* (`output_gain`) y *Auto*. La disposición es `outputDrawerLayout` (en `layout.h`, con sus tests: cabe en todos los tamaños, con y sin teclado de notas, sin solapes y con las celdas de potenciómetro de 66 px como mínimo), y los textos están en `esceq/ui/output_stage.h`.
 
 | Control | Parámetro | Notas |
 |---|---|---|
@@ -147,11 +148,25 @@ Entre la curva y el medidor, el cajón **Output** reúne lo que va tras el ecual
 | *Gain* | `output_gain` | Potenciómetro bipolar, de −24 a +24 dB (antes, la barra de la barra superior) |
 | *Auto* | `auto_gain` | Ver más abajo |
 
-- **Plegar y abrir:** la cabecera (*OUTPUT* y una flecha) lo pliega en una pestaña de 16 px, y un clic en la pestaña lo abre. Plegado, un punto del color de acento en la pestaña avisa de que algo de dentro cambia el sonido (la saturación fuera de Off, una ganancia distinta de 0 dB o *Auto* encendido), y su ayuda dice qué: "Show the output stage... · Saturation Warm, drive 9.0 dB, mix 80% · Output -3.0 dB · Auto gain on" (`outputStageActive`, `outputStageTooltip`).
-- **Se guarda con el proyecto** (`ui.output_stage`, solo plegado: abierto es el de siempre) y no se deshace, como el teclado de notas. Una instancia nueva y los proyectos anteriores lo abren.
+- **Plegar y abrir:** la flecha de la cabecera lo pliega en una pestaña de 16 px, y un clic en la pestaña lo abre. Plegado, un punto del color de acento en la pestaña avisa de que algo de dentro cambia el sonido (la saturación fuera de Off, una ganancia distinta de 0 dB, *Auto* encendido o una macro con destinos fuera de 0), y su ayuda dice qué: "Show the output stage... · Saturation Warm, drive 9.0 dB, mix 80% · Output -3.0 dB · Auto gain on · Macros: 3 links moving" (`outputStageActive`, `outputStageTooltip`).
+- **Se guarda con el proyecto** (`ui.output_stage`, solo plegado: abierto es el de siempre; y `ui.output_tab 1`, solo con la pestaña *Macros*) y no se deshace, como el teclado de notas. Una instancia nueva y los proyectos anteriores lo abren en *Output*.
 - **Vista ampliada:** se oculta con el medidor; al volver está como estaba.
 
 ![Plegado: la pestaña, con el punto porque la saturación está encendida](img/ui/salida-plegada.png)
+
+### Macros
+
+![La pestaña Macros: la macro 1, al 60 %, mueve la ganancia de la banda 3, la frecuencia de la 2 y el umbral de la 6](img/ui/macros.png)
+
+La pestaña **Macros** del cajón tiene los ocho potenciómetros de las macros (`macro_1` a `macro_8`, de 0 a 100 %; PLAN.md 5.9, [ADR 0028](decisiones/0028-automatizacion-macros-y-sidechain.md) y [ADR 0029](decisiones/0029-macros-en-el-cajon.md)), en dos columnas y cuatro filas, con su nombre ("MACRO 1") y su valor. Se manejan como cualquier potenciómetro, con gestos, así que el host los automatiza y *Last tweaked* los ve. Una macro sin destinos se atenúa (sin efecto, pero se puede mover). Su ayuda dice lo que mueve: "Macro 1 · moves Band 3 Gain +20%, Band 2 Freq -15%, Band 6 Threshold +25% · ..." (`macroTooltip`).
+
+- **Asignar: *Link to Macro*.** El clic derecho (o Mayús+F10) en un potenciómetro que puede ser destino (`core::isMacroTarget`: frecuencia, ganancia, Q, umbral, rango, ataque, relajación y rodilla del panel; *Drive*, *Mix* y *Gain* del cajón) abre un menú con las ocho macros. Cada una es un submenú con las profundidades +100, +50, +25, +10, −10, −25, −50 y −100 %, *Other...* (un diálogo para escribir cualquiera de −100 a +100, "-12.5", "+30%"; lo que no se entiende no cambia nada) y, si ya lo mueve, *Remove link*. Una macro que ya lo mueve sale marcada y con su profundidad ("Macro 2 (+25%)"); una llena (8 destinos), desactivada ("Macro 7 (full)"). Los interruptores, los selectores y los desplegables no tienen el menú.
+- **En la curva**, el menú del nodo (clic derecho) añade, bajo *Link to Macro*, un submenú por destino: *Frequency*, y *Gain* y *Q* si el tipo de filtro los usa (`nodeMacroTargets`), cada uno con las macros que ya lo mueven ("Gain (Macro 2 +25%)").
+- **El menú de una macro** (clic derecho en su potenciómetro) lista sus destinos con su profundidad, cada uno con el mismo submenú para cambiarla o quitarlo, y *Remove all links*.
+- **Deshacer:** cada elección es una acción (`PluginProcessor::changeMacroAssignments`); mover una macro, desde la interfaz o desde el host, no cambia las asignaciones.
+- **Lo que suena:** los potenciómetros enlazados llevan el anillo de modulación (ver *Controles*), y la curva se dibuja con los valores que suenan (`PluginProcessor::soundingValues`, la misma suma que el audio): el nodo se queda en el valor de base y, si la banda suena en otro sitio, una línea fina lleva del nodo a un pequeño círculo donde suena. El valor del potenciómetro, la etiqueta flotante y lo que lee el lector de pantalla son los de base.
+
+`MacroLinks` (en `ui/src`) construye los menús y pone al día los anillos con cada refresco del editor; lo que sale de cada elección lo decide `esceq/ui/macros.h`, con sus tests sin ventana. La celda de potenciómetro mide 74 px de alto con sus huecos de 4 px; en ventanas de menos de unos 572 px de alto, las cuatro filas no caben así, y los huecos encogen hasta 0 (66 px, el mínimo, en la ventana mínima). Las demás celdas no cambian.
 
 ### Compensación automática de ganancia
 
@@ -196,6 +211,7 @@ Sin banda seleccionada, el panel muestra los gestos de la curva, en dos filas de
 - **Canal:** una insignia con la letra (L, R, M, S) en las bandas que no son estéreo.
 - **Medidor de dinámica:** junto al nodo, una guía hasta el límite del rango y una barra con la ganancia que se aplica ahora, en el mismo eje de dB que la curva. Sirve igual para reducción (hacia abajo) y para realce (hacia arriba). En una banda espectral, la del bin que más cambia.
 - **Dinámica espectral:** la forma de la máscara, sombreada bajo la curva estática de la banda (ver más arriba).
+- **Macros:** la curva de cada banda, su referencia estática y la total son las de lo que suena con las macros; el nodo se queda en el valor de base, con una línea fina hasta un círculo donde suena la banda (ver *Macros*).
 - **Escala de notas:** con el teclado visible, la etiqueta flotante añade a la frecuencia la nota más cercana y su desviación ("220 Hz · A3 +0 ct"). Con Alt (Option en macOS) al arrastrar un nodo, la frecuencia salta a la nota temperada más cercana a donde estaría sin ajustar, así que el nodo no se queda pegado; vale con el teclado oculto también.
 - **Igualación:** con el panel Match abierto, los espectros aprendidos, el objetivo, la propuesta y sus nodos en fantasma (ver más abajo).
 - **Analizador:** el espectro post relleno y, en pre + post, el pre como línea. Con *Peak hold*, una línea fina más clara con el máximo de cada punto del espectro post (`SpectrumPeakHold`, en `meter_logic.h`); un clic en la escala de dB (la columna de 40 px de la derecha, `onGainScale`) la borra, y cambiar la resolución o la inclinación también. Con *Freeze*, el espectro se queda quieto y la curva dice "Analyzer frozen" arriba a la izquierda; el audio sigue entrando en el historial, así que al descongelar el espectro es el de ese momento.
@@ -286,10 +302,11 @@ Lo que queda es casi todo rasterizar los rellenos y los trazos (más del 60 % de
 ## Accesibilidad
 
 - Todos los controles tienen nombre y rol para los lectores de pantalla; los potenciómetros exponen su rango, su valor y su valor como texto ("1.20 kHz").
-- Tabulador recorre la barra superior, la curva, el panel Match (si está abierto), el cajón *Output* (la cabecera o la pestaña y, abierto, sus controles) y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
+- Tabulador recorre la barra superior, la curva, el panel Match (si está abierto), el cajón *Output* (abierto, las pestañas *Output* y *Macros*, la flecha y los controles de la pestaña elegida; plegado, la pestaña) y el panel, de izquierda a derecha. El foco de teclado se marca con un anillo del color de acento (solo cuando se llega con el teclado, no al hacer clic).
 - En la curva: izquierda y derecha eligen banda; arriba y abajo cambian su ganancia; Ctrl/Cmd + izquierda y derecha, su frecuencia, de semitono en semitono (con Mayús, en pasos finos); Mayús, ajuste fino; Supr la elimina; F amplía o reduce la vista, y Esc vuelve.
 - El teclado de notas no recibe el foco: es una referencia visual, y la nota se lee en la etiqueta y se escribe en el campo de frecuencia.
-- Limitación: los nodos no son elementos accesibles individuales.
+- Limitación: los nodos no son elementos accesibles individuales, así que su menú (con *Link to Macro*) solo se abre con el ratón; el de los potenciómetros, también con Mayús+F10.
+- Limitación: el lector de pantalla lee el valor de base de un potenciómetro, no lo que suena con las macros.
 
 ## Antes y después
 
